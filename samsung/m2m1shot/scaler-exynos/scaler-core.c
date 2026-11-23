@@ -3520,21 +3520,6 @@ static int sc_clk_get(struct sc_dev *sc)
 	return 0;
 }
 
-static void sc_clk_put(struct sc_dev *sc)
-{
-	if (!IS_ERR(sc->clk_parn))
-		clk_put(sc->clk_parn);
-
-	if (!IS_ERR(sc->clk_chld))
-		clk_put(sc->clk_chld);
-
-	if (!IS_ERR(sc->pclk))
-		clk_put(sc->pclk);
-
-	if (!IS_ERR(sc->aclk))
-		clk_put(sc->aclk);
-}
-
 #ifdef CONFIG_PM_SLEEP
 static int sc_suspend(struct device *dev)
 {
@@ -3786,8 +3771,6 @@ static void sc_remove(struct platform_device *pdev)
 
 	sc_unregister_m2m_device(sc);
 	destroy_workqueue(sc->fence_wq);
-
-	sc_clk_put(sc);
 
 	timer_delete_sync(&sc->wdt.timer);
 
