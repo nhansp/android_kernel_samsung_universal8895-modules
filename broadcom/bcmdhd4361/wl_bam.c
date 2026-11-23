@@ -151,7 +151,7 @@ wl_bad_ap_mngr_fparse(struct bcm_cfg80211 *cfg, struct file *fp)
 		return BCME_NOMEM;
 	}
 
-	ret = vfs_read(fp, buf, WL_BAD_AP_MAX_BUF_SIZE, &fp->f_pos);
+	ret = kernel_read(fp, buf, WL_BAD_AP_MAX_BUF_SIZE, &fp->f_pos);
 	if (ret  < 0) {
 		WL_ERR(("%s: file read failed (%d)\n", __FUNCTION__, ret));
 		goto fail;
@@ -215,7 +215,6 @@ wl_bad_ap_mngr_fread(struct bcm_cfg80211 *cfg, const char *fname)
 {
 	int ret = BCME_ERROR;
 
-	mm_segment_t fs;
 	struct file *fp = NULL;
 
 	if (fname == NULL) {
@@ -223,9 +222,6 @@ wl_bad_ap_mngr_fread(struct bcm_cfg80211 *cfg, const char *fname)
 		return ret;
 	}
 	mutex_lock(&cfg->bad_ap_mngr.fs_lock);
-
-	fs = get_fs();
-	set_fs(KERNEL_DS);
 
 	fp = filp_open(fname, O_RDONLY, 0);
 	if (IS_ERR(fp)) {
@@ -241,7 +237,6 @@ fail:
 	if (fp) {
 		filp_close(fp, NULL);
 	}
-	set_fs(fs);
 
 	mutex_unlock(&cfg->bad_ap_mngr.fs_lock);
 
@@ -253,7 +248,6 @@ wl_bad_ap_mngr_fwrite(struct bcm_cfg80211 *cfg, const char *fname)
 {
 	int ret = BCME_ERROR;
 
-	mm_segment_t fs;
 	struct file *fp = NULL;
 
 	int len = 0;
@@ -270,9 +264,6 @@ wl_bad_ap_mngr_fwrite(struct bcm_cfg80211 *cfg, const char *fname)
 	}
 
 	mutex_lock(&cfg->bad_ap_mngr.fs_lock);
-
-	fs = get_fs();
-	set_fs(KERNEL_DS);
 
 	fp = filp_open(fname, O_CREAT | O_RDWR | O_TRUNC,  0666);
 	if (IS_ERR(fp)) {
@@ -301,7 +292,7 @@ wl_bad_ap_mngr_fwrite(struct bcm_cfg80211 *cfg, const char *fname)
 #pragma GCC diagnostic pop
 #endif // endif
 
-	ret = vfs_write(fp, tmp, len, &fp->f_pos);
+	ret = kernel_write(fp, tmp, len, &fp->f_pos);
 	if (ret < 0) {
 		WL_ERR(("%s: file write failed(%d)\n", __FUNCTION__, ret));
 		goto fail;
@@ -317,7 +308,6 @@ fail:
 	if (fp) {
 		filp_close(fp, NULL);
 	}
-	set_fs(fs);
 	mutex_unlock(&cfg->bad_ap_mngr.fs_lock);
 
 	return ret;
@@ -538,10 +528,10 @@ wl_adps_enabled(struct bcm_cfg80211 *cfg, struct net_device *ndev)
 		data = (wl_adps_params_v1_t *)resp->data;
 
 		if (data->mode) {
-			if (data->band == IEEE80211_BAND_2GHZ) {
+			if (data->band == NL80211_BAND_2GHZ) {
 				band += WLC_BAND_2G;
 			}
-			else if (data->band == IEEE80211_BAND_5GHZ) {
+			else if (data->band == NL80211_BAND_5GHZ) {
 				band += WLC_BAND_5G;
 			}
 		}

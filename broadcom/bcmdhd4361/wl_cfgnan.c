@@ -4380,6 +4380,17 @@ wl_cfgnan_data_path_iface_create_delete_handler(struct net_device *ndev,
 	s32 ret = BCME_OK;
 	NAN_DBG_ENTER();
 
+	/*
+	 * Vendor commands run under the wiphy mutex without the RTNL, so an NDI netdev cannot
+	 * be registered or unregistered here.
+	 */
+	if (type == NAN_WIFI_SUBCMD_DATA_PATH_IFACE_CREATE ||
+		type == NAN_WIFI_SUBCMD_DATA_PATH_IFACE_DELETE) {
+		WL_ERR(("NAN data path interface create/delete not supported\n"));
+		ret = -EOPNOTSUPP;
+		goto fail;
+	}
+
 	if (busstate != DHD_BUS_DOWN) {
 		if (type == NAN_WIFI_SUBCMD_DATA_PATH_IFACE_CREATE) {
 			ret = wl_cfgnan_get_ndi_macaddr(cfg, mac_addr);
@@ -4388,12 +4399,12 @@ wl_cfgnan_data_path_iface_create_delete_handler(struct net_device *ndev,
 				goto fail;
 			}
 			if (wl_cfg80211_add_if(cfg, ndev, WL_IF_TYPE_NAN,
-				ifname, mac_addr) == NULL) {
+				ifname, mac_addr, false) == NULL) {
 				ret = -ENODEV;
 				goto fail;
 			}
 		} else if (type == NAN_WIFI_SUBCMD_DATA_PATH_IFACE_DELETE) {
-			ret = wl_cfg80211_del_if(cfg, ndev, NULL, ifname);
+			ret = wl_cfg80211_del_if(cfg, ndev, NULL, ifname, false);
 		}
 	} else {
 		ret = -ENODEV;

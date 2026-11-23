@@ -172,7 +172,7 @@ static void dhd_bus_idle_scan(dhd_bus_t *bus);
 #endif /* IDLE_TX_FLOW_MGMT */
 
 #ifdef EXYNOS_PCIE_DEBUG
-extern void exynos_pcie_register_dump(int ch_num);
+#include <linux/exynos-pci-ctrl.h>
 #endif /* EXYNOS_PCIE_DEBUG */
 
 #define     PCI_VENDOR_ID_BROADCOM          0x14e4

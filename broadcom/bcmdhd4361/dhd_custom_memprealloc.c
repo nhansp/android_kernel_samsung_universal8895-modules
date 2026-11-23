@@ -40,6 +40,8 @@
 #include <linux/skbuff.h>
 #include <linux/init.h>
 
+#include "dhd_custom_exynos8895.h"
+
 #ifdef CONFIG_BROADCOM_WIFI_RESERVED_MEM
 
 #define WLAN_STATIC_SCAN_BUF0		5

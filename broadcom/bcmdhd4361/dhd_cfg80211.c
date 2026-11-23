@@ -136,19 +136,19 @@ wl_cfg80211_update_iflist_info(struct bcm_cfg80211 *cfg, struct net_device *ndev
 #endif /* WL_STATIC_IF */
 
 struct net_device* wl_cfg80211_allocate_if(struct bcm_cfg80211 *cfg, int ifidx, const char *name,
-	uint8 *mac, uint8 bssidx, const char *dngl_name)
+	uint8 *mac, uint8 bssidx, const char *dngl_name, int rtnl_lock_reqd)
 {
-	return dhd_allocate_if(cfg->pub, ifidx, name, mac, bssidx, FALSE, dngl_name);
+	return dhd_allocate_if(cfg->pub, ifidx, name, mac, bssidx, rtnl_lock_reqd, dngl_name);
 }
 
 int wl_cfg80211_register_if(struct bcm_cfg80211 *cfg,
-	int ifidx, struct net_device* ndev, bool rtnl_lock_reqd)
+	int ifidx, struct net_device* ndev, int rtnl_lock_reqd)
 {
 	return dhd_register_if(cfg->pub, ifidx, rtnl_lock_reqd);
 }
 
 int wl_cfg80211_remove_if(struct bcm_cfg80211 *cfg,
-	int ifidx, struct net_device* ndev, bool rtnl_lock_reqd)
+	int ifidx, struct net_device* ndev, int rtnl_lock_reqd)
 {
 	return dhd_remove_if(cfg->pub, ifidx, rtnl_lock_reqd);
 }
@@ -173,6 +173,18 @@ struct net_device * dhd_cfg80211_netdev_free(struct net_device *ndev)
 	}
 
 	return ndev;
+}
+
+/* dhd_cfg80211_netdev_free() without free_netdev(): needs_free_netdev frees the netdev */
+void dhd_netdev_priv_free(struct net_device *ndev)
+{
+	struct bcm_cfg80211 *cfg;
+
+	cfg = wl_get_cfg(ndev);
+	if (ndev->ieee80211_ptr) {
+		MFREE(cfg->osh, ndev->ieee80211_ptr, sizeof(struct wireless_dev));
+		ndev->ieee80211_ptr = NULL;
+	}
 }
 
 void dhd_netdev_free(struct net_device *ndev)

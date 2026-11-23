@@ -7455,7 +7455,7 @@ wl_handle_private_cmd(struct net_device *net, char *command, u32 cmd_len)
 		char *name = (command + strlen(CMD_INTERFACE_CREATE) +1);
 		WL_INFORM(("Creating %s interface\n", name));
 		if (wl_cfg80211_add_if(wl_get_cfg(net), net, WL_IF_TYPE_STA,
-				name, NULL) == NULL) {
+				name, NULL, false) == NULL) {
 			bytes_written = -ENODEV;
 		} else {
 			/* Return success */
@@ -7465,7 +7465,7 @@ wl_handle_private_cmd(struct net_device *net, char *command, u32 cmd_len)
 	else if (strnicmp(command, CMD_INTERFACE_DELETE, strlen(CMD_INTERFACE_DELETE)) == 0) {
 		char *name = (command + strlen(CMD_INTERFACE_DELETE) +1);
 		WL_INFORM(("Deleteing %s interface\n", name));
-		bytes_written = wl_cfg80211_del_if(wl_get_cfg(net), net, NULL, name);
+		bytes_written = wl_cfg80211_del_if(wl_get_cfg(net), net, NULL, name, false);
 	}
 	else if (strnicmp(command, CMD_GET_LINK_STATUS, strlen(CMD_GET_LINK_STATUS)) == 0) {
 		bytes_written = wl_android_get_link_status(net, command, priv_cmd.total_len);
@@ -8116,7 +8116,7 @@ wl_cfg80211_register_static_if(struct bcm_cfg80211 *cfg, u16 iftype, char *ifnam
 	mac_addr[0] |= 0x02;
 
 	ndev = wl_cfg80211_allocate_if(cfg, ifidx, ifname, mac_addr,
-		WL_BSSIDX_MAX, NULL);
+		WL_BSSIDX_MAX, NULL, FALSE);
 	if (unlikely(!ndev)) {
 		WL_ERR(("Failed to allocate static_if\n"));
 		goto fail;
@@ -8183,7 +8183,8 @@ wl_cfg80211_static_if_open(struct net_device *net)
 		return BCME_ERROR;
 	}
 	if (cfg->static_ndev_state != NDEV_STATE_FW_IF_CREATED) {
-		wdev = wl_cfg80211_add_if(cfg, primary_ndev, wl_iftype, net->name, NULL);
+		wdev = wl_cfg80211_add_if(cfg, primary_ndev, wl_iftype, net->name, NULL,
+			false);
 		ASSERT(wdev == net->ieee80211_ptr);
 	} else {
 		WL_INFORM_MEM(("Fw IF for static netdev already created\n"));
@@ -8200,7 +8201,8 @@ wl_cfg80211_static_if_close(struct net_device *net)
 	struct net_device *primary_ndev = bcmcfg_to_prmry_ndev(cfg);
 
 	if (cfg->static_ndev_state == NDEV_STATE_FW_IF_CREATED) {
-		ret = wl_cfg80211_del_if(cfg, primary_ndev, net->ieee80211_ptr, net->name);
+		ret = wl_cfg80211_del_if(cfg, primary_ndev, net->ieee80211_ptr, net->name,
+			false);
 		if (unlikely(ret)) {
 			WL_ERR(("Del iface failed for static_if %d\n", ret));
 		}
@@ -8222,7 +8224,7 @@ wl_cfg80211_post_static_ifcreate(struct bcm_cfg80211 *cfg,
 		wdev = new_ndev->ieee80211_ptr;
 		ASSERT(wdev);
 		wdev->iftype = iface_type;
-		memcpy(new_ndev->dev_addr, addr, ETH_ALEN);
+		eth_hw_addr_set(new_ndev, addr);
 	}
 
 	cfg->static_ndev_state = NDEV_STATE_FW_IF_CREATED;

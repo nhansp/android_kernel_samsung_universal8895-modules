@@ -309,7 +309,7 @@ void sec_control_pm(dhd_pub_t *dhd, uint *power_mode)
 			__FUNCTION__, filepath, *power_mode));
 		return;
 	} else {
-		kernel_read(fp, fp->f_pos, &power_val, 1);
+		dhd_kernel_read_compat(fp, fp->f_pos, &power_val, 1);
 		DHD_ERROR(("[WIFI_SEC] %s: POWER_VAL = %c \r\n", __FUNCTION__, power_val));
 		filp_close(fp, NULL);
 	}
@@ -422,7 +422,7 @@ int get_ant_val_from_file(uint32 *read_val)
 		ret = -ENOENT;
 		return ret;
 	} else {
-		ret = kernel_read(fp, 0, (char *)&ant_val, sizeof(uint32));
+		ret = dhd_kernel_read_compat(fp, 0, (char *)&ant_val, sizeof(uint32));
 		if (ret < 0) {
 			DHD_ERROR(("[WIFI_SEC] %s: File read error, ret=%d\n", __FUNCTION__, ret));
 			filp_close(fp, NULL);
@@ -554,7 +554,7 @@ int dhd_logtrace_from_file(dhd_pub_t *dhd)
 		DHD_ERROR(("[WIFI_SEC] %s: File [%s] doesn't exist\n", __FUNCTION__, filepath));
 		return 0;
 	} else {
-		ret = kernel_read(fp, 0, (char *)&logtrace, sizeof(uint32));
+		ret = dhd_kernel_read_compat(fp, 0, (char *)&logtrace, sizeof(uint32));
 		if (ret < 0) {
 			DHD_ERROR(("[WIFI_SEC] %s: File read error, ret=%d\n", __FUNCTION__, ret));
 			filp_close(fp, NULL);
@@ -638,7 +638,7 @@ int sec_get_param_wfa_cert(dhd_pub_t *dhd, int mode, uint* read_val)
 			__FUNCTION__, filepath));
 		return BCME_ERROR;
 	} else {
-		if (kernel_read(fp, fp->f_pos, (char *)&val, sizeof(uint32)) < 0) {
+		if (dhd_kernel_read_compat(fp, fp->f_pos, (char *)&val, sizeof(uint32)) < 0) {
 			filp_close(fp, NULL);
 			/* File operation is failed so we will return error code */
 			DHD_ERROR(("[WIFI_SEC] %s: read failed, file path=%s\n",
@@ -752,16 +752,9 @@ char version_old_info[MAX_VERSION_LEN];
 int write_filesystem(struct file *file, unsigned long long offset,
 	unsigned char* data, unsigned int size)
 {
-	mm_segment_t oldfs;
-	int ret;
+	loff_t pos = offset;
 
-	oldfs = get_fs();
-	set_fs(get_ds());
-
-	ret = vfs_write(file, data, size, &offset);
-
-	set_fs(oldfs);
-	return ret;
+	return kernel_write(file, data, size, &pos);
 }
 
 uint32 sec_save_wlinfo(char *firm_ver, char *dhd_ver, char *nvram_p, char *clm_ver)
@@ -818,7 +811,7 @@ uint32 sec_save_wlinfo(char *firm_ver, char *dhd_ver, char *nvram_p, char *clm_v
 			DHD_ERROR(("[WIFI_SEC] %s: Nvarm File open failed.\n", __FUNCTION__));
 			return -1;
 		} else {
-			ret = kernel_read(nvfp, nvfp->f_pos, temp_buf, sizeof(temp_buf));
+			ret = dhd_kernel_read_compat(nvfp, nvfp->f_pos, temp_buf, sizeof(temp_buf));
 			filp_close(nvfp, NULL);
 		}
 
@@ -862,7 +855,7 @@ uint32 sec_save_wlinfo(char *firm_ver, char *dhd_ver, char *nvram_p, char *clm_v
 		DHD_ERROR(("[WIFI_SEC] %s: .wifiver.info File open failed.\n", __FUNCTION__));
 	} else {
 		memset(version_old_info, 0, sizeof(version_old_info));
-		ret = kernel_read(fp, fp->f_pos, version_old_info, sizeof(version_info));
+		ret = dhd_kernel_read_compat(fp, fp->f_pos, version_old_info, sizeof(version_info));
 		filp_close(fp, NULL);
 		DHD_INFO(("[WIFI_SEC] kernel_read ret : %d.\n", ret));
 		if (strcmp(version_info, version_old_info) == 0) {
@@ -1021,7 +1014,7 @@ uint32 sec_save_softap_info(void)
 		filp_close(fp, NULL);
 	}
 #else
-	strlcpy(softapinfostr, temp_buf, SOFTAP_INFO_BUF_SZ);
+	strscpy(softapinfostr, temp_buf, SOFTAP_INFO_BUF_SZ);
 
 	ret = BCME_OK;
 #endif /* !DHD_EXPORT_CNTL_FILE */
@@ -1047,7 +1040,7 @@ dhd_force_disable_singlcore_scan(dhd_pub_t *dhd)
 	if (IS_ERR(fp)) {
 		DHD_ERROR(("%s file open error\n", filepath));
 	} else {
-		ret = kernel_read(fp, 0, (char *)vender, 5);
+		ret = dhd_kernel_read_compat(fp, 0, (char *)vender, 5);
 
 		if (ret > 0 && NULL != strstr(vender, "wisol")) {
 			DHD_ERROR(("wisol module : set pm_bcnrx=0, set scan_ps=0\n"));

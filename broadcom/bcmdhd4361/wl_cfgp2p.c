@@ -68,22 +68,24 @@ static s32 wl_cfgp2p_cancel_listen(struct bcm_cfg80211 *cfg, struct net_device *
 	struct wireless_dev *wdev, bool notify);
 
 #if defined(WL_ENABLE_P2P_IF)
-static int wl_cfgp2p_start_xmit(struct sk_buff *skb, struct net_device *ndev);
-static int wl_cfgp2p_do_ioctl(struct net_device *net, struct ifreq *ifr, int cmd);
+static netdev_tx_t wl_cfgp2p_start_xmit(struct sk_buff *skb, struct net_device *ndev);
+static int wl_cfgp2p_siocdevprivate(struct net_device *net, struct ifreq *ifr,
+	void __user *data, int cmd);
 static int wl_cfgp2p_if_open(struct net_device *net);
 static int wl_cfgp2p_if_stop(struct net_device *net);
 
 static const struct net_device_ops wl_cfgp2p_if_ops = {
 	.ndo_open       = wl_cfgp2p_if_open,
 	.ndo_stop       = wl_cfgp2p_if_stop,
-	.ndo_do_ioctl   = wl_cfgp2p_do_ioctl,
+	.ndo_siocdevprivate = wl_cfgp2p_siocdevprivate,
 	.ndo_start_xmit = wl_cfgp2p_start_xmit,
 };
 #endif /* WL_ENABLE_P2P_IF */
 
 #if defined(WL_NEWCFG_PRIVCMD_SUPPORT)
-static int wl_cfgp2p_start_xmit(struct sk_buff *skb, struct net_device *ndev);
-static int wl_cfgp2p_do_ioctl(struct net_device *net, struct ifreq *ifr, int cmd);
+static netdev_tx_t wl_cfgp2p_start_xmit(struct sk_buff *skb, struct net_device *ndev);
+static int wl_cfgp2p_siocdevprivate(struct net_device *net, struct ifreq *ifr,
+	void __user *data, int cmd);
 
 static int wl_cfgp2p_if_dummy(struct net_device *net)
 {
@@ -93,7 +95,7 @@ static int wl_cfgp2p_if_dummy(struct net_device *net)
 static const struct net_device_ops wl_cfgp2p_if_ops = {
 	.ndo_open       = wl_cfgp2p_if_dummy,
 	.ndo_stop       = wl_cfgp2p_if_dummy,
-	.ndo_do_ioctl   = wl_cfgp2p_do_ioctl,
+	.ndo_siocdevprivate = wl_cfgp2p_siocdevprivate,
 	.ndo_start_xmit = wl_cfgp2p_start_xmit,
 };
 #endif /* WL_NEWCFG_PRIVCMD_SUPPORT */
@@ -348,6 +350,7 @@ wl_cfgp2p_init_priv(struct bcm_cfg80211 *cfg)
 		CFGP2P_ERR(("struct p2p_info allocation failed\n"));
 		return -ENOMEM;
 	}
+	cfg->p2p->bcm_cfg = cfg;
 
 	wl_to_p2p_bss_ndev(cfg, P2PAPI_BSSCFG_PRIMARY) = bcmcfg_to_prmry_ndev(cfg);
 	wl_to_p2p_bss_bssidx(cfg, P2PAPI_BSSCFG_PRIMARY) = 0;
@@ -1350,7 +1353,7 @@ wl_cfgp2p_listen_complete(struct bcm_cfg80211 *cfg, bcm_struct_cfgdev *cfgdev,
 	if (wl_get_p2p_status(cfg, LISTEN_EXPIRED) == 0) {
 		wl_set_p2p_status(cfg, LISTEN_EXPIRED);
 		if (timer_pending(&cfg->p2p->listen_timer)) {
-			del_timer_sync(&cfg->p2p->listen_timer);
+			timer_delete_sync(&cfg->p2p->listen_timer);
 		}
 
 		if (cfg->afx_hdl->is_listen == TRUE &&
@@ -1420,10 +1423,11 @@ wl_cfgp2p_listen_complete(struct bcm_cfg80211 *cfg, bcm_struct_cfgdev *cfgdev,
  *  so lets do it from thread context.
  */
 void
-wl_cfgp2p_listen_expired(unsigned long data)
+wl_cfgp2p_listen_expired(struct timer_list *t)
 {
 	wl_event_msg_t msg;
-	struct bcm_cfg80211 *cfg = (struct bcm_cfg80211 *) data;
+	struct p2p_info *p2p = timer_container_of(p2p, t, listen_timer);
+	struct bcm_cfg80211 *cfg = p2p->bcm_cfg;
 	struct net_device *ndev;
 	CFGP2P_DBG((" Enter\n"));
 
@@ -1462,7 +1466,7 @@ wl_cfgp2p_cancel_listen(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 		wl_to_p2p_bss_bssidx(cfg, P2PAPI_BSSCFG_DEVICE));
 #endif /* NOT_YET */
 	if (timer_pending(&cfg->p2p->listen_timer)) {
-		del_timer_sync(&cfg->p2p->listen_timer);
+		timer_delete_sync(&cfg->p2p->listen_timer);
 		if (notify) {
 #if defined(WL_CFG80211_P2P_DEV_IF)
 			if (bcmcfg_to_p2p_wdev(cfg))
@@ -1815,7 +1819,7 @@ wl_cfgp2p_down(struct bcm_cfg80211 *cfg)
 	if (cfg->p2p_wdev) {
 		/* If p2p wdev is left out, clean it up */
 		WL_ERR(("Clean up the p2p discovery IF\n"));
-		wl_cfgp2p_del_p2p_disc_if(cfg->p2p_wdev, cfg);
+		wl_cfgp2p_del_p2p_disc_if(cfg->p2p_wdev, cfg, WL_P2P_DISC_HELD_RTNL);
 	}
 #endif /* WL_CFG80211_P2P_DEV_IF !defined(KEEP_WIFION_OPTION) */
 
@@ -2284,7 +2288,7 @@ wl_cfgp2p_register_ndev(struct bcm_cfg80211 *cfg)
 #endif // endif
 
 	/* Register with a dummy MAC addr */
-	memcpy(net->dev_addr, temp_addr, ETHER_ADDR_LEN);
+	eth_hw_addr_set(net, temp_addr);
 
 #ifndef	WL_NEWCFG_PRIVCMD_SUPPORT
 	wdev->wiphy = cfg->wdev->wiphy;
@@ -2346,7 +2350,7 @@ wl_cfgp2p_unregister_ndev(struct bcm_cfg80211 *cfg)
 
 	return 0;
 }
-static int wl_cfgp2p_start_xmit(struct sk_buff *skb, struct net_device *ndev)
+static netdev_tx_t wl_cfgp2p_start_xmit(struct sk_buff *skb, struct net_device *ndev)
 {
 
 	if (skb)
@@ -2379,6 +2383,14 @@ static int wl_cfgp2p_do_ioctl(struct net_device *net, struct ifreq *ifr, int cmd
 	}
 
 	return ret;
+}
+
+/* SIOCDEVPRIVATE..+15 come here with the user pointer in data; the handler reads ifr_data */
+static int wl_cfgp2p_siocdevprivate(struct net_device *net, struct ifreq *ifr,
+	void __user *data, int cmd)
+{
+	ifr->ifr_data = data;
+	return wl_cfgp2p_do_ioctl(net, ifr, cmd);
 }
 #endif /* WL_ENABLE_P2P_IF || WL_NEWCFG_PRIVCMD_SUPPORT  */
 
@@ -2464,7 +2476,8 @@ wl_cfgp2p_add_p2p_disc_if(struct bcm_cfg80211 *cfg)
 		 * even after ifconfig wlan0 down. So delete the iface
 		 * first and then indicate the HANG event
 		 */
-		wl_cfgp2p_del_p2p_disc_if(cfg->p2p_wdev, cfg);
+		wl_cfgp2p_del_p2p_disc_if(cfg->p2p_wdev, cfg,
+			WL_P2P_DISC_HELD_RTNL_WIPHY);
 #else
 		dhd->hang_reason = HANG_REASON_IFACE_DEL_FAILURE;
 #if defined(BCMPCIE) && defined(DHD_FW_COREDUMP)
@@ -2497,8 +2510,8 @@ wl_cfgp2p_add_p2p_disc_if(struct bcm_cfg80211 *cfg)
 
 #if defined(WL_NEWCFG_PRIVCMD_SUPPORT)
 	if (cfg->p2p_net)
-		memcpy(cfg->p2p_net->dev_addr, wl_to_p2p_bss_macaddr(cfg, P2PAPI_BSSCFG_DEVICE),
-			ETHER_ADDR_LEN);
+		eth_hw_addr_set(cfg->p2p_net,
+			(const u8 *)wl_to_p2p_bss_macaddr(cfg, P2PAPI_BSSCFG_DEVICE));
 #endif /* WL_NEWCFG_PRIVCMD_SUPPORT */
 
 	/* store p2p wdev ptr for further reference. */
@@ -2576,11 +2589,13 @@ wl_cfgp2p_stop_p2p_device(struct wiphy *wiphy, struct wireless_dev *wdev)
 	return;
 }
 
+/*
+ * cfg80211_unregister_wdev() needs the RTNL and the wiphy mutex. rtnl_is_locked() is true
+ * for any holder, so the caller says what it holds and the rest is taken here.
+ */
 int
-wl_cfgp2p_del_p2p_disc_if(struct wireless_dev *wdev, struct bcm_cfg80211 *cfg)
+wl_cfgp2p_del_p2p_disc_if(struct wireless_dev *wdev, struct bcm_cfg80211 *cfg, int held)
 {
-	bool rollback_lock = false;
-
 	if (!wdev || !cfg) {
 		WL_ERR(("null ptr. wdev:%p cfg:%p\n", wdev, cfg));
 		return -EINVAL;
@@ -2588,14 +2603,14 @@ wl_cfgp2p_del_p2p_disc_if(struct wireless_dev *wdev, struct bcm_cfg80211 *cfg)
 
 	WL_INFORM(("Enter\n"));
 
-	if (!rtnl_is_locked()) {
+	if (held == WL_P2P_DISC_HELD_NONE)
 		rtnl_lock();
-		rollback_lock = true;
-	}
-
+	if (held != WL_P2P_DISC_HELD_RTNL_WIPHY)
+		wiphy_lock(wdev->wiphy);
 	cfg80211_unregister_wdev(wdev);
-
-	if (rollback_lock)
+	if (held != WL_P2P_DISC_HELD_RTNL_WIPHY)
+		wiphy_unlock(wdev->wiphy);
+	if (held == WL_P2P_DISC_HELD_NONE)
 		rtnl_unlock();
 
 	synchronize_rcu();

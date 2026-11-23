@@ -972,9 +972,9 @@ osl_dma_free_consistent(osl_t *osh, void *va, uint size, dmaaddr_t pa)
 #else
 #ifdef BCMDMA64OSL
 	PHYSADDRTOULONG(pa, paddr);
-	pci_free_consistent(osh->pdev, size, va, paddr);
+	dma_free_coherent(&((struct pci_dev *)osh->pdev)->dev, size, va, paddr);
 #else
-	pci_free_consistent(osh->pdev, size, va, (dma_addr_t)pa);
+	dma_free_coherent(&((struct pci_dev *)osh->pdev)->dev, size, va, (dma_addr_t)pa);
 #endif /* BCMDMA64OSL */
 #endif /* __ARM_ARCH_7A__ && !DHD_USE_COHERENT_MEM_FOR_RING */
 #else
@@ -1008,7 +1008,7 @@ osl_dma_map(osl_t *osh, void *va, uint size, int direction, void *p, hnddma_seg_
 	DMA_LOCK(osh);
 
 	ASSERT((osh && (osh->magic == OS_HANDLE_MAGIC)));
-	dir = (direction == DMA_TX)? PCI_DMA_TODEVICE: PCI_DMA_FROMDEVICE;
+	dir = (direction == DMA_TX)? DMA_TO_DEVICE: DMA_FROM_DEVICE;
 
 #ifdef STB_SOC_WIFI
 #if (__LINUX_ARM_ARCH__ == 8)
@@ -1029,13 +1029,13 @@ osl_dma_map(osl_t *osh, void *va, uint size, int direction, void *p, hnddma_seg_
 	return map_addr;
 #endif /* (__LINUX_ARM_ARCH__ == 8) */
 #else /* ! STB_SOC_WIFI */
-	map_addr = pci_map_single(osh->pdev, va, size, dir);
+	map_addr = dma_map_single(&((struct pci_dev *)osh->pdev)->dev, va, size, dir);
 #endif	/* ! STB_SOC_WIFI */
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 27))
-	ret = pci_dma_mapping_error(osh->pdev, map_addr);
+	ret = dma_mapping_error(&((struct pci_dev *)osh->pdev)->dev, map_addr);
 #elif (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 5))
-	ret = pci_dma_mapping_error(map_addr);
+	ret = dma_mapping_error(&((struct pci_dev *)osh->pdev)->dev, map_addr);
 #else
 	ret = 0;
 #endif // endif
@@ -1069,7 +1069,7 @@ osl_dma_unmap(osl_t *osh, dmaaddr_t pa, uint size, int direction)
 
 	DMA_LOCK(osh);
 
-	dir = (direction == DMA_TX)? PCI_DMA_TODEVICE: PCI_DMA_FROMDEVICE;
+	dir = (direction == DMA_TX)? DMA_TO_DEVICE: DMA_FROM_DEVICE;
 
 #ifdef DHD_MAP_LOGGING
 	osl_dma_map_logging(osh, osh->dhd_unmap_log, pa, size);
@@ -1077,7 +1077,7 @@ osl_dma_unmap(osl_t *osh, dmaaddr_t pa, uint size, int direction)
 
 #ifdef BCMDMA64OSL
 	PHYSADDRTOULONG(pa, paddr);
-	pci_unmap_single(osh->pdev, paddr, size, dir);
+	dma_unmap_single(&((struct pci_dev *)osh->pdev)->dev, paddr, size, dir);
 #else /* BCMDMA64OSL */
 
 #ifdef STB_SOC_WIFI
@@ -1094,7 +1094,7 @@ osl_dma_unmap(osl_t *osh, dmaaddr_t pa, uint size, int direction)
 	dma_unmap_single(osh->pdev, (uintptr)pa, size, dir);
 #endif /* (__LINUX_ARM_ARCH__ == 8) */
 #else /* STB_SOC_WIFI */
-	pci_unmap_single(osh->pdev, (uint32)pa, size, dir);
+	dma_unmap_single(&((struct pci_dev *)osh->pdev)->dev, (uint32)pa, size, dir);
 #endif /* STB_SOC_WIFI */
 
 #endif /* BCMDMA64OSL */
@@ -1184,12 +1184,12 @@ osl_sleep(uint ms)
 uint64
 osl_sysuptime_us(void)
 {
-	struct timeval tv;
+	struct timespec64 tv;
 	uint64 usec;
 
-	do_gettimeofday(&tv);
-	/* tv_usec content is fraction of a second */
-	usec = (uint64)tv.tv_sec * 1000000ul + tv.tv_usec;
+	ktime_get_real_ts64(&tv);
+	/* tv_nsec content is fraction of a second */
+	usec = (uint64)tv.tv_sec * 1000000ul + tv.tv_nsec / NSEC_PER_USEC;
 	return usec;
 }
 
@@ -1265,7 +1265,7 @@ osl_os_get_image_block(char *buf, int len, void *image)
 	if (!image)
 		return 0;
 
-	rdlen = kernel_read(fp, fp->f_pos, buf, len);
+	rdlen = dhd_kernel_read_compat(fp, fp->f_pos, buf, len);
 	if (rdlen > 0)
 		fp->f_pos += rdlen;
 
@@ -1889,6 +1889,21 @@ osl_sec_dma_free_consistent(osl_t *osh, void *va, uint size, dmaaddr_t pa)
 /* timer apis */
 /* Note: All timer api's are thread unsafe and should be protected with locks by caller */
 
+/* Timers have no data word: keep the osl callback and its argument next to the timer */
+struct osl_timer_ctx {
+	struct timer_list timer;
+	void (*fn)(void *arg);
+	void *arg;
+};
+
+static void
+osl_timer_cb(struct timer_list *tl)
+{
+	struct osl_timer_ctx *c = timer_container_of(c, tl, timer);
+
+	c->fn(c->arg);
+}
+
 osl_timer_t *
 osl_timer_init(osl_t *osh, const char *name, void (*fn)(void *arg), void *arg)
 {
@@ -1900,16 +1915,20 @@ osl_timer_init(osl_t *osh, const char *name, void (*fn)(void *arg), void *arg)
 		return (NULL);
 	}
 	bzero(t, sizeof(osl_timer_t));
-	if ((t->timer = MALLOCZ(NULL, sizeof(struct timer_list))) == NULL) {
-		printf("osl_timer_init: malloc failed\n");
-		MFREE(NULL, t, sizeof(osl_timer_t));
-		return (NULL);
-	}
-	t->timer->data = (ulong)arg;
-	t->timer->function = (linux_timer_fn)fn;
-	t->set = TRUE;
+	{
+		struct osl_timer_ctx *c = MALLOCZ(NULL, sizeof(struct osl_timer_ctx));
 
-	init_timer(t->timer);
+		if (!c) {
+			printf("osl_timer_init: malloc failed\n");
+			MFREE(NULL, t, sizeof(osl_timer_t));
+			return NULL;
+		}
+		c->fn = fn;
+		c->arg = arg;
+		timer_setup(&c->timer, osl_timer_cb, 0);
+		t->timer = &c->timer;
+	}
+	t->set = TRUE;
 
 	return (t);
 }
@@ -1965,8 +1984,9 @@ osl_timer_del(osl_t *osh, osl_timer_t *t)
 	if (t->set) {
 		t->set = FALSE;
 		if (t->timer) {
-			del_timer(t->timer);
-			MFREE(NULL, t->timer, sizeof(struct timer_list));
+			timer_delete(t->timer);
+			MFREE(NULL, container_of(t->timer, struct osl_timer_ctx, timer),
+				sizeof(struct osl_timer_ctx));
 		}
 		MFREE(NULL, t, sizeof(osl_timer_t));
 	}

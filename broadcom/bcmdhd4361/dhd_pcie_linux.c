@@ -231,19 +231,18 @@ static const struct dev_pm_ops dhdpcie_pm_ops = {
 #endif /* DHD_PCIE_NATIVE_RUNTIMEPM */
 
 static struct pci_driver dhdpcie_driver = {
-	node:		{&dhdpcie_driver.node, &dhdpcie_driver.node},
-	name:		"pcieh",
-	id_table:	dhdpcie_pci_devid,
-	probe:		dhdpcie_pci_probe,
-	remove:		dhdpcie_pci_remove,
+	.name =		"pcieh",
+	.id_table =	dhdpcie_pci_devid,
+	.probe =	dhdpcie_pci_probe,
+	.remove =	dhdpcie_pci_remove,
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 0))
-	save_state:	NULL,
+	.save_state =	NULL,
 #endif // endif
 #if defined(DHD_PCIE_RUNTIMEPM) || defined(DHD_PCIE_NATIVE_RUNTIMEPM)
 	.driver.pm = &dhd_pcie_pm_ops,
 #else
-	suspend:	dhdpcie_pci_suspend,
-	resume:		dhdpcie_pci_resume,
+	.suspend =	dhdpcie_pci_suspend,
+	.resume =	dhdpcie_pci_resume,
 #endif /* DHD_PCIE_RUNTIMEPM || DHD_PCIE_NATIVE_RUNTIMEPM */
 };
 
@@ -797,9 +796,9 @@ static int dhdpcie_resume_host_dev(dhd_bus_t *bus)
 #ifdef CONFIG_ARCH_MSM
 	bcmerror = dhdpcie_start_host_pcieclock(bus);
 #endif /* CONFIG_ARCH_MSM */
-#ifdef CONFIG_ARCH_TEGRA
+#ifdef CONFIG_BCMDHD_ARCH_TEGRA
 	bcmerror = tegra_pcie_pm_resume();
-#endif /* CONFIG_ARCH_TEGRA */
+#endif /* CONFIG_BCMDHD_ARCH_TEGRA */
 	if (bcmerror < 0) {
 		DHD_ERROR(("%s: PCIe RC resume failed!!! (%d)\n",
 			__FUNCTION__, bcmerror));
@@ -829,9 +828,9 @@ static int dhdpcie_suspend_host_dev(dhd_bus_t *bus)
 #ifdef CONFIG_ARCH_MSM
 	bcmerror = dhdpcie_stop_host_pcieclock(bus);
 #endif	/* CONFIG_ARCH_MSM */
-#ifdef CONFIG_ARCH_TEGRA
+#ifdef CONFIG_BCMDHD_ARCH_TEGRA
 	bcmerror = tegra_pcie_pm_suspend();
-#endif /* CONFIG_ARCH_TEGRA */
+#endif /* CONFIG_BCMDHD_ARCH_TEGRA */
 	return bcmerror;
 }
 
@@ -1138,10 +1137,10 @@ dhdpcie_pci_remove(struct pci_dev *pdev)
 		msm_pcie_deregister_event(&bus->pcie_event);
 #endif /* CONFIG_ARCH_MSM */
 #ifdef EXYNOS_PCIE_LINKDOWN_RECOVERY
-#if defined(CONFIG_SOC_EXYNOS8890) || defined(CONFIG_SOC_EXYNOS8895) || \
+#if defined(CONFIG_SOC_EXYNOS8890) || defined(CONFIG_BCMDHD_EXYNOS8895) || \
 	defined(CONFIG_SOC_EXYNOS9810)
 		exynos_pcie_deregister_event(&bus->pcie_event);
-#endif /* CONFIG_SOC_EXYNOS8890 || CONFIG_SOC_EXYNOS8895 ||
+#endif /* CONFIG_SOC_EXYNOS8890 || CONFIG_BCMDHD_EXYNOS8895 ||
 	* CONFIG_SOC_EXYNOS9810
 	*/
 #endif /* EXYNOS_PCIE_LINKDOWN_RECOVERY */
@@ -1433,7 +1432,7 @@ void dhdpcie_dump_resource(dhd_bus_t *bus)
 
 #ifdef SUPPORT_LINKDOWN_RECOVERY
 #if defined(CONFIG_ARCH_MSM) || (defined(EXYNOS_PCIE_LINKDOWN_RECOVERY) && \
-	(defined(CONFIG_SOC_EXYNOS8890) || defined(CONFIG_SOC_EXYNOS8895) || \
+	(defined(CONFIG_SOC_EXYNOS8890) || defined(CONFIG_BCMDHD_EXYNOS8895) || \
 	defined(CONFIG_SOC_EXYNOS9810)))
 void dhdpcie_linkdown_cb(struct_pcie_notify *noti)
 {
@@ -1464,7 +1463,7 @@ void dhdpcie_linkdown_cb(struct_pcie_notify *noti)
 
 }
 #endif /* CONFIG_ARCH_MSM || (EXYNOS_PCIE_LINKDOWN_RECOVERY &&
-	* (CONFIG_SOC_EXYNOS8890 || CONFIG_SOC_EXYNOS8895 || CONFIG_SOC_EXYNOS9810))
+	* (CONFIG_SOC_EXYNOS8890 || CONFIG_BCMDHD_EXYNOS8895 || CONFIG_SOC_EXYNOS9810))
 	*/
 #endif /* SUPPORT_LINKDOWN_RECOVERY */
 
@@ -1593,14 +1592,14 @@ int dhdpcie_init(struct pci_dev *pdev)
 		bus->no_cfg_restore = FALSE;
 #endif /* CONFIG_ARCH_MSM */
 #ifdef EXYNOS_PCIE_LINKDOWN_RECOVERY
-#if defined(CONFIG_SOC_EXYNOS8890) || defined(CONFIG_SOC_EXYNOS8895) || \
+#if defined(CONFIG_SOC_EXYNOS8890) || defined(CONFIG_BCMDHD_EXYNOS8895) || \
 	defined(CONFIG_SOC_EXYNOS9810)
 		bus->pcie_event.events = EXYNOS_PCIE_EVENT_LINKDOWN;
 		bus->pcie_event.user = pdev;
 		bus->pcie_event.mode = EXYNOS_PCIE_TRIGGER_CALLBACK;
 		bus->pcie_event.callback = dhdpcie_linkdown_cb;
 		exynos_pcie_register_event(&bus->pcie_event);
-#endif /* CONFIG_SOC_EXYNOS8890 || CONFIG_SOC_EXYNOS8895 ||
+#endif /* CONFIG_SOC_EXYNOS8890 || CONFIG_BCMDHD_EXYNOS8895 ||
 	* CONFIG_SOC_EXYNOS9810
 	*/
 #endif /* EXYNOS_PCIE_LINKDOWN_RECOVERY */

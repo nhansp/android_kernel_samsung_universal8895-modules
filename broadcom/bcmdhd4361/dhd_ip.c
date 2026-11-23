@@ -295,7 +295,7 @@ static void _tdata_psh_info_pool_deinit(dhd_pub_t *dhdp,
 
 #ifdef BCMPCIE
 #ifndef TCPACK_SUPPRESS_HOLD_HRT
-static void dhd_tcpack_send(ulong data)
+static void dhd_tcpack_send(struct timer_list *t)
 #else
 static enum hrtimer_restart dhd_tcpack_send(struct hrtimer *timer)
 #endif /* TCPACK_SUPPRESS_HOLD_HRT */
@@ -308,7 +308,7 @@ static enum hrtimer_restart dhd_tcpack_send(struct hrtimer *timer)
 	unsigned long flags;
 
 #ifndef TCPACK_SUPPRESS_HOLD_HRT
-	cur_tbl = (tcpack_info_t *)data;
+	cur_tbl = timer_container_of(cur_tbl, t, timer);
 #else
 	cur_tbl = container_of(timer, tcpack_info_t, timer.timer);
 #endif /* TCPACK_SUPPRESS_HOLD_HRT */
@@ -460,7 +460,7 @@ int dhd_tcpack_suppress_set(dhd_pub_t *dhdp, uint8 mode)
 						tcpack_info_t *tcpack_info_tbl =
 							&tcpack_sup_module->tcpack_info_tbl[i];
 #ifndef TCPACK_SUPPRESS_HOLD_HRT
-						del_timer(&tcpack_info_tbl->timer);
+						timer_delete(&tcpack_info_tbl->timer);
 #else
 						hrtimer_cancel(&tcpack_info_tbl->timer.timer);
 #endif /* TCPACK_SUPPRESS_HOLD_HRT */
@@ -503,9 +503,7 @@ int dhd_tcpack_suppress_set(dhd_pub_t *dhdp, uint8 mode)
 					&tcpack_sup_module->tcpack_info_tbl[i];
 				tcpack_info_tbl->dhdp = dhdp;
 #ifndef TCPACK_SUPPRESS_HOLD_HRT
-				init_timer(&tcpack_info_tbl->timer);
-				tcpack_info_tbl->timer.data = (ulong)tcpack_info_tbl;
-				tcpack_info_tbl->timer.function = dhd_tcpack_send;
+				timer_setup(&tcpack_info_tbl->timer, dhd_tcpack_send, 0);
 #else
 				tasklet_hrtimer_init(&tcpack_info_tbl->timer,
 					dhd_tcpack_send, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
@@ -560,7 +558,7 @@ dhd_tcpack_info_tbl_clean(dhd_pub_t *dhdp)
 	if (dhdp->tcpack_sup_mode == TCPACK_SUP_HOLD) {
 		for (i = 0; i < TCPACK_INFO_MAXNUM; i++) {
 #ifndef TCPACK_SUPPRESS_HOLD_HRT
-			del_timer_sync(&tcpack_sup_mod->tcpack_info_tbl[i].timer);
+			timer_delete_sync(&tcpack_sup_mod->tcpack_info_tbl[i].timer);
 #else
 			hrtimer_cancel(&tcpack_sup_mod->tcpack_info_tbl[i].timer.timer);
 #endif /* TCPACK_SUPPRESS_HOLD_HRT */
@@ -1336,7 +1334,7 @@ dhd_tcpack_hold(dhd_pub_t *dhdp, void *pkt, int ifidx)
 
 		if (!hold) {
 #ifndef TCPACK_SUPPRESS_HOLD_HRT
-			del_timer_sync(&tcpack_info_tbl[i].timer);
+			timer_delete_sync(&tcpack_info_tbl[i].timer);
 #else
 			hrtimer_cancel(&tcpack_sup_mod->tcpack_info_tbl[i].timer.timer);
 #endif /* TCPACK_SUPPRESS_HOLD_HRT */

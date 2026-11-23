@@ -277,9 +277,11 @@ static struct sysfs_ops dhd_sysfs_ops = {
 	.store = dhd_store,
 };
 
+ATTRIBUTE_GROUPS(default);
+
 static struct kobj_type dhd_ktype = {
 	.sysfs_ops = &dhd_sysfs_ops,
-	.default_attrs = default_attrs,
+	.default_groups = default_groups,
 };
 
 #ifdef DHD_MAC_ADDR_EXPORT
@@ -358,7 +360,7 @@ get_mem_val_from_file(void)
 	}
 
 	/* Handle success case */
-	ret = kernel_read(fp, 0, (char *)&mem_val, sizeof(uint32));
+	ret = dhd_kernel_read_compat(fp, 0, (char *)&mem_val, sizeof(uint32));
 	if (ret < 0) {
 		DHD_ERROR(("%s: File read error, ret=%d\n", __FUNCTION__, ret));
 		filp_close(fp, NULL);
@@ -464,7 +466,7 @@ get_assert_val_from_file(void)
 	if (IS_ERR(fp)) {
 		DHD_ERROR(("%s: File [%s] doesn't exist\n", __FUNCTION__, filepath));
 	} else {
-		int ret = kernel_read(fp, 0, (char *)&mem_val, sizeof(uint32));
+		int ret = dhd_kernel_read_compat(fp, 0, (char *)&mem_val, sizeof(uint32));
 		if (ret < 0) {
 			DHD_ERROR(("%s: File read error, ret=%d\n", __FUNCTION__, ret));
 		} else {
@@ -1123,9 +1125,11 @@ static struct sysfs_ops dhd_sysfs_cntl_ops = {
 	.store = dhd_cntl_store,
 };
 
+ATTRIBUTE_GROUPS(control_file);
+
 static struct kobj_type dhd_cntl_file_ktype = {
 	.sysfs_ops = &dhd_sysfs_cntl_ops,
-	.default_attrs = control_file_attrs,
+	.default_groups = control_file_groups,
 };
 
 /* Create a kobject and attach to sysfs interface */

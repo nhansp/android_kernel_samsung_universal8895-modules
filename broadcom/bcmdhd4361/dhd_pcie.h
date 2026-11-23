@@ -41,12 +41,10 @@
 #endif /* CONFIG_PCI_MSM */
 #endif /* CONFIG_ARCH_MSM */
 #ifdef EXYNOS_PCIE_LINKDOWN_RECOVERY
-#if defined(CONFIG_SOC_EXYNOS8890) || defined(CONFIG_SOC_EXYNOS8895) || \
+#if defined(CONFIG_SOC_EXYNOS8890) || defined(CONFIG_BCMDHD_EXYNOS8895) || \
 	defined(CONFIG_SOC_EXYNOS9810)
 #include <linux/exynos-pci-noti.h>
-extern int exynos_pcie_register_event(struct exynos_pcie_register_event *reg);
-extern int exynos_pcie_deregister_event(struct exynos_pcie_register_event *reg);
-#endif /* CONFIG_SOC_EXYNOS8890 || CONFIG_SOC_EXYNOS8895 || CONFIG_SOC_EXYNOS9810 */
+#endif /* CONFIG_SOC_EXYNOS8890 || CONFIG_BCMDHD_EXYNOS8895 || CONFIG_SOC_EXYNOS9810 */
 #endif /* EXYNOS_PCIE_LINKDOWN_RECOVERY */
 #endif /* SUPPORT_LINKDOWN_RECOVERY */
 
@@ -88,11 +86,11 @@ extern int exynos_pcie_deregister_event(struct exynos_pcie_register_event *reg);
 #define struct_pcie_register_event	struct msm_pcie_register_event
 #endif /* CONFIG_ARCH_MSM */
 #ifdef EXYNOS_PCIE_LINKDOWN_RECOVERY
-#if defined(CONFIG_SOC_EXYNOS8890) || defined(CONFIG_SOC_EXYNOS8895) || \
+#if defined(CONFIG_SOC_EXYNOS8890) || defined(CONFIG_BCMDHD_EXYNOS8895) || \
 	defined(CONFIG_SOC_EXYNOS9810)
 #define struct_pcie_notify		struct exynos_pcie_notify
 #define struct_pcie_register_event	struct exynos_pcie_register_event
-#endif /* CONFIG_SOC_EXYNOS8890 || CONFIG_SOC_EXYNOS8895 || CONFIG_SOC_EXYNOS9810 */
+#endif /* CONFIG_SOC_EXYNOS8890 || CONFIG_BCMDHD_EXYNOS8895 || CONFIG_SOC_EXYNOS9810 */
 #endif /* EXYNOS_PCIE_LINKDOWN_RECOVERY */
 #endif /* SUPPORT_LINKDOWN_RECOVERY */
 
@@ -321,14 +319,14 @@ typedef struct dhd_bus {
 	bool	d2h_intr_method;
 #ifdef SUPPORT_LINKDOWN_RECOVERY
 #if defined(CONFIG_ARCH_MSM) || (defined(EXYNOS_PCIE_LINKDOWN_RECOVERY) && \
-	defined(CONFIG_SOC_EXYNOS8890) || defined(CONFIG_SOC_EXYNOS8895) || \
+	defined(CONFIG_SOC_EXYNOS8890) || defined(CONFIG_BCMDHD_EXYNOS8895) || \
 	defined(CONFIG_SOC_EXYNOS9810))
 #ifdef CONFIG_ARCH_MSM
 	uint8 no_cfg_restore;
 #endif /* CONFIG_ARCH_MSM */
 	struct_pcie_register_event pcie_event;
 #endif /* CONFIG_ARCH_MSM || (EXYNOS_PCIE_LINKDOWN_RECOVERY &&
-	* (CONFIG_SOC_EXYNOS8890 || CONFIG_SOC_EXYNOS8895 || CONFIG_SOC_EXYNOS9810))
+	* (CONFIG_SOC_EXYNOS8890 || CONFIG_BCMDHD_EXYNOS8895 || CONFIG_SOC_EXYNOS9810))
 	*/
 	bool read_shm_fail;
 #endif /* SUPPORT_LINKDOWN_RECOVERY */
@@ -489,7 +487,7 @@ extern int dhdpcie_get_oob_irq_num(dhd_bus_t *bus);
 #elif defined(CONFIG_SOC_EXYNOS8890)
 #define SAMSUNG_PCIE_DEVICE_ID 0xa544
 #define SAMSUNG_PCIE_CH_NUM 0
-#elif defined(CONFIG_SOC_EXYNOS8895) || defined(CONFIG_SOC_EXYNOS9810)
+#elif defined(CONFIG_BCMDHD_EXYNOS8895) || defined(CONFIG_SOC_EXYNOS9810)
 #define SAMSUNG_PCIE_DEVICE_ID 0xecec
 #define SAMSUNG_PCIE_CH_NUM 0
 #else
@@ -519,10 +517,10 @@ extern int dhdpcie_get_oob_irq_num(dhd_bus_t *bus);
 #define X86_PCIE_DEVICE_ID 0x9c1a
 #endif /* CONFIG_X86 */
 
-#if defined(CONFIG_ARCH_TEGRA)
+#if defined(CONFIG_BCMDHD_ARCH_TEGRA)
 #define TEGRA_PCIE_VENDOR_ID 0x14e4
 #define TEGRA_PCIE_DEVICE_ID 0x4347
-#endif /* CONFIG_ARCH_TEGRA */
+#endif /* CONFIG_BCMDHD_ARCH_TEGRA */
 
 #define DUMMY_PCIE_VENDOR_ID 0xffff
 #define DUMMY_PCIE_DEVICE_ID 0xffff
@@ -536,7 +534,7 @@ extern int dhdpcie_get_oob_irq_num(dhd_bus_t *bus);
 #elif defined(CONFIG_X86)
 #define PCIE_RC_VENDOR_ID X86_PCIE_VENDOR_ID
 #define PCIE_RC_DEVICE_ID X86_PCIE_DEVICE_ID
-#elif defined(CONFIG_ARCH_TEGRA)
+#elif defined(CONFIG_BCMDHD_ARCH_TEGRA)
 #define PCIE_RC_VENDOR_ID TEGRA_PCIE_VENDOR_ID
 #define PCIE_RC_DEVICE_ID TEGRA_PCIE_DEVICE_ID
 #else
@@ -550,15 +548,14 @@ extern int dhdpcie_get_oob_irq_num(dhd_bus_t *bus);
 extern int exynos_pcie_pm_suspend(void);
 extern int exynos_pcie_pm_resume(void);
 #else
-extern int exynos_pcie_pm_suspend(int ch_num);
-extern int exynos_pcie_pm_resume(int ch_num);
+#include <linux/exynos-pci-ctrl.h>
 #endif /* CONFIG_MACH_UNIVERSAL5433 */
 #endif /* USE_EXYNOS_PCIE_RC_PMPATCH */
 
-#ifdef CONFIG_ARCH_TEGRA
+#ifdef CONFIG_BCMDHD_ARCH_TEGRA
 extern int tegra_pcie_pm_suspend(void);
 extern int tegra_pcie_pm_resume(void);
-#endif /* CONFIG_ARCH_TEGRA */
+#endif /* CONFIG_BCMDHD_ARCH_TEGRA */
 
 extern int dhd_buzzz_dump_dngl(dhd_bus_t *bus);
 #ifdef IDLE_TX_FLOW_MGMT

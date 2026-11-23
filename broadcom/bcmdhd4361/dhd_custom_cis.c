@@ -975,7 +975,7 @@ write_cid:
 #ifndef DHD_EXPORT_CNTL_FILE
 	dhd_write_file(cidfilepath, cid_info, strlen(cid_info) + 1);
 #else
-	strlcpy(cidinfostr, cid_info, MAX_VNAME_LEN);
+	strscpy(cidinfostr, cid_info, MAX_VNAME_LEN);
 #endif /* DHD_EXPORT_CNTL_FILE */
 
 	return ret;
@@ -1068,7 +1068,7 @@ dhd_check_module_bcm4361(char *module_type, int index, bool *is_murata_fem)
 		return ret;
 	}
 #else
-	strlcpy(vname, cidinfostr, MAX_VNAME_LEN);
+	strscpy(vname, cidinfostr, MAX_VNAME_LEN);
 #endif /* DHD_EXPORT_CNTL_FILE */
 
 	for (i = 1, ptr = vname; i < index && ptr; i++) {

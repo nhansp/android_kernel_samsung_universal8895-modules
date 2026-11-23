@@ -77,9 +77,9 @@ struct wl_ibss;
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 7, 0))
 /* Newer kernels use defines from nl80211.h */
-#define IEEE80211_BAND_2GHZ	NL80211_BAND_2GHZ
-#define IEEE80211_BAND_5GHZ	NL80211_BAND_5GHZ
-#define IEEE80211_NUM_BANDS	NUM_NL80211_BANDS
+#define NL80211_BAND_2GHZ	NL80211_BAND_2GHZ
+#define NL80211_BAND_5GHZ	NL80211_BAND_5GHZ
+#define NUM_NL80211_BANDS	NUM_NL80211_BANDS
 #endif /* LINUX_VER >= 4.7 */
 
 #ifdef DHD_LOG_DUMP
@@ -924,6 +924,7 @@ typedef enum wl_wps_state {
 typedef struct wl_wps_session {
 	bool in_use;
 	struct timer_list timer;
+	struct net_device *timer_ndev;
 	struct net_device *ndev;
 	wl_wps_state_t state;
 	u16 mode;
@@ -948,6 +949,11 @@ struct bcm_cfg80211 {
 	struct list_head eq_list;	/* used for event queue */
 	struct list_head net_list;     /* used for struct net_info */
 	spinlock_t net_list_sync;	/* to protect scan status (and others if needed) */
+	struct wiphy_work csa_work;
+	spinlock_t csa_lock;		/* protects csa_ndev, csa_chandef */
+	struct net_device *csa_ndev;	/* dev_hold()'d until the work reports it */
+	struct cfg80211_chan_def csa_chandef;
+	struct work_struct regd_work;
 	spinlock_t eq_lock;	/* for event queue synchronization */
 	spinlock_t cfgdrv_lock;	/* to protect scan status (and others if needed) */
 	struct completion act_frm_scan;
@@ -1821,11 +1827,11 @@ extern s32 wl_cfg80211_notify_ifdel(struct net_device * dev, int ifidx, char *na
 extern s32 wl_cfg80211_notify_ifchange(struct net_device * dev, int ifidx, char *name, uint8 *mac,
 	uint8 bssidx);
 extern struct net_device* wl_cfg80211_allocate_if(struct bcm_cfg80211 *cfg, int ifidx,
-	const char *name, uint8 *mac, uint8 bssidx, const char *dngl_name);
+	const char *name, uint8 *mac, uint8 bssidx, const char *dngl_name, int rtnl_lock_reqd);
 extern int wl_cfg80211_register_if(struct bcm_cfg80211 *cfg,
-	int ifidx, struct net_device* ndev, bool rtnl_lock_reqd);
+	int ifidx, struct net_device* ndev, int rtnl_lock_reqd);
 extern int wl_cfg80211_remove_if(struct bcm_cfg80211 *cfg,
-	int ifidx, struct net_device* ndev, bool rtnl_lock_reqd);
+	int ifidx, struct net_device* ndev, int rtnl_lock_reqd);
 extern void wl_cfg80211_cleanup_if(struct net_device *dev);
 extern int wl_cfg80211_scan_stop(struct bcm_cfg80211 *cfg, bcm_struct_cfgdev *cfgdev);
 extern void wl_cfg80211_scan_abort(struct bcm_cfg80211 *cfg);
@@ -2020,8 +2026,8 @@ extern s32 wl_cfg80211_bss_up(struct bcm_cfg80211 *cfg,
 extern bool wl_cfg80211_bss_isup(struct net_device *ndev, int bsscfg_idx);
 
 struct net_device *wl_cfg80211_post_ifcreate(struct net_device *ndev,
-	wl_if_event_info *event, u8 *addr, const char *name, bool rtnl_lock_reqd);
-extern s32 wl_cfg80211_post_ifdel(struct net_device *ndev, bool rtnl_lock_reqd, s32 ifidx);
+	wl_if_event_info *event, u8 *addr, const char *name, int rtnl_lock_reqd);
+extern s32 wl_cfg80211_post_ifdel(struct net_device *ndev, int rtnl_lock_reqd, s32 ifidx);
 #if defined(PKT_FILTER_SUPPORT) && defined(APSTA_BLOCK_ARP_DURING_DHCP)
 extern void wl_cfg80211_block_arp(struct net_device *dev, int enable);
 #endif /* PKT_FILTER_SUPPORT && APSTA_BLOCK_ARP_DURING_DHCP */
@@ -2102,11 +2108,11 @@ int wl_set_murx_bfe_cap(struct net_device *dev, int val, bool reassoc_req);
 #endif /* DYNAMIC_MUMIMO_CONTROL */
 int wl_cfg80211_iface_count(struct net_device *dev);
 struct net_device* wl_get_ap_netdev(struct bcm_cfg80211 *cfg, char *ifname);
-void wl_cfg80211_cleanup_virtual_ifaces(struct bcm_cfg80211 *cfg, bool rtnl_lock_reqd);
+void wl_cfg80211_cleanup_virtual_ifaces(struct bcm_cfg80211 *cfg, int rtnl_lock_reqd);
 struct wireless_dev * wl_cfg80211_add_if(struct bcm_cfg80211 *cfg, struct net_device *primary_ndev,
-	wl_iftype_t wl_iftype, const char *name, u8 *mac);
+	wl_iftype_t wl_iftype, const char *name, u8 *mac, int if_ctx);
 extern s32 wl_cfg80211_del_if(struct bcm_cfg80211 *cfg, struct net_device *primary_ndev,
-	struct wireless_dev *wdev, char *name);
+	struct wireless_dev *wdev, char *name, int if_ctx);
 #ifdef WL_STATIC_IF
 extern struct net_device *wl_cfg80211_register_static_if(struct bcm_cfg80211 *cfg,
 	u16 iftype, char *ifname);
@@ -2121,7 +2127,7 @@ extern struct wireless_dev *wl_cfg80211_get_wdev_from_ifname(struct bcm_cfg80211
 	const char *name);
 struct net_device* wl_get_netdev_by_name(struct bcm_cfg80211 *cfg, char *ifname);
 extern s32 wl_get_vif_macaddr(struct bcm_cfg80211 *cfg, u16 wl_iftype, u8 *mac_addr);
-extern s32 wl_release_vif_macaddr(struct bcm_cfg80211 *cfg, u8 *mac_addr, u16 wl_iftype);
+extern s32 wl_release_vif_macaddr(struct bcm_cfg80211 *cfg, const u8 *mac_addr, u16 wl_iftype);
 extern int wl_cfg80211_ifstats_counters(struct net_device *dev, wl_if_stats_t *if_stats);
 extern s32 wl_cfg80211_set_dbg_verbose(struct net_device *ndev, u32 level);
 extern s32 wl_cfg80211_check_for_nan_support(struct bcm_cfg80211 *cfg);

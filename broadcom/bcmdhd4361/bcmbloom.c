@@ -30,7 +30,11 @@
 #include <typedefs.h>
 #include <bcmdefs.h>
 
+#ifdef BCMDRIVER
+#include <linux/stdarg.h>
+#else
 #include <stdarg.h>
+#endif /* BCMDRIVER */
 
 #ifdef BCMDRIVER
 #include <osl.h>

@@ -78,6 +78,7 @@ struct p2p_info {
 	unsigned long status;
 	struct p2p_bss bss[P2PAPI_BSSCFG_MAX];
 	struct timer_list listen_timer;
+	struct bcm_cfg80211 *bcm_cfg;
 	wl_p2p_sched_t noa;
 	wl_p2p_ops_t ops;
 	wlc_ssid_t ssid;
@@ -194,10 +195,8 @@ enum wl_cfgp2p_status {
 	} while (0)
 #define INIT_TIMER(timer, func, duration, extra_delay)	\
 	do {				   \
-		init_timer(timer); \
-		timer->function = func; \
+		timer_setup(timer, func, 0); \
 		timer->expires = jiffies + msecs_to_jiffies(duration + extra_delay); \
-		timer->data = (unsigned long) cfg; \
 		add_timer(timer); \
 	} while (0);
 
@@ -245,7 +244,7 @@ enum wl_cfgp2p_status {
 #define P2P_ECSA_CNT 50
 
 extern void
-wl_cfgp2p_listen_expired(unsigned long data);
+wl_cfgp2p_listen_expired(struct timer_list *t);
 extern bool
 wl_cfgp2p_is_pub_action(void *frame, u32 frame_len);
 extern bool
@@ -404,8 +403,12 @@ wl_cfgp2p_start_p2p_device(struct wiphy *wiphy, struct wireless_dev *wdev);
 extern void
 wl_cfgp2p_stop_p2p_device(struct wiphy *wiphy, struct wireless_dev *wdev);
 
+/* Locks the caller of wl_cfgp2p_del_p2p_disc_if() already holds */
+#define WL_P2P_DISC_HELD_NONE		0
+#define WL_P2P_DISC_HELD_RTNL		1
+#define WL_P2P_DISC_HELD_RTNL_WIPHY	2
 extern int
-wl_cfgp2p_del_p2p_disc_if(struct wireless_dev *wdev, struct bcm_cfg80211 *cfg);
+wl_cfgp2p_del_p2p_disc_if(struct wireless_dev *wdev, struct bcm_cfg80211 *cfg, int held);
 
 #endif /* WL_CFG80211_P2P_DEV_IF */
 

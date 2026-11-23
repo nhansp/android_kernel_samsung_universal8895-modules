@@ -512,8 +512,8 @@ int wldev_set_country(
 		wl_cfg80211_scan_abort(cfg);
 
 		cspec.rev = revinfo;
-		strlcpy(cspec.country_abbrev, country_code, WLC_CNTRY_BUF_SZ);
-		strlcpy(cspec.ccode, country_code, WLC_CNTRY_BUF_SZ);
+		strscpy(cspec.country_abbrev, country_code, WLC_CNTRY_BUF_SZ);
+		strscpy(cspec.ccode, country_code, WLC_CNTRY_BUF_SZ);
 		dhd_get_customized_country_code(dev, (char *)&cspec.country_abbrev, &cspec);
 		error = wldev_iovar_setbuf(dev, "country", &cspec, sizeof(cspec),
 			smbuf, sizeof(smbuf), NULL);

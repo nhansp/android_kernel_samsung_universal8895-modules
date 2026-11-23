@@ -1071,7 +1071,7 @@ dhd_pktlog_pkts_write_file(dhd_pktlog_ring_t *ringbuf, struct file *w_pcap_fp, i
 		remain_len += (MAX_FRAME_LEN_80211_MGMT + DHD_PKTLOG_FATE_INFO_STR_LEN);
 
 		if (remain_len > alloc_len) {
-			ret = vfs_write(w_pcap_fp, report_buf, len, &w_pcap_fp->f_pos);
+			ret = kernel_write(w_pcap_fp, report_buf, len, &w_pcap_fp->f_pos);
 			if (ret < 0) {
 				DHD_ERROR(("%s(): write pkt data error, err = %d\n",
 					__FUNCTION__, ret));
@@ -1085,7 +1085,7 @@ dhd_pktlog_pkts_write_file(dhd_pktlog_ring_t *ringbuf, struct file *w_pcap_fp, i
 	}
 
 	if (len) {
-		ret = vfs_write(w_pcap_fp, report_buf, len, &w_pcap_fp->f_pos);
+		ret = kernel_write(w_pcap_fp, report_buf, len, &w_pcap_fp->f_pos);
 		if (ret < 0) {
 			DHD_ERROR(("%s(): write pkt data error, err = %d\n", __FUNCTION__, ret));
 			goto fail;
@@ -1110,7 +1110,6 @@ int
 dhd_pktlog_write_file(dhd_pub_t *dhdp)
 {
 	struct file *w_pcap_fp = NULL;
-	mm_segment_t old_fs;
 	uint32 file_mode;
 	char dump_path[128];
 	int ret = BCME_OK;
@@ -1145,9 +1144,6 @@ dhd_pktlog_write_file(dhd_pub_t *dhdp)
 
 	tx_pktlog_ring->start = FALSE;
 	rx_pktlog_ring->start = FALSE;
-
-	old_fs = get_fs();
-	set_fs(KERNEL_DS);
 
 	memset(dump_path, 0, sizeof(dump_path));
 	get_debug_dump_time(dhdp->debug_dump_time_pktlog_str);
@@ -1186,7 +1182,7 @@ dhd_pktlog_write_file(dhd_pub_t *dhdp)
 		goto fail;
 	}
 
-	ret = vfs_write(w_pcap_fp, (char*)&pcap_h, sizeof(pcap_h), &w_pcap_fp->f_pos);
+	ret = kernel_write(w_pcap_fp, (char*)&pcap_h, sizeof(pcap_h), &w_pcap_fp->f_pos);
 
 	if (ret < 0) {
 		DHD_ERROR(("%s(): write pcap head error, err = %d\n", __FUNCTION__, ret));
@@ -1225,8 +1221,6 @@ fail:
 	if (!IS_ERR(w_pcap_fp)) {
 		filp_close(w_pcap_fp, NULL);
 	}
-
-	set_fs(old_fs);
 
 	DHD_ERROR(("pktlog write file is end, err = %d\n", ret));
 
