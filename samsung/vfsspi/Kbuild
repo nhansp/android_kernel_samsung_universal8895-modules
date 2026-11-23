@@ -1,0 +1,5 @@
+# SPDX-License-Identifier: GPL-2.0-only
+
+ccflags-y += -DCONFIG_SECURE_OS_BOOSTER_API=1
+
+obj-m += vfsspi_exynos8895.o
