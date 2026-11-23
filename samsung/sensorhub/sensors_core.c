@@ -61,8 +61,7 @@ void sensors_remove_symlink(struct input_dev *inputdev)
 		return;
 	}
 
-	sysfs_delete_link(&symlink_dev->kobj, &inputdev->dev.kobj,
-				inputdev->name);
+	sysfs_remove_link(&symlink_dev->kobj, inputdev->name);
 }
 EXPORT_SYMBOL_GPL(sensors_remove_symlink);
 
