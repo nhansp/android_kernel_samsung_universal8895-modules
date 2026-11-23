@@ -1040,12 +1040,6 @@ static int s5p_mfc_probe(struct platform_device *pdev)
 	if (ret < 0)
 		goto err_res_irq;
 	dev->irq = ret;
-	ret = request_threaded_irq(dev->irq, s5p_mfc_top_half_irq, s5p_mfc_irq,
-				IRQF_ONESHOT, pdev->name, dev);
-	if (ret != 0) {
-		dev_err(&pdev->dev, "failed to install irq (%d)\n", ret);
-		goto err_req_irq;
-	}
 
 	mutex_init(&dev->mfc_mutex);
 
@@ -1194,10 +1188,19 @@ static int s5p_mfc_probe(struct platform_device *pdev)
 		goto err_alloc_debug;
 	}
 
+	/* Last: the handlers use everything set up above */
+	ret = request_threaded_irq(dev->irq, s5p_mfc_top_half_irq, s5p_mfc_irq,
+				   IRQF_ONESHOT, pdev->name, dev);
+	if (ret != 0) {
+		dev_err(&pdev->dev, "failed to install irq (%d)\n", ret);
+		goto err_req_irq;
+	}
+
 	pr_debug("%s--\n", __func__);
 	return 0;
 
 /* Deinit MFC if probe had failed */
+err_req_irq:
 err_alloc_debug:
 	g_mfc_dev = NULL;
 	destroy_workqueue(dev->butler_wq);
@@ -1220,8 +1223,6 @@ alloc_vdev_dec:
 	v4l2_device_unregister(&dev->v4l2_dev);
 err_v4l2_dev:
 	mutex_destroy(&dev->mfc_mutex);
-	free_irq(dev->irq, dev);
-err_req_irq:
 err_res_irq:
 	iounmap(dev->regs_base);
 err_ioremap:
@@ -1240,6 +1241,7 @@ static void s5p_mfc_remove(struct platform_device *pdev)
 
 	dev_dbg(&pdev->dev, "%s++\n", __func__);
 	v4l2_info(&dev->v4l2_dev, "Removing %s\n", pdev->name);
+	free_irq(dev->irq, dev);
 	timer_delete_sync(&dev->watchdog_timer);
 	flush_workqueue(dev->watchdog_wq);
 	destroy_workqueue(dev->watchdog_wq);
@@ -1254,7 +1256,6 @@ static void s5p_mfc_remove(struct platform_device *pdev)
 	v4l2_device_unregister(&dev->v4l2_dev);
 	mfc_debug(2, "Will now deinit HW\n");
 	s5p_mfc_deinit_hw(dev);
-	free_irq(dev->irq, dev);
 	mutex_destroy(&dev->mfc_mutex);
 	iounmap(dev->regs_base);
 	release_mem_region(dev->mfc_mem->start, resource_size(dev->mfc_mem));
