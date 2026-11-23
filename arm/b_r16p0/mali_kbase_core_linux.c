@@ -4221,15 +4221,16 @@ static int kbase_device_runtime_suspend(struct device *dev)
 	if (!kbdev)
 		return -ENODEV;
 
+/* MALI_SEC_INTEGRATION */
+	if (kbdev->pm.active_count > 0)
+		return -EBUSY;
+
+	/* a failed runtime suspend is not followed by a resume */
 #if defined(CONFIG_MALI_DEVFREQ) && \
 		(LINUX_VERSION_CODE >= KERNEL_VERSION(3, 8, 0))
 	if (kbdev->inited_subsys & inited_devfreq)
 		devfreq_suspend_device(kbdev->devfreq);
 #endif
-
-/* MALI_SEC_INTEGRATION */
-	if (kbdev->pm.active_count > 0)
-		return -EBUSY;
 
 	if (kbdev->pm.backend.callback_power_runtime_off) {
 		kbdev->pm.backend.callback_power_runtime_off(kbdev);
