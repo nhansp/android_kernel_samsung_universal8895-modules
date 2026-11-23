@@ -134,6 +134,7 @@ static int exynos8895_platform_init(struct kbase_device *kbdev)
 
 	gpu->kbdev = kbdev;
 	mutex_init(&gpu->lock);
+	mutex_init(&gpu->sysfs_lock);
 
 	gpu->clk = kbdev->clock;
 	if (!gpu->clk) {
@@ -165,6 +166,14 @@ static int exynos8895_platform_init(struct kbase_device *kbdev)
 	mm_qos_add_request(&gpu->cl0_min_req, MM_QOS_CL0_MIN, 0);
 	mm_qos_add_request(&gpu->cl1_max_req, MM_QOS_CL1_MAX, INT_MAX);
 
+	ret = exynos8895_gpu_create_sysfs(gpu);
+	if (ret) {
+		mm_qos_remove_request(&gpu->cl1_max_req);
+		mm_qos_remove_request(&gpu->cl0_min_req);
+		exynos_bus_qos_remove_request(&gpu->mif_req);
+		return ret;
+	}
+
 	dev_info(dev, "exynos8895: g3d %lu Hz via ACPM idx %d, %d OPPs, autosuspend %u ms\n",
 		 clk_get_rate(gpu->clk), EXYNOS8895_CLK_ACPM_DVFS_G3D,
 		 dev_pm_opp_get_opp_count(dev), gpu->autosuspend_ms);
@@ -177,6 +186,7 @@ static void exynos8895_platform_term(struct kbase_device *kbdev)
 	struct exynos8895_gpu *gpu = kbdev->platform_context;
 
 	if (gpu) {
+		exynos8895_gpu_delete_sysfs(gpu);
 		mm_qos_remove_request(&gpu->cl1_max_req);
 		mm_qos_remove_request(&gpu->cl0_min_req);
 		exynos_bus_qos_remove_request(&gpu->mif_req);
