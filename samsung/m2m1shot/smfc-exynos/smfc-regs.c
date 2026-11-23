@@ -17,7 +17,7 @@
 #include <media/v4l2-device.h>
 #include <media/v4l2-mem2mem.h>
 #include <media/videobuf2-core.h>
-#include <media/videobuf2-ion.h>
+#include <media/videobuf2-dma-contig.h>
 
 #include "smfc.h"
 
@@ -270,14 +270,11 @@ void smfc_hwconfigure_tables_for_decompression(struct smfc_ctx *ctx)
 	__raw_writel(tblsel, base + REG_MAIN_TABLE_SELECT);
 }
 
-#ifdef CONFIG_VIDEOBUF2_ION
-static void smfc_hwconfigure_image_base(struct smfc_ctx *ctx,
+static int smfc_hwconfigure_image_base(struct smfc_ctx *ctx,
 					struct vb2_buffer *vb2buf,
 					bool thumbnail)
 {
-	void *cookie;
 	dma_addr_t addr;
-	int ret;
 	unsigned int i;
 	unsigned int num_buffers = ctx->img_fmt->num_buffers;
 	bool multiplane = (num_buffers == ctx->img_fmt->num_planes);
@@ -286,10 +283,14 @@ static void smfc_hwconfigure_image_base(struct smfc_ctx *ctx,
 	if (multiplane) {
 		/* Note that this includes a single-plane format such as YUYV */
 		for (i = 0; i < num_buffers; i++) {
-			cookie = vb2_plane_cookie(vb2buf,
+			addr = vb2_dma_contig_plane_dma_addr(vb2buf,
 					thumbnail ? i + num_buffers : i);
-			ret = vb2_ion_dma_address(cookie, &addr);
-			BUG_ON(ret != 0);
+			if (!addr) {
+				dev_err(ctx->smfc->dev,
+					"No DMA address for image plane %u\n",
+					i);
+				return -ENODEV;
+			}
 
 			__raw_writel((u32)addr,
 				ctx->smfc->reg + REG_IMAGE_BASE(off, i));
@@ -297,9 +298,13 @@ static void smfc_hwconfigure_image_base(struct smfc_ctx *ctx,
 	} else {
 		u32 width = thumbnail ? ctx->thumb_width : ctx->width;
 		u32 height = thumbnail ? ctx->thumb_height : ctx->height;
-		cookie = vb2_plane_cookie(vb2buf, thumbnail ? 1 : 0);
-		ret = vb2_ion_dma_address(cookie, &addr);
-		BUG_ON(ret != 0);
+		addr = vb2_dma_contig_plane_dma_addr(vb2buf,
+						     thumbnail ? 1 : 0);
+		if (!addr) {
+			dev_err(ctx->smfc->dev,
+				"No DMA address for image buffer\n");
+			return -ENODEV;
+		}
 
 		for (i = 0; i < ctx->img_fmt->num_planes; i++) {
 			__raw_writel((u32)addr,
@@ -307,28 +312,30 @@ static void smfc_hwconfigure_image_base(struct smfc_ctx *ctx,
 			addr += (width * height * ctx->img_fmt->bpp_pix[i]) / 8;
 		}
 	}
+
+	return 0;
 }
 
-static u32 smfc_hwconfigure_jpeg_base(struct smfc_ctx *ctx,
+static int smfc_hwconfigure_jpeg_base(struct smfc_ctx *ctx,
 					struct vb2_buffer *vb2buf,
-					u32 offset, bool thumbnail)
+					u32 offset, bool thumbnail,
+					u32 *stream_address)
 {
-	void *cookie;
 	dma_addr_t addr;
-	int ret;
 	u32 off = thumbnail ? REG_SEC_JPEG_BASE : REG_MAIN_JPEG_BASE;
 
-	cookie = vb2_plane_cookie(vb2buf, thumbnail ? 1 : 0);
-	ret = vb2_ion_dma_address(cookie, &addr);
-	BUG_ON(ret != 0);
+	addr = vb2_dma_contig_plane_dma_addr(vb2buf, thumbnail ? 1 : 0);
+	if (!addr) {
+		dev_err(ctx->smfc->dev, "No DMA address for stream buffer\n");
+		return -ENODEV;
+	}
 
 	addr += offset;
 	__raw_writel((u32)addr, ctx->smfc->reg + off);
-	return (u32)addr;
+	*stream_address = (u32)addr;
+
+	return 0;
 }
-#else /* !CONFIG_VIDEOBUF2_ION */
-#error Current SMFC driver relies on videobuf2-ION
-#endif
 
 /* [hfactor - 1][vfactor - 1]: 444, 422V, 422, 420 */
 static u32 smfc_get_jpeg_format(unsigned int hfactor, unsigned int vfactor)
@@ -345,13 +352,14 @@ static u32 smfc_get_jpeg_format(unsigned int hfactor, unsigned int vfactor)
 	return 2 << 24; /* default: YUV422 */
 }
 
-void smfc_hwconfigure_2nd_image(struct smfc_ctx *ctx, bool hwfc_enabled)
+int smfc_hwconfigure_2nd_image(struct smfc_ctx *ctx, bool hwfc_enabled)
 {
-	struct vb2_buffer *vb2buf_img, *vb2buf_jpg;
-	u32 format;
+	struct vb2_v4l2_buffer *vb2buf_img, *vb2buf_jpg;
+	u32 format, stream_address;
+	int ret;
 
 	if (!(ctx->flags & SMFC_CTX_COMPRESS))
-		return;
+		return 0;
 
 	__raw_writel(ctx->thumb_width | (ctx->thumb_height << 16),
 			ctx->smfc->reg + REG_SEC_IMAGE_SIZE);
@@ -359,12 +367,17 @@ void smfc_hwconfigure_2nd_image(struct smfc_ctx *ctx, bool hwfc_enabled)
 	vb2buf_img = v4l2_m2m_next_src_buf(ctx->fh.m2m_ctx);
 	vb2buf_jpg = v4l2_m2m_next_dst_buf(ctx->fh.m2m_ctx);
 
-	smfc_hwconfigure_image_base(ctx, vb2buf_img, true);
+	ret = smfc_hwconfigure_image_base(ctx, &vb2buf_img->vb2_buf, true);
+	if (ret)
+		return ret;
 	/*
 	 * secondary image stream base is not required because there is no
 	 * MAX_COMPRESSED_SIZE register for the secondary image
 	 */
-	smfc_hwconfigure_jpeg_base(ctx, vb2buf_jpg, 0, true);
+	ret = smfc_hwconfigure_jpeg_base(ctx, &vb2buf_jpg->vb2_buf, 0, true,
+					 &stream_address);
+	if (ret)
+		return ret;
 
 	format = ctx->img_fmt->regcfg;
 	/*
@@ -379,17 +392,20 @@ void smfc_hwconfigure_2nd_image(struct smfc_ctx *ctx, bool hwfc_enabled)
 		format |= smfc_get_jpeg_format(2, 2);
 
 	__raw_writel(format, ctx->smfc->reg + REG_SEC_IMAGE_FORMAT);
+
+	return 0;
 }
 
-void smfc_hwconfigure_image(struct smfc_ctx *ctx,
+int smfc_hwconfigure_image(struct smfc_ctx *ctx,
 			    unsigned int hfactor, unsigned int vfactor)
 {
-	struct vb2_buffer *vb2buf_img, *vb2buf_jpg;
+	struct vb2_v4l2_buffer *vb2buf_img, *vb2buf_jpg;
 	u32 stream_address;
 	u32 format = ctx->img_fmt->regcfg;
 	unsigned char num_plane = ctx->img_fmt->num_planes;
 	u32 burstlen = 1 << ctx->smfc->devdata->burstlenth_bits;
 	unsigned int i;
+	int ret;
 
 	if (!(ctx->flags & SMFC_CTX_COMPRESS)) {
 		__raw_writel(ctx->width | (ctx->height << 16),
@@ -422,12 +438,17 @@ void smfc_hwconfigure_image(struct smfc_ctx *ctx,
 					ctx->img_fmt->chroma_vfactor));
 	}
 
-	smfc_hwconfigure_image_base(ctx, vb2buf_img, false);
+	ret = smfc_hwconfigure_image_base(ctx, &vb2buf_img->vb2_buf, false);
+	if (ret)
+		return ret;
 	__raw_writel(format, ctx->smfc->reg + REG_MAIN_IMAGE_FORMAT);
-	stream_address = smfc_hwconfigure_jpeg_base(ctx, vb2buf_jpg,
-						    ctx->offset_of_sos, false);
+	ret = smfc_hwconfigure_jpeg_base(ctx, &vb2buf_jpg->vb2_buf,
+					 ctx->offset_of_sos, false,
+					 &stream_address);
+	if (ret)
+		return ret;
 	if (!(ctx->flags & SMFC_CTX_COMPRESS)) {
-		u32 streamsize = vb2_plane_size(vb2buf_jpg, 0);
+		u32 streamsize = vb2_plane_size(&vb2buf_jpg->vb2_buf, 0);
 
 		streamsize -= ctx->offset_of_sos;
 		streamsize += stream_address & SMFC_ADDR_ALIGN_MASK(burstlen);
@@ -435,6 +456,8 @@ void smfc_hwconfigure_image(struct smfc_ctx *ctx,
 		streamsize >>= ctx->smfc->devdata->burstlenth_bits;
 		__raw_writel(streamsize, ctx->smfc->reg + REG_MAIN_STREAM_SIZE);
 	}
+
+	return 0;
 }
 
 void smfc_hwconfigure_start(struct smfc_ctx *ctx,

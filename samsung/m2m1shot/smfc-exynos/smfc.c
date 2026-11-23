@@ -18,11 +18,12 @@
 #include <linux/pm_runtime.h>
 #include <linux/slab.h>
 #include <linux/mutex.h>
+#include <linux/timer.h>
 #include <linux/wait.h>
-#include <linux/exynos_iovmm.h>
+#include <linux/dma-buf.h>
 
 #include <media/videobuf2-core.h>
-#include <media/videobuf2-ion.h>
+#include <media/videobuf2-dma-contig.h>
 
 #include "smfc.h"
 #include "smfc-sync.h"
@@ -57,12 +58,14 @@ static irqreturn_t exynos_smfc_irq_handler(int irq, void *priv)
 
 	if (!(smfc->flags & SMFC_DEV_RUNNING)) {
 		smfc_dump_registers(smfc);
-		BUG();
+		dev_err(smfc->dev, "Spurious SMFC interrupt while idle\n");
+		spin_unlock(&smfc->flag_lock);
+		return IRQ_HANDLED;
 	}
 
 	suspending = !!(smfc->flags & SMFC_DEV_SUSPENDING);
 	if (!!(smfc->flags & SMFC_DEV_OTF_EMUMODE))
-		del_timer(&smfc->timer);
+		timer_delete(&smfc->timer);
 	smfc->flags &= ~(SMFC_DEV_RUNNING | SMFC_DEV_OTF_EMUMODE);
 
 	spin_unlock(&smfc->flag_lock);
@@ -94,8 +97,9 @@ static irqreturn_t exynos_smfc_irq_handler(int irq, void *priv)
 							thumb_streamsize);
 			}
 
-			vb->timestamp.tv_usec =
-				(__u32)ktime_us_delta(ktime, ctx->ktime_beg);
+			/* the vendor driver reports the job latency here */
+			vb->vb2_buf.timestamp =
+				ktime_to_ns(ktime_sub(ktime, ctx->ktime_beg));
 			v4l2_m2m_buf_done(vb, state);
 
 			if ((!!(ctx->flags & SMFC_CTX_COMPRESS)) && ctx->enable_hwfc) {
@@ -127,9 +131,9 @@ static irqreturn_t exynos_smfc_irq_handler(int irq, void *priv)
 	return IRQ_HANDLED;
 }
 
-static void smfc_timedout_handler(unsigned long arg)
+static void smfc_timedout_handler(struct timer_list *t)
 {
-	struct smfc_dev *smfc = (struct smfc_dev *)arg;
+	struct smfc_dev *smfc = timer_container_of(smfc, t, timer);
 	struct smfc_ctx *ctx;
 	unsigned long flags;
 	bool suspending;
@@ -142,7 +146,10 @@ static void smfc_timedout_handler(unsigned long arg)
 	}
 
 	/* timer is enabled only when HWFC is enabled */
-	BUG_ON(!(smfc->flags & SMFC_DEV_OTF_EMUMODE));
+	if (WARN_ON_ONCE(!(smfc->flags & SMFC_DEV_OTF_EMUMODE))) {
+		spin_unlock_irqrestore(&smfc->flag_lock, flags);
+		return;
+	}
 	suspending = !!(smfc->flags & SMFC_DEV_SUSPENDING);
 	smfc->flags |= SMFC_DEV_TIMEDOUT; /* indicate the timedout is handled */
 	smfc->flags &= ~(SMFC_DEV_RUNNING | SMFC_DEV_OTF_EMUMODE);
@@ -182,9 +189,9 @@ static void smfc_timedout_handler(unsigned long arg)
 
 
 static int smfc_vb2_queue_setup(struct vb2_queue *vq,
-		const void *parg, unsigned int *num_buffers,
+		unsigned int *num_buffers,
 		unsigned int *num_planes, unsigned int sizes[],
-		void *alloc_ctxs[])
+		struct device *alloc_devs[])
 {
 	struct smfc_ctx *ctx = vb2_get_drv_priv(vq);
 
@@ -203,10 +210,10 @@ static int smfc_vb2_queue_setup(struct vb2_queue *vq,
 		 */
 		sizes[0] = PAGE_SIZE;
 		*num_planes = 1;
-		alloc_ctxs[0] = ctx->smfc->vb2_alloc_ctx;
+		alloc_devs[0] = ctx->smfc->dev;
 		if (!!(ctx->flags & SMFC_CTX_B2B_COMPRESS)) {
 			sizes[1] = PAGE_SIZE;
-			alloc_ctxs[1] = ctx->smfc->vb2_alloc_ctx;
+			alloc_devs[1] = ctx->smfc->dev;
 			(*num_planes)++;
 		}
 	} else {
@@ -215,7 +222,7 @@ static int smfc_vb2_queue_setup(struct vb2_queue *vq,
 		for (i = 0; i < *num_planes; i++) {
 			sizes[i] = ctx->width * ctx->height;
 			sizes[i] = (sizes[i] * ctx->img_fmt->bpp_buf[i]) / 8;
-			alloc_ctxs[i] = ctx->smfc->vb2_alloc_ctx;
+			alloc_devs[i] = ctx->smfc->dev;
 		}
 
 		if (!!(ctx->flags & SMFC_CTX_B2B_COMPRESS)) {
@@ -226,7 +233,7 @@ static int smfc_vb2_queue_setup(struct vb2_queue *vq,
 				sizes[idx] *= ctx->thumb_height;
 				sizes[idx] *= ctx->img_fmt->bpp_buf[i];
 				sizes[idx] /= 8;
-				alloc_ctxs[idx] = ctx->smfc->vb2_alloc_ctx;
+				alloc_devs[idx] = ctx->smfc->dev;
 			}
 
 			*num_planes *= 2;
@@ -236,6 +243,28 @@ static int smfc_vb2_queue_setup(struct vb2_queue *vq,
 	return 0;
 }
 
+/* vb2_dma_contig syncs MMAP and USERPTR planes itself, but not imported ones */
+static void smfc_vb2_bufs_sync(struct vb2_buffer *vb, bool before_device)
+{
+	unsigned int i;
+	enum dma_data_direction dir = V4L2_TYPE_IS_OUTPUT(vb->vb2_queue->type) ?
+					DMA_TO_DEVICE : DMA_FROM_DEVICE;
+
+	if (vb->memory != VB2_MEMORY_DMABUF)
+		return;
+
+	for (i = 0; i < vb->num_planes; i++) {
+		struct dma_buf *dbuf = vb->planes[i].dbuf;
+
+		if (!dbuf)
+			continue;
+		if (before_device)
+			dma_buf_end_cpu_access(dbuf, dir);
+		else
+			dma_buf_begin_cpu_access(dbuf, dir);
+	}
+}
+
 static int smfc_vb2_buf_prepare(struct vb2_buffer *vb)
 {
 	struct smfc_ctx *ctx = vb2_get_drv_priv(vb->vb2_queue);
@@ -243,7 +272,6 @@ static int smfc_vb2_buf_prepare(struct vb2_buffer *vb)
 	unsigned int i;
 
 	bool clean_cache = !(v4l2_buf->flags & V4L2_BUF_FLAG_NO_CACHE_CLEAN);
-	bool full_clean = false;
 
 	/* output buffers should have valid bytes_used */
 	if (V4L2_TYPE_IS_OUTPUT(vb->vb2_queue->type)) {
@@ -295,18 +323,11 @@ static int smfc_vb2_buf_prepare(struct vb2_buffer *vb)
 				planebits *= ctx->img_fmt->bpp_buf[i];
 				vb2_set_plane_payload(vb, i, planebits / 8);
 			}
-		} else {
-			/*
-			 * capture buffer of compression should be fully
-			 * invalidated
-			 */
-			full_clean = true;
 		}
 	}
 
 	if (clean_cache)
-		return (full_clean) ?
-			vb2_ion_buf_prepare(vb) : vb2_ion_buf_prepare_exact(vb);
+		smfc_vb2_bufs_sync(vb, true);
 	return 0;
 }
 
@@ -314,24 +335,12 @@ static void smfc_vb2_buf_finish(struct vb2_buffer *vb)
 {
 	struct vb2_v4l2_buffer *v4l2_buf = to_vb2_v4l2_buffer(vb);
 	if (!(v4l2_buf->flags & V4L2_BUF_FLAG_NO_CACHE_INVALIDATE))
-
-		vb2_ion_buf_finish_exact(vb);
+		smfc_vb2_bufs_sync(vb, false);
 }
 
 static void smfc_vb2_buf_cleanup(struct vb2_buffer *vb)
 {
-	struct smfc_ctx *ctx = vb2_get_drv_priv(vb->vb2_queue);
-	if (!V4L2_TYPE_IS_OUTPUT(vb->vb2_queue->type) &&
-			!!(ctx->flags & SMFC_CTX_COMPRESS)) {
-		/*
-		 * clean the APP segments written by CPU in front
-		 * of the start of the JPEG stream to be written by H/W
-		 * for the later use of this buffer.
-		 */
-		void *cookie = vb2_plane_cookie(vb, 0);
-		size_t size = (size_t)vb2_ion_buffer_offset(cookie);
-		vb2_ion_sync_for_device(cookie, 0, size, DMA_TO_DEVICE);
-	}
+	/* the APP segments written by the CPU are synced at QBUF time */
 }
 
 static void smfc_vb2_buf_queue(struct vb2_buffer *vb)
@@ -344,15 +353,15 @@ static void smfc_vb2_buf_queue(struct vb2_buffer *vb)
 
 static void smfc_vb2_stop_streaming(struct vb2_queue *vq)
 {
-	struct vb2_buffer *vb;
+	struct vb2_v4l2_buffer *vb;
 	struct smfc_ctx *ctx = vb2_get_drv_priv(vq);
 
 	if (V4L2_TYPE_IS_OUTPUT(vq->type)) {
 		while ((vb = v4l2_m2m_src_buf_remove(ctx->fh.m2m_ctx)))
-			vb2_buffer_done(vb, VB2_BUF_STATE_ERROR);
+			vb2_buffer_done(&vb->vb2_buf, VB2_BUF_STATE_ERROR);
 	} else {
 		while ((vb = v4l2_m2m_dst_buf_remove(ctx->fh.m2m_ctx)))
-			vb2_buffer_done(vb, VB2_BUF_STATE_ERROR);
+			vb2_buffer_done(&vb->vb2_buf, VB2_BUF_STATE_ERROR);
 	}
 
 	vb2_wait_for_all_buffers(vq);
@@ -379,7 +388,7 @@ static int smfc_queue_init(void *priv, struct vb2_queue *src_vq,
 	src_vq->type = V4L2_BUF_TYPE_VIDEO_OUTPUT;
 	src_vq->io_modes = VB2_MMAP | VB2_USERPTR | VB2_DMABUF;
 	src_vq->ops = &smfc_vb2_ops;
-	src_vq->mem_ops = &vb2_ion_memops;
+	src_vq->mem_ops = &vb2_dma_contig_memops;
 	src_vq->drv_priv = ctx;
 	src_vq->buf_struct_size = sizeof(struct v4l2_m2m_buffer);
 	src_vq->timestamp_flags = V4L2_BUF_FLAG_TIMESTAMP_COPY;
@@ -393,7 +402,7 @@ static int smfc_queue_init(void *priv, struct vb2_queue *src_vq,
 	dst_vq->type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
 	dst_vq->io_modes = VB2_MMAP | VB2_USERPTR | VB2_DMABUF;
 	dst_vq->ops = &smfc_vb2_ops;
-	dst_vq->mem_ops = &vb2_ion_memops;
+	dst_vq->mem_ops = &vb2_dma_contig_memops;
 	dst_vq->drv_priv = ctx;
 	dst_vq->buf_struct_size = sizeof(struct v4l2_m2m_buffer);
 	dst_vq->timestamp_flags = V4L2_BUF_FLAG_TIMESTAMP_COPY;
@@ -421,6 +430,7 @@ int exynos_smfc_wait_done(bool enable_hwfc)
 
 	return ret;
 }
+EXPORT_SYMBOL_GPL(exynos_smfc_wait_done);
 
 static int exynos_smfc_open(struct file *filp)
 {
@@ -451,7 +461,7 @@ static int exynos_smfc_open(struct file *filp)
 		goto err_m2m_ctx_init;
 	}
 
-	v4l2_fh_add(&ctx->fh);
+	v4l2_fh_add(&ctx->fh, filp);
 
 	filp->private_data = &ctx->fh;
 
@@ -493,7 +503,7 @@ err_clk:
 err_m2m_ctx_init:
 	v4l2_ctrl_handler_free(&ctx->v4l2_ctrlhdlr);
 err_control:
-	v4l2_fh_del(&ctx->fh);
+	v4l2_fh_del(&ctx->fh, filp);
 	v4l2_fh_exit(&ctx->fh);
 	kfree(ctx);
 	return ret;
@@ -505,7 +515,7 @@ static int exynos_smfc_release(struct file *filp)
 
 	v4l2_m2m_ctx_release(ctx->fh.m2m_ctx);
 	v4l2_ctrl_handler_free(&ctx->v4l2_ctrlhdlr);
-	v4l2_fh_del(&ctx->fh);
+	v4l2_fh_del(&ctx->fh, filp);
 	v4l2_fh_exit(&ctx->fh);
 
 	if (!IS_ERR(ctx->smfc->clk_gate)) {
@@ -593,10 +603,15 @@ static void smfc_m2m_device_run(void *priv)
 	if (!!(ctx->flags & SMFC_CTX_COMPRESS)) {
 		smfc_hwconfigure_tables(ctx, quality_factor,
 					ctx->ctrl_qtbl2->p_cur.p_u8);
-		smfc_hwconfigure_image(ctx, chroma_hfactor, chroma_vfactor);
+		ret = smfc_hwconfigure_image(ctx, chroma_hfactor,
+					     chroma_vfactor);
+		if (ret)
+			goto err_hwfc;
 		if (!!(ctx->flags & SMFC_CTX_B2B_COMPRESS)) {
 			smfc_hwconfigure_2nd_tables(ctx, thumb_quality_factor);
-			smfc_hwconfigure_2nd_image(ctx, !!enable_hwfc);
+			ret = smfc_hwconfigure_2nd_image(ctx, !!enable_hwfc);
+			if (ret)
+				goto err_hwfc;
 		}
 	} else {
 		if ((ctx->stream_width != ctx->width) ||
@@ -607,8 +622,10 @@ static void smfc_m2m_device_run(void *priv)
 			goto err_invalid_size;
 		}
 
-		smfc_hwconfigure_image(ctx,
+		ret = smfc_hwconfigure_image(ctx,
 				ctx->stream_hfactor, ctx->stream_vfactor);
+		if (ret)
+			goto err_hwfc;
 		smfc_hwconfigure_tables_for_decompression(ctx);
 	}
 
@@ -702,6 +719,11 @@ static int smfc_init_v4l2(struct device *dev, struct smfc_dev *smfc)
 	smfc->videodev->lock		= &smfc->video_device_mutex;
 	smfc->videodev->vfl_dir		= VFL_DIR_M2M;
 	smfc->videodev->v4l2_dev	= &smfc->v4l2_dev;
+	/* the vendor capability bits alias VIDEO_OUTPUT_MPLANE and VIDEO_M2M_MPLANE */
+	smfc->videodev->device_caps = smfc->devdata->device_caps |
+					V4L2_CAP_STREAMING;
+	/* VIDIOC_S_CROP on OUTPUT sets the source crop, as in the vendor driver */
+	set_bit(V4L2_FL_QUIRK_INVERTED_CROP, &smfc->videodev->flags);
 
 	video_set_drvdata(smfc->videodev, smfc);
 
@@ -713,7 +735,7 @@ static int smfc_init_v4l2(struct device *dev, struct smfc_dev *smfc)
 	}
 
 	/* TODO: promote the magic number 12 in public */
-	ret = video_register_device(smfc->videodev, VFL_TYPE_GRABBER, 12);
+	ret = video_register_device(smfc->videodev, VFL_TYPE_VIDEO, 12);
 	if (ret < 0) {
 		dev_err(dev, "Failed(%d) to register video_device[%d]\n",
 			ret, 12);
@@ -791,18 +813,6 @@ err_clk:
 	return ret;
 }
 
-static int __attribute__((unused)) smfc_iommu_fault_handler(
-		struct iommu_domain *domain, struct device *dev,
-		unsigned long fault_addr, int fault_flags, void *token)
-{
-	struct smfc_dev *smfc = token;
-
-	if (smfc->flags & SMFC_DEV_RUNNING)
-		smfc_dump_registers(smfc);
-
-	return 0;
-}
-
 static const struct smfc_device_data smfc_8890_data = {
 	.device_caps = V4L2_CAP_EXYNOS_JPEG_B2B_COMPRESSION
 			| V4L2_CAP_EXYNOS_JPEG_HWFC
@@ -840,6 +850,9 @@ static const struct of_device_id exynos_smfc_match[] = {
 		.compatible = "samsung,exynos-jpeg",
 		.data = &smfc_3475_data,
 	}, {
+		.compatible = "samsung,exynos8895-jpeg",
+		.data = &smfc_8890_data,
+	}, {
 		.compatible = "samsung,exynos8890-jpeg",
 		.data = &smfc_8890_data,
 	}, {
@@ -861,7 +874,7 @@ static int exynos_smfc_probe(struct platform_device *pdev)
 	struct smfc_dev *smfc;
 	struct resource *res;
 	const struct of_device_id *of_id;
-	int ret;
+	int irq, ret;
 
 	atomic_set(&smfc_hwfc_state, SMFC_HWFC_STANDBY);
 	init_waitqueue_head(&smfc_hwfc_sync_wq);
@@ -882,13 +895,13 @@ static int exynos_smfc_probe(struct platform_device *pdev)
 	of_id = of_match_node(exynos_smfc_match, pdev->dev.of_node);
 	smfc->devdata = of_id->data;
 
-	res = platform_get_resource(pdev, IORESOURCE_IRQ, 0);
-	if (res == NULL) {
-		dev_err(&pdev->dev, "Failed to get IRQ resource");
-		return -ENOENT;
+	irq = platform_get_irq(pdev, 0);
+	if (irq < 0) {
+		dev_err(&pdev->dev, "Failed to get IRQ resource: %d", irq);
+		return irq;
 	}
 
-	ret = devm_request_irq(&pdev->dev, res->start, exynos_smfc_irq_handler,
+	ret = devm_request_irq(&pdev->dev, irq, exynos_smfc_irq_handler,
 				0, pdev->name, smfc);
 	if (ret) {
 		dev_err(&pdev->dev, "Failed to install IRQ handler");
@@ -908,40 +921,19 @@ static int exynos_smfc_probe(struct platform_device *pdev)
 
 	pm_runtime_enable(&pdev->dev);
 
-	if (!of_property_read_u32(pdev->dev.of_node, "smfc,int_qos_minlock",
-				(u32 *)&smfc->qosreq_int_level)) {
-		if (smfc->qosreq_int_level > 0) {
-			pm_qos_add_request(&smfc->qosreq_int,
-					PM_QOS_DEVICE_THROUGHPUT, 0);
-			dev_info(&pdev->dev, "INT Min.Lock Freq. = %d\n",
-					smfc->qosreq_int_level);
-		} else {
-			smfc->qosreq_int_level = 0;
-		}
-	}
-
 	ret = smfc_find_hw_version(&pdev->dev, smfc);
-	if (ret < 0)
+	if (ret < 0) {
+		pm_runtime_disable(&pdev->dev);
 		return ret;
+	}
 
 	ret = smfc_init_v4l2(&pdev->dev, smfc);
-	if (ret < 0)
+	if (ret < 0) {
+		pm_runtime_disable(&pdev->dev);
 		return ret;
-
-	iovmm_set_fault_handler(&pdev->dev, smfc_iommu_fault_handler, smfc);
-
-	ret = iovmm_activate(&pdev->dev);
-	if (ret < 0)
-		return ret;
-
-	smfc->vb2_alloc_ctx = vb2_ion_create_context(&pdev->dev, SZ_4K,
-					VB2ION_CTX_VMCONTIG | VB2ION_CTX_IOMMU);
-	if (!smfc->vb2_alloc_ctx) {
-		dev_err(&pdev->dev, "Failed to allocate vb2-ion context");
-		return -ENOMEM;
 	}
 
-	setup_timer(&smfc->timer, smfc_timedout_handler, (unsigned long)smfc);
+	timer_setup(&smfc->timer, smfc_timedout_handler, 0);
 
 	platform_set_drvdata(pdev, smfc);
 
@@ -961,15 +953,15 @@ static void smfc_deinit_clock(struct smfc_dev *smfc)
 		clk_put(smfc->clk_gate);
 }
 
-static int exynos_smfc_remove(struct platform_device *pdev)
+static void exynos_smfc_remove(struct platform_device *pdev)
 {
 	struct smfc_dev *smfc = platform_get_drvdata(pdev);
 
-	pm_qos_remove_request(&smfc->qosreq_int);
-	vb2_ion_destroy_context(smfc->vb2_alloc_ctx);
+	timer_delete_sync(&smfc->timer);
+	video_unregister_device(smfc->videodev);
+	v4l2_m2m_release(smfc->m2mdev);
+	pm_runtime_disable(&pdev->dev);
 	smfc_deinit_clock(smfc);
-
-	return 0;
 }
 
 #ifdef CONFIG_PM_SLEEP
@@ -1034,8 +1026,6 @@ static void exynos_smfc_shutdown(struct platform_device *pdev)
 		smfc->flags |= SMFC_DEV_SUSPENDING;
 	spin_unlock_irqrestore(&smfc->flag_lock, flags);
 	wait_event(smfc_suspend_wq, !(smfc->flags & SMFC_DEV_SUSPENDING));
-
-	iovmm_deactivate(&pdev->dev);
 }
 
 static const struct dev_pm_ops exynos_smfc_pm_ops = {
@@ -1060,3 +1050,4 @@ module_platform_driver(exynos_smfc_driver);
 MODULE_AUTHOR("Cho KyongHo <pullip.cho@samsung.com>");
 MODULE_DESCRIPTION("Exynos Still MFC(JPEG) V4L2 Driver");
 MODULE_LICENSE("GPL");
+MODULE_IMPORT_NS("DMA_BUF");

@@ -1,0 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0-only
+
+smfc-exynos-y := smfc.o smfc-regs.o smfc-stream-parser.o smfc-v4l2-ioctls.o
+obj-m += smfc-exynos.o

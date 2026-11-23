@@ -13,7 +13,6 @@
 #define _MEDIA_EXYNOS_SMFC_H_
 
 #include <linux/ktime.h>
-#include <linux/pm_qos.h>
 #include <media/v4l2-ioctl.h>
 #include <media/v4l2-device.h>
 #include <media/v4l2-mem2mem.h>
@@ -104,12 +103,8 @@ struct smfc_dev {
 	u32 hwver;
 	u32 flags;
 
-	void *vb2_alloc_ctx;
-
 	struct clk *clk_gate;
 	struct clk *clk_gate2; /* available if clk_gate is valid */
-	struct pm_qos_request qosreq_int;
-	s32 qosreq_int_level;
 
 };
 
@@ -232,12 +227,12 @@ int smfc_parse_jpeg_header(struct smfc_ctx *ctx, struct vb2_buffer *vb);
 void smfc_hwconfigure_tables(struct smfc_ctx *ctx,
 			     unsigned int qfactor, const u8 qtbl[]);
 void smfc_hwconfigure_tables_for_decompression(struct smfc_ctx *ctx);
-void smfc_hwconfigure_image(struct smfc_ctx *ctx,
+int smfc_hwconfigure_image(struct smfc_ctx *ctx,
 			    unsigned int hfactor, unsigned int vfactor);
 void smfc_hwconfigure_start(struct smfc_ctx *ctx,
 			    unsigned int rst_int, bool hwfc_en);
 void smfc_hwconfigure_2nd_tables(struct smfc_ctx *ctx, unsigned int qfactor);
-void smfc_hwconfigure_2nd_image(struct smfc_ctx *ctx, bool hwfc_enabled);
+int smfc_hwconfigure_2nd_image(struct smfc_ctx *ctx, bool hwfc_enabled);
 bool smfc_hwstatus_okay(struct smfc_dev *smfc, struct smfc_ctx *ctx);
 void smfc_hwconfigure_reset(struct smfc_dev *smfc);
 void smfc_dump_registers(struct smfc_dev *smfc);
