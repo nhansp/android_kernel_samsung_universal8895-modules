@@ -24,11 +24,11 @@
 #include <linux/input.h>
 #include <linux/interrupt.h>
 #include <linux/workqueue.h>
-#include <linux/gpio.h>
+#include <linux/gpio/consumer.h>
 #ifdef CONFIG_HAS_EARLYSUSPEND
 #include <linux/earlysuspend.h>
 #endif
-#include <linux/wakelock.h>
+#include <linux/device.h>
 #include <linux/miscdevice.h>
 #include <linux/delay.h>
 #include <linux/firmware.h>
@@ -50,10 +50,6 @@
 #include "ssp_sensorhub.h"
 #endif
 
-#if defined(CONFIG_MUIC_NOTIFIER)
-#include <linux/muic/muic.h>
-#include <linux/muic/muic_notifier.h>
-#endif
 
 //#if defined (CONFIG_SENSORS_SSP_VLTE)
 //#include <linux/hall.h>
@@ -679,8 +675,8 @@ struct ssp_data {
 	unsigned short bbd_msg_options;
 #endif	/* SSP_BBD_USE_SEND_WORK  */
 	struct i2c_client *client;
-	struct wake_lock ssp_wake_lock;
-	struct wake_lock ssp_comm_wake_lock;
+	struct wakeup_source *ssp_wake_lock;
+	struct wakeup_source *ssp_comm_wake_lock;
 	struct timer_list debug_timer;
 	struct workqueue_struct *debug_wq;
 	struct work_struct work_debug;
@@ -712,9 +708,6 @@ struct ssp_data {
 	struct miscdevice batch_io_device;
 /*snamy.jeong@samsung.com temporary code for voice data sending to mcu*/
 	struct device *voice_device;
-#if defined(CONFIG_MUIC_NOTIFIER)
-	struct notifier_block cpuidle_muic_nb;
-#endif
 
 	bool bFirstRef;
 	bool bSspShutdown;
@@ -730,9 +723,6 @@ struct ssp_data {
 	bool bTimeSyncing;
 	bool bHandlingIrq;
 	bool grip_off;
-#if defined(CONFIG_MUIC_NOTIFIER)
-	bool jig_is_attached;
-#endif
 
 	int light_coef[7];
 #if defined(CONFIG_SENSORS_SSP_PROX_AUTOCAL_AMS)
@@ -812,7 +802,7 @@ struct ssp_data {
 	/* HiFi batching suspend-wakeup issue */
 	u64 resumeTimestamp;
 	bool bIsResumed;
-	int mcu_host_wake_int;
+	struct gpio_desc *mcu_host_wake_int;
 	int mcu_host_wake_irq;
 	bool bIsReset;
 #endif
@@ -905,7 +895,7 @@ struct ssp_data {
 	struct regulator *regulator_vdd_mcu_1p8;
 	const char *vdd_mcu_1p8_name;
 
-	int shub_en;
+	struct gpio_desc *shub_en;
 	bool intendedMcuReset;
 	char registerValue[5];
 	u8 dhrAccelScaleRange;

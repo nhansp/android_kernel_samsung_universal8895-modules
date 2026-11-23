@@ -25,7 +25,7 @@
 #include <linux/delay.h>
 #include <linux/circ_buf.h>
 #include <linux/fs.h>
-#include <linux/wakelock.h>
+#include <linux/device.h>
 #include <linux/suspend.h>
 #include <linux/notifier.h>
 #include <linux/of.h>
@@ -40,9 +40,12 @@ extern struct spi_driver *pssp_driver;
 extern bool ssp_dbg;
 extern bool ssp_pkt_dbg;
 
+static void bbd_dummy_release(struct device *dev) { }
+
 static struct spi_device dummy_spi = {
 	.dev = {
 		.init_name = "dummy",
+		.release = bbd_dummy_release,
 	},
 };
 #endif
@@ -92,8 +95,8 @@ struct bbd_device {
 	struct class *class;			/* for device_create */
 
 	struct bbd_cdev_priv priv[BBD_DEVICE_INDEX];/* individual structures */
-	struct wake_lock bbd_wake_lock;
-	struct wake_lock patch_wake_lock;
+	struct wakeup_source *bbd_wake_lock;
+	struct wakeup_source *patch_wake_lock;
 	bool db;				/* debug flag */
 
 	void *ssp_priv;				/* private data pointer */
@@ -126,29 +129,19 @@ static struct bbd_device bbd;
 /*
  * Embedded patch file provided as /dev/bbd_patch
  */
-static unsigned char bbd_patch[] = {
-#if defined(CONFIG_SENSORS_SSP_GREAT)
-#if ANDROID_VERSION < 80000
-#include "bbd_patch_file_great.h"
-#elif ANDROID_VERSION < 90000
-#include "bbd_patch_file_great_o.h"
-#else
+#ifdef CONFIG_BBD_PATCH_BUILTIN
+static const unsigned char bbd_patch[] = {
 #include "bbd_patch_file_great_p.h"
-#endif
-#elif defined(CONFIG_SENSORS_SSP_DREAM)
-#if ANDROID_VERSION < 80000
-#include "bbd_patch_file_dream.h"
-#elif ANDROID_VERSION < 90000
-#include "bbd_patch_file_dream_o.h"
-#else
-#include "bbd_patch_file_dream_p.h"
-#endif
-#elif defined(CONFIG_SENSORS_SSP_VLTE)
-#include "bbd_patch_file_valley.h"
-#elif defined(CONFIG_SENSORS_SSP_LUGE)
-#include "bbd_patch_file_luge.h"
-#endif
 };
+#else
+#include <linux/firmware.h>
+#define BBD_PATCH_FW_NAME	"bbd_patch_great_p.bin"
+static const struct firmware *bbd_patch_fw;
+static DEFINE_MUTEX(bbd_patch_fw_lock);
+#endif
+static const unsigned char *bbd_patch_data;
+static size_t bbd_patch_size;
+static struct device *bbd_fw_dev;
 
 /* Function to push read data into any bbd device's read buf */
 ssize_t bbd_on_read(unsigned int minor, const unsigned char *buf, size_t size);
@@ -253,7 +246,7 @@ void bbd_disable_stat(void)
 		pr_info("%s() 1HZ stat already disabled. skipping.\n", __func__);
 		return;
 	}
-	del_timer_sync(&stat1hz.timer);
+	timer_delete_sync(&stat1hz.timer);
 	cancel_work_sync(&stat1hz.work);
 	stat1hz.enabled = false;
 }
@@ -267,7 +260,7 @@ static void bbd_lk_work(struct work_struct *work)
 		bbd_mcu_reset();
 }
 
-static void bbd_lk_timer_func(unsigned long p)
+static void bbd_lk_timer_func(struct timer_list *t)
 {
 	if (bbd.lk.workq)
 		queue_work(bbd.lk.workq, &bbd.lk.work);
@@ -278,11 +271,11 @@ static void bbd_enable_lk(void)
 	pr_info("%s timeout:%ld sec\n", __func__, bbd.lk.timeout_sec);
 	if (bbd.lk.timer_enabled) {
 		pr_info("%s() lhd kill timer aready enabled. reset timer\n", __func__);
-		del_timer_sync(&bbd.lk.timer);
+		timer_delete_sync(&bbd.lk.timer);
 	}
 
 	INIT_WORK(&bbd.lk.work, bbd_lk_work);
-	setup_timer(&bbd.lk.timer, bbd_lk_timer_func, 0);
+	timer_setup(&bbd.lk.timer, bbd_lk_timer_func, 0);
 	mod_timer(&bbd.lk.timer, jiffies + HZ*bbd.lk.timeout_sec);
 	bbd.lk.timer_enabled = true;
 }
@@ -294,7 +287,7 @@ static void bbd_disable_lk(void)
 		pr_info("%s() lhd killer already disabled. skipping.\n", __func__);
 		return;
 	}
-	del_timer_sync(&bbd.lk.timer);
+	timer_delete_sync(&bbd.lk.timer);
 	bbd.lk.timer_enabled = false;
 }
 
@@ -305,16 +298,6 @@ static void bbd_init_lk(void)
 	bbd.lk.timeout_sec = 10;
 	bbd.lk.workq = create_singlethread_workqueue("BBD_LHD_KILLER");
 	spin_lock_init(&bbd.lk.lock);
-}
-
-static void bbd_exit_lk(void)
-{
-	bbd_disable_lk();
-	if (bbd.lk.workq) {
-		flush_workqueue(bbd.lk.workq);
-		destroy_workqueue(bbd.lk.workq);
-		bbd.lk.workq = 0;
-	}
 }
 #endif
 //--------------------------------------------------------------
@@ -467,8 +450,8 @@ ssize_t bbd_control(const char *buf, ssize_t len)
 		if (bbd.ssp_cb && bbd.ssp_cb->on_mcu_ready)
 			bbd.ssp_cb->on_mcu_ready(bbd.ssp_priv, true);
 
-		if (wake_lock_active(&bbd.patch_wake_lock))
-			wake_unlock(&bbd.patch_wake_lock);
+		if (bbd.patch_wake_lock->active)
+			__pm_relax(bbd.patch_wake_lock);
 	} else if (strstr(buf, ESW_CTRL_NOTREADY)) {
 		struct circ_buf *circ = &bbd.priv[BBD_MINOR_SENSOR].read_buf;
 
@@ -476,8 +459,8 @@ ssize_t bbd_control(const char *buf, ssize_t len)
 		if (bbd.ssp_cb && bbd.ssp_cb->on_mcu_ready)
 			bbd.ssp_cb->on_mcu_ready(bbd.ssp_priv, false);
 
-		if (wake_lock_active(&bbd.patch_wake_lock))
-			wake_unlock(&bbd.patch_wake_lock);
+		if (bbd.patch_wake_lock->active)
+			__pm_relax(bbd.patch_wake_lock);
 	} else if (strstr(buf, ESW_CTRL_CRASHED)) {
 		struct circ_buf *circ = &bbd.priv[BBD_MINOR_SENSOR].read_buf;
 
@@ -489,7 +472,7 @@ ssize_t bbd_control(const char *buf, ssize_t len)
 		if (bbd.ssp_cb && bbd.ssp_cb->on_control)
 			bbd.ssp_cb->on_control(bbd.ssp_priv, buf);
 	} else if (strstr(buf, BBD_CTRL_SSI_PATCH_BEGIN)) {
-		wake_lock(&bbd.patch_wake_lock);
+		__pm_stay_awake(bbd.patch_wake_lock);
 #if 0
 	} else if (strstr(buf, BBD_CTRL_DEBUG_ON)) {
 		bbd.db = true;
@@ -692,10 +675,10 @@ static unsigned int bbd_common_poll(struct file *filp, poll_table *wait)
  *
  */
 
-static struct timespec bbd_sensor_time;
+static struct timespec64 bbd_sensor_time;
 ssize_t bbd_sensor_write(const char *buf, size_t size)
 {
-	bbd_sensor_time = ktime_to_timespec(ktime_get_boottime());
+	bbd_sensor_time = ktime_to_timespec64(ktime_get_boottime());
 	/* Copies into /dev/bbd_shmd. If SHMD was sleeping in poll_wait, bbd_on_read() wakes it up also */
 
 #ifdef DEBUG_1HZ_STAT
@@ -715,10 +698,10 @@ ssize_t bbd_sensor_write(const char *buf, size_t size)
 
 s64 get_sensor_time_delta_us(void)
 {
-	struct timespec curr_ts = ktime_to_timespec(ktime_get_boottime());
-	struct timespec delta = timespec_sub(curr_ts, bbd_sensor_time);
+	struct timespec64 curr_ts = ktime_to_timespec64(ktime_get_boottime());
+	struct timespec64 delta = timespec64_sub(curr_ts, bbd_sensor_time);
 
-	return timespec_to_ns(&delta)/NSEC_PER_USEC;
+	return timespec64_to_ns(&delta)/NSEC_PER_USEC;
 }
 
 
@@ -748,13 +731,13 @@ ssize_t bbd_patch_read(struct file *filp, char __user *buf, size_t size, loff_t 
 	ssize_t rd_size = size;
 	size_t  offset = filp->f_pos;
 
-	if (offset >= sizeof(bbd_patch)) {	   /* signal EOF */
+	if (offset >= bbd_patch_size) {	   /* signal EOF */
 		*ppos = 0;
 		return 0;
 	}
-	if (offset+size > sizeof(bbd_patch))
-		rd_size = sizeof(bbd_patch) - offset;
-	if (copy_to_user(buf, bbd_patch + offset, rd_size))
+	if (offset+size > bbd_patch_size)
+		rd_size = bbd_patch_size - offset;
+	if (copy_to_user(buf, bbd_patch_data + offset, rd_size))
 		rd_size = -EFAULT;
 	else
 		*ppos = filp->f_pos + rd_size;
@@ -762,6 +745,30 @@ ssize_t bbd_patch_read(struct file *filp, char __user *buf, size_t size, loff_t 
 	return rd_size;
 }
 
+
+static int bbd_patch_open(struct inode *inode, struct file *filp)
+{
+#ifndef CONFIG_BBD_PATCH_BUILTIN
+	int ret = 0;
+
+	mutex_lock(&bbd_patch_fw_lock);
+	if (!bbd_patch_fw) {
+		ret = request_firmware(&bbd_patch_fw, BBD_PATCH_FW_NAME, bbd_fw_dev);
+		if (ret) {
+			pr_err("BBD:%s: request_firmware %s failed %d\n",
+			       __func__, BBD_PATCH_FW_NAME, ret);
+			bbd_patch_fw = NULL;
+		} else {
+			bbd_patch_data = bbd_patch_fw->data;
+			bbd_patch_size = bbd_patch_fw->size;
+		}
+	}
+	mutex_unlock(&bbd_patch_fw_lock);
+	if (ret)
+		return ret;
+#endif
+	return bbd_common_open(inode, filp);
+}
 
 //--------------------------------------------------------------
 //
@@ -981,7 +988,7 @@ static int bbd_resume(void)
 #ifdef DEBUG_1HZ_STAT
 	bbd_enable_stat();
 #endif
-	wake_lock_timeout(&bbd.bbd_wake_lock, HZ/2);
+	__pm_wakeup_event(bbd.bbd_wake_lock, jiffies_to_msecs(HZ/2));
 
 	return 0;
 }
@@ -1041,7 +1048,8 @@ static const struct file_operations bbd_fops[BBD_DEVICE_INDEX] = {
 	/* bbd patch file operations */
 	{
 		.owner		=  THIS_MODULE,
-		.open		=  bbd_common_open,
+		.open		=  bbd_patch_open,
+		.llseek		=  noop_llseek,
 		.release	=  bbd_common_release,
 		.read		=  bbd_patch_read,
 		.write		=  NULL, /* /dev/bbd_patch is read-only */
@@ -1061,30 +1069,45 @@ static const struct file_operations bbd_fops[BBD_DEVICE_INDEX] = {
 };
 
 
+static dev_t bbd_devt;
+
 int bbd_init(struct device *dev)
 {
 	int minor, ret = -ENOMEM;
-	struct timespec ts1;
+	struct timespec64 ts1;
 	unsigned long start, elapsed;
 
-	ts1 = ktime_to_timespec(ktime_get_boottime());
+	ts1 = ktime_to_timespec64(ktime_get_boottime());
 	start = ts1.tv_sec * 1000000000ULL + ts1.tv_nsec;
 
 	/* Initialize BBD device */
 	memset(&bbd, 0, sizeof(bbd));
-	wake_lock_init(&bbd.bbd_wake_lock, WAKE_LOCK_SUSPEND, "bbd_wake_lock");
-	wake_lock_init(&bbd.patch_wake_lock, WAKE_LOCK_SUSPEND, "patch_wake_lock");
+	bbd_fw_dev = dev;
+#ifdef CONFIG_BBD_PATCH_BUILTIN
+	bbd_patch_data = bbd_patch;
+	bbd_patch_size = sizeof(bbd_patch);
+#endif
+	bbd.bbd_wake_lock = wakeup_source_register(NULL, "bbd_wake_lock");
+	bbd.patch_wake_lock = wakeup_source_register(NULL, "patch_wake_lock");
 
 	/* Create class which is required for device_create() */
-	bbd.class = class_create(THIS_MODULE, "bbd");
+	bbd.class = class_create("bbd");
 	if (IS_ERR(bbd.class)) {
 		WARN("BBD:%s() failed to create class \"bbd\"", __func__);
 		goto exit;
 	}
 
+	/* the vendor's fixed major 239 is in the dynamic range on 6.18 */
+	ret = alloc_chrdev_region(&bbd_devt, BBD_MINOR_SENSOR,
+				  BBD_DEVICE_INDEX - BBD_MINOR_SENSOR, "bbd");
+	if (ret) {
+		pr_err("BBD:%s() failed to alloc_chrdev_region(), ret=%d", __func__, ret);
+		goto free_class_only;
+	}
+
 	/* Create BBD char devices */
 	for (minor = 0; minor < BBD_DEVICE_INDEX; minor++) {
-		dev_t devno = MKDEV(BBD_DEVICE_MAJOR, minor);
+		dev_t devno = MKDEV(MAJOR(bbd_devt), minor);
 		struct cdev *cdev = &bbd.priv[minor].dev;
 		const char *name = bbd_dev_name[minor];
 		struct device *dev;
@@ -1099,12 +1122,6 @@ int bbd_init(struct device *dev)
 		/* Don't register /dev/bbd_shmd */
 		if (minor == BBD_MINOR_SHMD)
 			continue;
-		/* Reserve char device number (a.k.a, major, minor) for this BBD device */
-		ret = register_chrdev_region(devno, 1, name);
-		if (ret) {
-			pr_err("BBD:%s() failed to register_chrdev_region() \"%s\", ret=%d", __func__, name, ret);
-			goto free_class;
-		}
 
 		/* Register cdev which relates above device number with this BBD device */
 		cdev_init(cdev, &bbd_fops[minor]);
@@ -1114,7 +1131,6 @@ int bbd_init(struct device *dev)
 		if (ret) {
 			pr_err("BBD:%s()) failed to cdev_add() \"%s\", ret=%d",
 							__func__, name, ret);
-			unregister_chrdev_region(devno, 1);
 			goto free_class;
 		}
 
@@ -1122,14 +1138,13 @@ int bbd_init(struct device *dev)
 		dev = device_create(bbd.class, NULL, devno, NULL, "%s", name);
 		if (IS_ERR_OR_NULL(dev)) {
 			pr_err("BBD:%s() failed to device_create() \"%s\", ret=%d", __func__, name, ret);
-			unregister_chrdev_region(devno, 1);
 			cdev_del(&bbd.priv[minor].dev);
 			goto free_class;
 		}
 
 		/* Done. Put success log and init BBD specific fields */
 		pr_info("BBD:%s(%d,%d) registered /dev/%s\n",
-				  __func__, BBD_DEVICE_MAJOR, minor, name);
+				  __func__, MAJOR(bbd_devt), minor, name);
 
 	}
 
@@ -1163,7 +1178,7 @@ int bbd_init(struct device *dev)
 
 	}
 #endif
-	ts1 = ktime_to_timespec(ktime_get_boottime());
+	ts1 = ktime_to_timespec64(ktime_get_boottime());
 	elapsed = (ts1.tv_sec * 1000000000ULL + ts1.tv_nsec) - start;
 	pr_info("BBD:%s %lu nsec elapsed\n", __func__, elapsed);
 
@@ -1180,60 +1195,21 @@ free_kobj:
 	kobject_put(bbd.kobj);
 free_class:
 	while (--minor > BBD_MINOR_SHMD) {
-		dev_t devno = MKDEV(BBD_DEVICE_MAJOR, minor);
+		dev_t devno = MKDEV(MAJOR(bbd_devt), minor);
 		struct cdev *cdev = &bbd.priv[minor].dev;
 
 		device_destroy(bbd.class, devno);
 		cdev_del(cdev);
-		unregister_chrdev_region(devno, 1);
 	}
+	unregister_chrdev_region(bbd_devt, BBD_DEVICE_INDEX - BBD_MINOR_SENSOR);
+free_class_only:
 	class_destroy(bbd.class);
 exit:
+	wakeup_source_unregister(bbd.patch_wake_lock);
+	wakeup_source_unregister(bbd.bbd_wake_lock);
 	return ret;
-}
-
-static void __exit bbd_exit(void)
-{
-	int minor;
-
-	pr_info("%s ++\n", __func__);
-
-#ifdef CONFIG_SENSORS_SSP
-	/* Shutdown SSP first*/
-	pssp_driver->shutdown(&dummy_spi);
-#endif
-
-	/* Remove sysfs entry */
-	sysfs_remove_group(bbd.kobj, &bbd_group);
-
-	/* Remove BBD char devices */
-	for (minor = BBD_MINOR_SENSOR; minor < BBD_DEVICE_INDEX; minor++) {
-		dev_t devno = MKDEV(BBD_DEVICE_MAJOR, minor);
-		struct cdev *cdev = &bbd.priv[minor].dev;
-		const char *name = bbd_dev_name[minor];
-
-		device_destroy(bbd.class, devno);
-		cdev_del(cdev);
-		unregister_chrdev_region(devno, 1);
-
-		pr_info("%s(%d,%d) unregistered /dev/%s\n",
-				__func__, BBD_DEVICE_MAJOR, minor, name);
-	}
-
-#ifdef DEBUG_1HZ_STAT
-	bbd_exit_stat();
-#endif
-
-#ifdef CONFIG_LHD_KILLER
-	bbd_exit_lk();
-#endif
-	/* Remove class */
-	class_destroy(bbd.class);
-	/* Done. Put success log */
-	pr_info("%s --\n", __func__);
 }
 
 MODULE_AUTHOR("Broadcom");
 MODULE_LICENSE("Dual BSD/GPL");
 //subsys_initcall(bbd_init);
-//module_exit(bbd_exit);

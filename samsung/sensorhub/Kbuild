@@ -1,0 +1,42 @@
+# SPDX-License-Identifier: GPL-2.0
+
+ccflags-y += -I$(src)/include
+
+# the stock Android P build passes the platform version to the kernel
+ccflags-y += -DANDROID_VERSION=90000
+
+ccflags-y += -DCONFIG_BBD_PATCH_BUILTIN=1
+ccflags-y += -DCONFIG_BCM_GPS_SPI_DRIVER=1
+ccflags-y += -DCONFIG_SENSORS_MULTIPLE_GLASS_TYPE=1
+ccflags-y += -DCONFIG_SENSORS_SSP=1
+ccflags-y += -DCONFIG_SENSORS_SSP_BBD=1
+ccflags-y += -DCONFIG_SENSORS_SSP_GREAT=1
+ccflags-y += -DCONFIG_SENSORS_SSP_HIFI_BATCHING=1
+ccflags-y += -DCONFIG_SENSORS_SSP_INTERRUPT_GYRO_SENSOR=1
+ccflags-y += -DCONFIG_SENSORS_SSP_IRDATA_FOR_CAMERA=1
+ccflags-y += -DCONFIG_SENSORS_SSP_LIGHT_COLORID=1
+ccflags-y += -DCONFIG_SENSORS_SSP_LIGHT_REPORT_LUX=1
+ccflags-y += -DCONFIG_SENSORS_SSP_LPS22H=1
+ccflags-y += -DCONFIG_SENSORS_SSP_MOBEAM=1
+ccflags-y += -DCONFIG_SENSORS_SSP_PROX_AUTOCAL_AMS=1
+ccflags-y += -DCONFIG_SENSORS_SSP_SENSORHUB=1
+ccflags-y += -DCONFIG_SENSORS_SSP_TMD4906=1
+ccflags-y += -DCONFIG_SSP_SUPPORT_MAGNETIC_OVERFLOW=1
+
+# vendor code: cross-file functions without prototypes, duplicate const and the like
+ccflags-y += -Wno-duplicate-decl-specifier -Wno-enum-conversion -Wno-missing-prototypes \
+	     -Wno-missing-declarations -Wno-logical-not-parentheses
+
+obj-m += sensors_core.o
+obj-m += sensorhub_brcm.o
+obj-m += sx9320.o
+
+sensorhub_brcm-y := ssp_dev.o ssp_i2c.o ssp_data.o ssp_sysfs.o ssp_firmware.o \
+		    ssp_debug.o ssp_dump.o ssp_iio.o ssp_iio_ring.o \
+		    ssp_sensorhub.o ssp_misc.o ssp_bbd.o \
+		    factory/accel_lsm6dsl.o factory/gyro_lsm6dsl.o \
+		    factory/magnetic_common.o factory/light_tmg399x.o \
+		    factory/prox_autocal_ams.o factory/light_colorid.o \
+		    factory/pressure_lps22h.o factory/barcode_emul_tmg3992.o \
+		    factory/mcu_bcm4774.o \
+		    bbdpl/bcm_gps_spi.o bbdpl/bbd_rpc_lh.o bbdpl/bbd.o

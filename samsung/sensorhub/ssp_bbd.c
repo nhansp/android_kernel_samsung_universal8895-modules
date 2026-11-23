@@ -92,7 +92,7 @@ int bbd_do_transfer(struct ssp_data *data, struct ssp_msg *msg,
 	mutex_lock(&data->comm_mutex);
 
 	if (timeout)
-		wake_lock(&data->ssp_comm_wake_lock);
+		__pm_stay_awake(data->ssp_comm_wake_lock);
 
 	ssp_down = data->bSspShutdown;
 
@@ -101,7 +101,7 @@ int bbd_do_transfer(struct ssp_data *data, struct ssp_msg *msg,
 		clean_msg(msg);
 		mdelay(5);
 		if (timeout)
-			wake_unlock(&data->ssp_comm_wake_lock);
+			__pm_relax(data->ssp_comm_wake_lock);
 
 		mutex_unlock(&data->comm_mutex);
 		return -1;
@@ -128,7 +128,7 @@ int bbd_do_transfer(struct ssp_data *data, struct ssp_msg *msg,
 		clean_msg(msg);
 		mutex_unlock(&data->pending_mutex);
 		if (timeout)
-			wake_unlock(&data->ssp_comm_wake_lock);
+			__pm_relax(data->ssp_comm_wake_lock);
 
 		mutex_unlock(&data->comm_mutex);
 		return -1;
@@ -155,9 +155,10 @@ int bbd_do_transfer(struct ssp_data *data, struct ssp_msg *msg,
 			if (data->regulator_vdd_mcu_1p8 != NULL) {
 				pr_err("[SSPBBD] %s(): state of mcu power(%d)\n", __func__,
 						regulator_is_enabled(data->regulator_vdd_mcu_1p8));
-			} else if (data->shub_en >= 0) {
+			} else if (data->shub_en) {
 				pr_err("[SSPBBD] %s: shub_en(%d), is enabled %d\n", __func__,
-						data->shub_en, gpio_get_value(data->shub_en));
+				       desc_to_gpio(data->shub_en),
+				       gpiod_get_value(data->shub_en));
 			}
 
 			bcm4773_debug_info();
@@ -192,7 +193,7 @@ int bbd_do_transfer(struct ssp_data *data, struct ssp_msg *msg,
 		clean_msg(msg);
 
 	if (timeout)
-		wake_unlock(&data->ssp_comm_wake_lock);
+		__pm_relax(data->ssp_comm_wake_lock);
 
 	mutex_unlock(&data->comm_mutex);
 
@@ -275,7 +276,7 @@ int callback_bbd_on_mcu_ready(void *ssh_data, bool ready)
 			data->resetCntGPSisOn++;
 		memset(&ssp_pkt, 0, sizeof(ssp_pkt));
 		ssp_pkt.required = 4;
-		wake_lock_timeout(&data->ssp_wake_lock, HZ);
+		__pm_wakeup_event(data->ssp_wake_lock, jiffies_to_msecs(HZ));
 		queue_work(data->bbd_mcu_ready_wq, &data->work_bbd_mcu_ready);
 	} else {
 		/* Disable SSP */
@@ -654,8 +655,8 @@ static inline void bbd_send_timestamp(void)
 {
 		struct ssp_msg msg;
 		unsigned char *bmsg = kzalloc(SSP_INSTRUCTION_PACKET + sizeof(s64), GFP_KERNEL);
-		struct timespec curr_ts = ktime_to_timespec(ktime_get_boottime());
-		s64 timestamp = timespec_to_ns(&curr_ts);
+		struct timespec64 curr_ts = ktime_to_timespec64(ktime_get_boottime());
+		s64 timestamp = timespec64_to_ns(&curr_ts);
 
 		memset(&msg, 0, sizeof(struct ssp_msg));
 		msg.cmd = MSG2SSP_INST_CURRENT_TIMESTAMP; //you should modify this to proper command

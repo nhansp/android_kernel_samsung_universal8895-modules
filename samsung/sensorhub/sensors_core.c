@@ -72,7 +72,7 @@ int sensors_register(struct device *dev, void *drvdata,
 	int ret = 0;
 
 	if (!sensors_class) {
-		sensors_class = class_create(THIS_MODULE, "sensors");
+		sensors_class = class_create("sensors");
 		if (IS_ERR(sensors_class))
 			return PTR_ERR(sensors_class);
 	}
@@ -121,7 +121,7 @@ EXPORT_SYMBOL_GPL(destroy_sensor_class);
 static int __init sensors_class_init(void)
 {
 	pr_info("[SENSORS CORE] %s\n", __func__);
-	sensors_class = class_create(THIS_MODULE, "sensors");
+	sensors_class = class_create("sensors");
 	if (IS_ERR(sensors_class)) {
 		pr_err("%s, create sensors_class is failed.(err=%d)\n",
 			__func__, IS_ERR(sensors_class));
@@ -129,7 +129,7 @@ static int __init sensors_class_init(void)
 	}
 
 	/* For symbolic link */
-	sensors_event_class = class_create(THIS_MODULE, "sensor_event");
+	sensors_event_class = class_create("sensor_event");
 	if (IS_ERR(sensors_event_class)) {
 		pr_err("%s, create sensors_class is failed.(err=%d)\n",
 			__func__, IS_ERR(sensors_event_class));

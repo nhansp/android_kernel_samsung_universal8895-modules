@@ -41,7 +41,6 @@ int get_size_dumpregister(int sensor_type)
 int store_sensor_dump(struct ssp_data *data, int sensor_type, u16 length, u8 *buf)
 {
 #ifdef SENSOR_DUMP_FILE_STORE
-	mm_segment_t old_fs;
 	struct file *dump_filp = NULL;
 	char file_name[SENSOR_DUMP_FILE_LENGTH] = {0,};
 #endif
@@ -75,8 +74,6 @@ int store_sensor_dump(struct ssp_data *data, int sensor_type, u16 length, u8 *bu
 	kfree(contents);
 
 #ifdef SENSOR_DUMP_FILE_STORE
-	old_fs = get_fs();
-	set_fs(KERNEL_DS);
 
 	/*make file name*/
 	sprintf(file_name, "%s%d.txt", SENSOR_DUMP_PATH, sensor_type);
@@ -86,19 +83,18 @@ int store_sensor_dump(struct ssp_data *data, int sensor_type, u16 length, u8 *bu
 
 	if (IS_ERR(dump_filp)) {
 		pr_err("[SSP] %s - Can't open dump file %d\n", __func__, sensor_type);
-		set_fs(old_fs);
 		ret = PTR_ERR(dump_filp);
 		return ret;
 	}
 
-	ret = vfs_write(dump_filp, data->sensor_dump[sensor_type], contents_length, &dump_filp->f_pos);
+	ret = kernel_write(dump_filp, data->sensor_dump[sensor_type],
+			   contents_length, &dump_filp->f_pos);
 	if (ret < 0) {
 		pr_err("[SSP] %s - Can't write the dump data to file\n", __func__);
 		ret = -EIO;
 	}
 
 	filp_close(dump_filp, current->files);
-	set_fs(old_fs);
 #endif
 
 	return ret;

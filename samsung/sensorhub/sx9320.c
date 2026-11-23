@@ -8,11 +8,10 @@
 #include <linux/i2c.h>
 #include <linux/delay.h>
 #include <linux/input.h>
-#include <linux/gpio.h>
-#include <linux/of_gpio.h>
+#include <linux/gpio/consumer.h>
 #include <linux/fs.h>
 #include <linux/uaccess.h>
-#include <linux/wakelock.h>
+#include <linux/device.h>
 #include <linux/interrupt.h>
 #include <linux/regulator/consumer.h>
 #include <linux/power_supply.h>
@@ -73,14 +72,10 @@ struct sx9320_p {
 	struct delayed_work init_work;
 	struct delayed_work irq_work;
 	struct delayed_work debug_work;
-	struct wake_lock grip_wake_lock;
+	struct wakeup_source *grip_ws;
 	struct mutex read_mutex;
-#if defined(CONFIG_MUIC_NOTIFIER)
-	struct notifier_block cpuidle_muic_nb;
-#endif
-#if defined(CONFIG_CCIC_NOTIFIER)
-	struct notifier_block cpuidle_ccic_nb;
-#endif
+	struct notifier_block psy_nb;
+	int cable_online;
 	bool skip_data;
 	bool check_usb;
 	u8 normal_th;
@@ -104,7 +99,7 @@ struct sx9320_p {
 	u8 afeph2;
 	u8 afeph3;
 	int irq;
-	int gpio_nirq;
+	struct gpio_desc *gpio_nirq;
 	int state;
 	int debug_count;
 	int diff_avg;
@@ -136,30 +131,23 @@ static int sx9320_check_hallic_state(char *file_path,
 	unsigned char hall_ic_status[])
 {
 	int iRet = 0;
-	mm_segment_t old_fs;
 	struct file *filep;
 	u8 hall_sysfs[5];
-
-	old_fs = get_fs();
-	set_fs(KERNEL_DS);
 
 	filep = filp_open(file_path, O_RDONLY, 0666);
 	if (IS_ERR(filep)) {
 		iRet = PTR_ERR(filep);
-		set_fs(old_fs);
 		goto exit;
 	}
 
-	iRet = filep->f_op->read(filep, hall_sysfs,
-		sizeof(hall_sysfs), &filep->f_pos);
+	iRet = kernel_read(filep, hall_sysfs, sizeof(hall_sysfs), &filep->f_pos);
 
 	if (iRet != sizeof(hall_sysfs))
 		iRet = -EIO;
 	else
 		strncpy(hall_ic_status, hall_sysfs, sizeof(hall_sysfs));
 
-	filp_close(filep, current->files);
-	set_fs(old_fs);
+	filp_close(filep, NULL);
 
 exit:
 	return iRet;
@@ -167,7 +155,7 @@ exit:
 
 static int sx9320_get_nirq_state(struct sx9320_p *data)
 {
-	return gpio_get_value_cansleep(data->gpio_nirq);
+	return gpiod_get_value_cansleep(data->gpio_nirq);
 }
 
 static int sx9320_i2c_write(struct sx9320_p *data, u8 reg_addr, u8 buf)
@@ -1401,7 +1389,7 @@ static irqreturn_t sx9320_interrupt_thread(int irq, void *pdata)
 	if (sx9320_get_nirq_state(data) == 1) {
 		pr_err("[SX9320]: %s - nirq read high\n", __func__);
 	} else {
-		wake_lock_timeout(&data->grip_wake_lock, 3 * HZ);
+		__pm_wakeup_event(data->grip_ws, 3 * MSEC_PER_SEC);
 		schedule_delayed_work(&data->irq_work, msecs_to_jiffies(100));
 	}
 
@@ -1450,23 +1438,6 @@ static int sx9320_init_input(struct sx9320_p *data)
 
 static int sx9320_setup_pin(struct sx9320_p *data)
 {
-	int ret;
-
-	ret = gpio_request(data->gpio_nirq, "SX9320_nIRQ");
-	if (ret < 0) {
-		pr_err("[SX9320]: %s - gpio %d request failed (%d)\n",
-			__func__, data->gpio_nirq, ret);
-		return ret;
-	}
-
-	ret = gpio_direction_input(data->gpio_nirq);
-	if (ret < 0) {
-		pr_err("[SX9320]: %s - failed to set gpio %d(%d)\n",
-			__func__, data->gpio_nirq, ret);
-		gpio_free(data->gpio_nirq);
-		return ret;
-	}
-
 	return 0;
 }
 
@@ -1544,14 +1515,12 @@ static int sx9320_read_setupreg(struct device_node *dnode, char *str, u8 *val)
 static int sx9320_parse_dt(struct sx9320_p *data, struct device *dev)
 {
 	struct device_node *node = dev->of_node;
-	enum of_gpio_flags flags;
 
 	if (node == NULL)
 		return -ENODEV;
 
-	data->gpio_nirq = of_get_named_gpio_flags(node,
-		"sx9320,nirq-gpio", 0, &flags);
-	if (data->gpio_nirq < 0) {
+	data->gpio_nirq = devm_gpiod_get(dev, "sx9320,nirq", GPIOD_IN);
+	if (IS_ERR(data->gpio_nirq)) {
 		pr_err("[SX9320]: %s - get gpio_nirq error\n", __func__);
 		return -ENODEV;
 	}
@@ -1585,85 +1554,34 @@ static int sx9320_parse_dt(struct sx9320_p *data, struct device *dev)
 
 	return 0;
 }
-#if defined(CONFIG_CCIC_NOTIFIER) && defined(CONFIG_USB_TYPEC_MANAGER_NOTIFIER)
-static int sx9320_ccic_handle_notification(struct notifier_block *nb,
-		unsigned long action, void *data)
+
+/* replaces the vendor's CCIC notifier: USB/TA attach and detach recalibrate */
+static int sx9320_psy_notifier(struct notifier_block *nb, unsigned long action, void *ptr)
 {
-	CC_NOTI_USB_STATUS_TYPEDEF usb_status =
-		*(CC_NOTI_USB_STATUS_TYPEDEF *)data;
+	struct sx9320_p *data = container_of(nb, struct sx9320_p, psy_nb);
+	struct power_supply *psy = ptr;
+	union power_supply_propval val;
+	int online;
 
-	struct sx9320_p *pdata =
-		container_of(nb, struct sx9320_p, cpuidle_ccic_nb);
-	static int pre_attach;
-
-	if (pre_attach == usb_status.attach)
-		return 0;
-	/*
-	 * USB_STATUS_NOTIFY_DETACH = 0,
-	 * USB_STATUS_NOTIFY_ATTACH_DFP = 1, // Host
-	 * USB_STATUS_NOTIFY_ATTACH_UFP = 2, // Device
-	 * USB_STATUS_NOTIFY_ATTACH_DRP = 3, // Dual role
-	 */
-
-	if (pdata->init_done == ON) {
-		switch (usb_status.drp) {
-		case USB_STATUS_NOTIFY_ATTACH_UFP:
-		case USB_STATUS_NOTIFY_ATTACH_DFP:
-		case USB_STATUS_NOTIFY_DETACH:
-			pr_info("[SX9320]: %s - drp = %d attat = %d\n",
-				__func__, usb_status.drp,
-				usb_status.attach);
-			sx9320_set_offset_calibration(pdata);
-			break;
-		default:
-			pr_info("[SX9320]: %s - DRP type : %d\n",
-				__func__, usb_status.drp);
-			break;
-		}
-	}
-
-	pre_attach = usb_status.attach;
-
-	return 0;
-}
-#elif defined(CONFIG_MUIC_NOTIFIER)
-static int sx9320_cpuidle_muic_notifier(struct notifier_block *nb,
-				unsigned long action, void *data)
-{
-	struct sx9320_p *grip_data;
-
-	muic_attached_dev_t attached_dev = *(muic_attached_dev_t *)data;
-
-	grip_data = container_of(nb, struct sx9320_p, cpuidle_muic_nb);
-	switch (attached_dev) {
-	case ATTACHED_DEV_OTG_MUIC:
-	case ATTACHED_DEV_USB_MUIC:
-	case ATTACHED_DEV_TA_MUIC:
-	case ATTACHED_DEV_AFC_CHARGER_PREPARE_MUIC:
-	case ATTACHED_DEV_AFC_CHARGER_9V_MUIC:
-		if (action == MUIC_NOTIFY_CMD_ATTACH)
-			pr_info("[SX9320]: %s - TA/USB insert\n", __func__);
-		else if (action == MUIC_NOTIFY_CMD_DETACH)
-			pr_info("[SX9320]: %s - TA/USB remove\n", __func__);
-
-		if (grip_data->init_done == ON)
-			sx9320_set_offset_calibration(grip_data);
-		else
-			pr_info("[SX9320]: %s - not initialized\n", __func__);
-		break;
-	default:
-		break;
-	}
-
-	pr_info("[SX9320]: %s dev=%d, action=%lu\n",
-		__func__, attached_dev, action);
-
+	if (action != PSY_EVENT_PROP_CHANGED || !psy->desc || !psy->desc->name)
+		return NOTIFY_DONE;
+	if (strcmp(psy->desc->name, "usb") && strcmp(psy->desc->name, "ac"))
+		return NOTIFY_DONE;
+	if (power_supply_get_property(psy, POWER_SUPPLY_PROP_ONLINE, &val))
+		return NOTIFY_DONE;
+	online = !!val.intval;
+	if (online == data->cable_online)
+		return NOTIFY_DONE;
+	data->cable_online = online;
+	pr_info("[SX9320]: %s - %s %s\n", __func__, psy->desc->name, online ? "insert" : "remove");
+	if (data->init_done == ON)
+		sx9320_set_offset_calibration(data);
+	else
+		pr_info("[SX9320]: %s - not initialized\n", __func__);
 	return NOTIFY_DONE;
 }
-#endif
 
-static int sx9320_probe(struct i2c_client *client,
-		const struct i2c_device_id *id)
+static int sx9320_probe(struct i2c_client *client)
 {
 	int ret = -ENODEV;
 	struct sx9320_p *data = NULL;
@@ -1686,8 +1604,7 @@ static int sx9320_probe(struct i2c_client *client,
 	if (ret < 0)
 		goto exit_input_init;
 
-	wake_lock_init(&data->grip_wake_lock,
-		WAKE_LOCK_SUSPEND, "grip_wake_lock");
+	data->grip_ws = wakeup_source_register(&client->dev, "grip_wake_lock");
 	mutex_init(&data->read_mutex);
 
 	ret = sx9320_parse_dt(data, &client->dev);
@@ -1715,7 +1632,7 @@ static int sx9320_probe(struct i2c_client *client,
 	INIT_DELAYED_WORK(&data->irq_work, sx9320_irq_work_func);
 	INIT_DELAYED_WORK(&data->debug_work, sx9320_debug_work_func);
 
-	data->irq = gpio_to_irq(data->gpio_nirq);
+	data->irq = gpiod_to_irq(data->gpio_nirq);
 	ret = request_threaded_irq(data->irq, NULL, sx9320_interrupt_thread,
 			IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
 			"sx9320_irq", data);
@@ -1737,14 +1654,10 @@ static int sx9320_probe(struct i2c_client *client,
 	schedule_delayed_work(&data->init_work, msecs_to_jiffies(300));
 	sx9320_set_debug_work(data, ON, 20000);
 
-#if defined(CONFIG_CCIC_NOTIFIER) && defined(CONFIG_USB_TYPEC_MANAGER_NOTIFIER)
-	manager_notifier_register(&data->cpuidle_ccic_nb,
-					sx9320_ccic_handle_notification,
-					MANAGER_NOTIFY_CCIC_SENSORHUB);
-#elif defined(CONFIG_MUIC_NOTIFIER)
-	muic_notifier_register(&data->cpuidle_muic_nb,
-		sx9320_cpuidle_muic_notifier, MUIC_NOTIFY_DEV_CPUIDLE);
-#endif
+	data->cable_online = -1;
+	data->psy_nb.notifier_call = sx9320_psy_notifier;
+	if (power_supply_reg_notifier(&data->psy_nb))
+		pr_err("[SX9320]: %s - power_supply notifier failed\n", __func__);
 
 	pr_info("[SX9320]: %s - Probe done!\n", __func__);
 
@@ -1754,11 +1667,10 @@ grip_sensor_register_failed:
 	free_irq(data->irq, data);
 exit_request_threaded_irq:
 exit_chip_reset:
-	gpio_free(data->gpio_nirq);
 exit_setup_pin:
 exit_of_node:
 	mutex_destroy(&data->read_mutex);
-	wake_lock_destroy(&data->grip_wake_lock);
+	wakeup_source_unregister(data->grip_ws);
 	sysfs_remove_group(&data->input->dev.kobj, &sx9320_attribute_group);
 	sensors_remove_symlink(data->input);
 	input_unregister_device(data->input);
@@ -1769,9 +1681,11 @@ exit:
 	return ret;
 }
 
-static int sx9320_remove(struct i2c_client *client)
+static void sx9320_remove(struct i2c_client *client)
 {
 	struct sx9320_p *data = (struct sx9320_p *)i2c_get_clientdata(client);
+
+	power_supply_unreg_notifier(&data->psy_nb);
 
 	if (atomic_read(&data->enable) == ON)
 		sx9320_set_enable(data, OFF);
@@ -1782,9 +1696,8 @@ static int sx9320_remove(struct i2c_client *client)
 	cancel_delayed_work_sync(&data->irq_work);
 	cancel_delayed_work_sync(&data->debug_work);
 	free_irq(data->irq, data);
-	gpio_free(data->gpio_nirq);
 
-	wake_lock_destroy(&data->grip_wake_lock);
+	wakeup_source_unregister(data->grip_ws);
 	sensors_unregister(data->factory_device, sensor_attrs);
 	sensors_remove_symlink(data->input);
 	sysfs_remove_group(&data->input->dev.kobj, &sx9320_attribute_group);
@@ -1792,8 +1705,6 @@ static int sx9320_remove(struct i2c_client *client)
 	mutex_destroy(&data->read_mutex);
 
 	kfree(data);
-
-	return 0;
 }
 
 static int sx9320_suspend(struct device *dev)
@@ -1837,26 +1748,25 @@ static void sx9320_shutdown(struct i2c_client *client)
 }
 
 static const struct of_device_id sx9320_match_table[] = {
-	{ .compatible = "sx9320",},
+	{ .compatible = "semtech,sx9320-grip",},
 	{},
 };
+MODULE_DEVICE_TABLE(of, sx9320_match_table);
 
 static const struct i2c_device_id sx9320_id[] = {
-	{ "sx9320_match_table", 0 },
+	{ "sx9320-grip", 0 },
 	{ }
 };
+MODULE_DEVICE_TABLE(i2c, sx9320_id);
 
-static const struct dev_pm_ops sx9320_pm_ops = {
-	.suspend = sx9320_suspend,
-	.resume = sx9320_resume,
-};
+static DEFINE_SIMPLE_DEV_PM_OPS(sx9320_pm_ops, sx9320_suspend, sx9320_resume);
 
 static struct i2c_driver sx9320_driver = {
 	.driver = {
 		.name	= MODEL_NAME,
 		.owner	= THIS_MODULE,
 		.of_match_table = sx9320_match_table,
-		.pm = &sx9320_pm_ops
+		.pm = pm_sleep_ptr(&sx9320_pm_ops)
 	},
 	.probe		= sx9320_probe,
 	.remove		= sx9320_remove,
@@ -1880,3 +1790,4 @@ module_exit(sx9320_exit);
 MODULE_DESCRIPTION("Semtech Corp. SX9320 Capacitive Touch Controller Driver");
 MODULE_AUTHOR("Samsung Electronics");
 MODULE_LICENSE("GPL");
+MODULE_IMPORT_NS("ANDROID_GKI_VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver");

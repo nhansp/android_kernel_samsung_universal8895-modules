@@ -333,7 +333,7 @@ static void ssp_sensorhub_report_library(struct ssp_sensorhub_data *hub_data)
 {
 	input_report_rel(hub_data->sensorhub_input_dev, DATA, DATA);
 	input_sync(hub_data->sensorhub_input_dev);
-	wake_lock_timeout(&hub_data->sensorhub_wake_lock, WAKE_LOCK_TIMEOUT);
+	__pm_wakeup_event(hub_data->sensorhub_wake_lock, jiffies_to_msecs(WAKE_LOCK_TIMEOUT));
 }
 
 static void ssp_sensorhub_report_big_library(
@@ -341,7 +341,7 @@ static void ssp_sensorhub_report_big_library(
 {
 	input_report_rel(hub_data->sensorhub_input_dev, BIG_DATA, BIG_DATA);
 	input_sync(hub_data->sensorhub_input_dev);
-	wake_lock_timeout(&hub_data->sensorhub_wake_lock, WAKE_LOCK_TIMEOUT);
+	__pm_wakeup_event(hub_data->sensorhub_wake_lock, jiffies_to_msecs(WAKE_LOCK_TIMEOUT));
 }
 
 static int ssp_sensorhub_list(struct ssp_sensorhub_data *hub_data,
@@ -549,13 +549,10 @@ void ssp_pcm_dump_task(struct work_struct *work)
 	struct ssp_msg *msg;
 	int buf_len, residue = big->length, ret = 0, index = 0;
 
-	mm_segment_t old_fs;
 	struct file *voice_filp;
 	char pcm_path[BIN_PATH_SIZE+1];
 	char *buff;
 
-	old_fs = get_fs();
-	set_fs(KERNEL_DS);
 
 	snprintf(pcm_path, BIN_PATH_SIZE,
 		"/data/voice%d.pcm", hub_data->pcm_cnt);
@@ -587,7 +584,7 @@ void ssp_pcm_dump_task(struct work_struct *work)
 			break;
 		}
 
-		ret = voice_filp->f_op->write(voice_filp, (char __user *)buff,
+		ret = kernel_write(voice_filp, (char __user *)buff,
 			buf_len, &voice_filp->f_pos);
 		if (ret < 0) {
 			sensorhub_err("write pcm dump to file err(%d)", ret);
@@ -602,7 +599,6 @@ void ssp_pcm_dump_task(struct work_struct *work)
 	kfree(buff);
 
 exit:
-	set_fs(old_fs);
 	kfree(big);
 }
 
@@ -623,8 +619,7 @@ int ssp_sensorhub_initialize(struct ssp_data *ssp_data)
 	ssp_data->hub_data = hub_data;
 
 	/* init wakelock, list, waitqueue, completion and spinlock */
-	wake_lock_init(&hub_data->sensorhub_wake_lock, WAKE_LOCK_SUSPEND,
-			"ssp_sensorhub_wake_lock");
+	hub_data->sensorhub_wake_lock = wakeup_source_register(NULL, "ssp_sensorhub_wake_lock");
 	init_waitqueue_head(&hub_data->sensorhub_wq);
 	init_completion(&hub_data->read_done);
 	init_completion(&hub_data->big_read_done);
@@ -696,7 +691,7 @@ err_input_allocate_device_sensorhub:
 	complete_all(&hub_data->big_write_done);
 	complete_all(&hub_data->big_read_done);
 	complete_all(&hub_data->read_done);
-	wake_lock_destroy(&hub_data->sensorhub_wake_lock);
+	wakeup_source_unregister(hub_data->sensorhub_wake_lock);
 	kfree(hub_data);
 
 	return ret;
@@ -714,7 +709,7 @@ void ssp_sensorhub_remove(struct ssp_data *ssp_data)
 	mutex_destroy(&hub_data->big_events_lock);
 	complete_all(&hub_data->big_read_done);
 	complete_all(&hub_data->read_done);
-	wake_lock_destroy(&hub_data->sensorhub_wake_lock);
+	wakeup_source_unregister(hub_data->sensorhub_wake_lock);
 	kfree(hub_data);
 }
 

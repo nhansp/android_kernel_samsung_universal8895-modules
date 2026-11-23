@@ -57,15 +57,11 @@ static ssize_t accel_name_show(struct device *dev,
 int accel_open_calibration(struct ssp_data *data)
 {
 	int iRet = 0;
-	mm_segment_t old_fs;
 	struct file *cal_filp = NULL;
 
-	old_fs = get_fs();
-	set_fs(KERNEL_DS);
 
 	cal_filp = filp_open(CALIBRATION_FILE_PATH, O_RDONLY, 0660);
 	if (IS_ERR(cal_filp)) {
-		set_fs(old_fs);
 		iRet = PTR_ERR(cal_filp);
 
 		data->accelcal.x = 0;
@@ -75,12 +71,11 @@ int accel_open_calibration(struct ssp_data *data)
 		return iRet;
 	}
 
-	iRet = vfs_read(cal_filp, (char *)&data->accelcal, 3 * sizeof(int), &cal_filp->f_pos);
+	iRet = kernel_read(cal_filp, (char *)&data->accelcal, 3 * sizeof(int), &cal_filp->f_pos);
 	if (iRet < 0)
 		iRet = -EIO;
 
 	filp_close(cal_filp, current->files);
-	set_fs(old_fs);
 
 	ssp_dbg("[SSP]: open accel calibration %d, %d, %d\n",
 		data->accelcal.x, data->accelcal.y, data->accelcal.z);
@@ -170,7 +165,6 @@ static int accel_do_calibrate(struct ssp_data *data, int iEnable)
 	int iSum[3] = { 0, };
 	int iRet = 0, iCount;
 	struct file *cal_filp = NULL;
-	mm_segment_t old_fs;
 
 	if (iEnable) {
 		data->accelcal.x = 0;
@@ -205,19 +199,16 @@ static int accel_do_calibrate(struct ssp_data *data, int iEnable)
 	ssp_dbg("[SSP]: do accel calibrate %d, %d, %d\n",
 		data->accelcal.x, data->accelcal.y, data->accelcal.z);
 
-	old_fs = get_fs();
-	set_fs(KERNEL_DS);
 
 	cal_filp = filp_open(CALIBRATION_FILE_PATH,
 			O_CREAT | O_TRUNC | O_WRONLY, 0660);
 	if (IS_ERR(cal_filp)) {
 		pr_err("[SSP]: %s - Can't open calibration file\n", __func__);
-		set_fs(old_fs);
 		iRet = PTR_ERR(cal_filp);
 		return iRet;
 	}
 
-	iRet = vfs_write(cal_filp, (char *)&data->accelcal, 3 * sizeof(int), &cal_filp->f_pos);
+	iRet = kernel_write(cal_filp, (char *)&data->accelcal, 3 * sizeof(int), &cal_filp->f_pos);
 	if (iRet < 0) {
 		pr_err("[SSP]: %s - Can't write the accelcal to file\n",
 			__func__);
@@ -225,7 +216,6 @@ static int accel_do_calibrate(struct ssp_data *data, int iEnable)
 	}
 
 	filp_close(cal_filp, current->files);
-	set_fs(old_fs);
 	set_accel_cal(data);
 	return iRet;
 }

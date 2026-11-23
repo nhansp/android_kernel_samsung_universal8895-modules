@@ -526,7 +526,7 @@ void ssp_batch_data_read_task(struct work_struct *work)
 	u64 ts = 0;
 
 	mutex_lock(&data->batch_events_lock);
-	wake_lock(&data->ssp_wake_lock);
+	__pm_stay_awake(data->ssp_wake_lock);
 
 	residue = big->length;
 	data->batch_event.batch_length = big->length;
@@ -534,7 +534,7 @@ void ssp_batch_data_read_task(struct work_struct *work)
 	if (data->batch_event.batch_data == NULL) {
 		ssp_dbg("[SSP_BAT] batch data alloc fail\n");
 		kfree(big);
-		wake_unlock(&data->ssp_wake_lock);
+		__pm_relax(data->ssp_wake_lock);
 		mutex_unlock(&data->batch_events_lock);
 		return;
 	}
@@ -560,7 +560,7 @@ void ssp_batch_data_read_task(struct work_struct *work)
 			data->batch_event.batch_data = NULL;
 			data->batch_event.batch_length = 0;
 			kfree(big);
-			wake_unlock(&data->ssp_wake_lock);
+			__pm_relax(data->ssp_wake_lock);
 			mutex_unlock(&data->batch_events_lock);
 			return;
 		}
@@ -589,7 +589,7 @@ void ssp_batch_data_read_task(struct work_struct *work)
 	data->batch_event.batch_data = NULL;
 	data->batch_event.batch_length = 0;
 	kfree(big);
-	wake_unlock(&data->ssp_wake_lock);
+	__pm_relax(data->ssp_wake_lock);
 	mutex_unlock(&data->batch_events_lock);
 }
 #endif
@@ -738,15 +738,15 @@ int parse_dataframe(struct ssp_data *data, char *pchRcvDataFrame, int iLength)
 		case MSG2AP_INST_GYRO_CAL:
 			pr_info("[SSP]: %s - Gyro caldata received from MCU\n",  __func__);
 			memcpy(caldata, pchRcvDataFrame + iDataIdx, sizeof(caldata));
-			wake_lock(&data->ssp_wake_lock);
+			__pm_stay_awake(data->ssp_wake_lock);
 			save_gyro_caldata(data, caldata);
-			wake_unlock(&data->ssp_wake_lock);
+			__pm_relax(data->ssp_wake_lock);
 			iDataIdx += sizeof(caldata);
 			break;
 		case MSG2AP_INST_MAG_CAL:
-			wake_lock(&data->ssp_wake_lock);
+			__pm_stay_awake(data->ssp_wake_lock);
 			save_magnetic_cal_param_to_nvm(data, pchRcvDataFrame, &iDataIdx);
-			wake_unlock(&data->ssp_wake_lock);
+			__pm_relax(data->ssp_wake_lock);
 			break;
 		case MSG2AP_INST_COLLECT_BIGDATA:
 			switch (pchRcvDataFrame[iDataIdx++]) {

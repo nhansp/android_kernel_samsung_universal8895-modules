@@ -13,11 +13,6 @@
  *
  */
 #include "ssp.h"
-#ifdef CONFIG_OF
-#include <linux/of_gpio.h>
-#endif
-#include <linux/sec_debug.h>
-#include <linux/sec_batt.h>
 
 #define DEBUG
 
@@ -27,28 +22,13 @@ static void ssp_late_resume(struct early_suspend *handler);
 #endif
 #define NORMAL_SENSOR_STATE_K	0x3FEFF
 
-#if defined(CONFIG_MUIC_NOTIFIER)
-#include <linux/muic/muic.h>
-#include <linux/muic/muic_notifier.h>
-#endif
 
 #if defined(CONFIG_SSP_MOTOR_CALLBACK)
 #include <linux/ssp_motorcallback.h>
 #endif
 
-unsigned int bootmode;
-EXPORT_SYMBOL(bootmode);
-
 struct mutex shutdown_lock;
 bool ssp_debug_time_flag;
-
-static int __init bootmode_setup(char *str)
-{
-	get_option(&str, &bootmode);
-	pr_info("[SSP] %s  = %d\n", __func__,  bootmode);
-	return 1;
-}
-__setup("bootmode=", bootmode_setup);
 
 void ssp_enable(struct ssp_data *data, bool enable)
 {
@@ -82,9 +62,9 @@ void ssp_enable(struct ssp_data *data, bool enable)
 u64 get_current_timestamp(void)
 {
 	u64 timestamp;
-	struct timespec ts;
+	struct timespec64 ts;
 
-	ts = ktime_to_timespec(ktime_get_boottime());
+	ts = ktime_to_timespec64(ktime_get_boottime());
 	timestamp = ts.tv_sec * 1000000000ULL + ts.tv_nsec;
 
 	return timestamp;
@@ -358,48 +338,30 @@ static int ssp_parse_dt(struct device *dev, struct ssp_data *data)
 		return errorno;
 	}
 
-	if (of_property_read_string(np, "ssp-vdd-mcu-1p8", &data->vdd_mcu_1p8_name)) {
+	data->vdd_mcu_1p8_name = "vdd_mcu_1p8";
+	data->regulator_vdd_mcu_1p8 = devm_regulator_get_optional(dev, "vdd-mcu-1p8");
+	if (IS_ERR(data->regulator_vdd_mcu_1p8)) {
+		pr_err("[SSP]: failed to get reulator %s ret: %ld\n",
+				data->vdd_mcu_1p8_name, PTR_ERR(data->regulator_vdd_mcu_1p8));
 		data->regulator_vdd_mcu_1p8 = NULL;
-	} else {
-		data->regulator_vdd_mcu_1p8 = regulator_get(NULL, data->vdd_mcu_1p8_name);
-		if (IS_ERR(data->regulator_vdd_mcu_1p8)) {
-			pr_err("[SSP]: failed to get reulator %s ret: %ld\n",
-					data->vdd_mcu_1p8_name, PTR_ERR(data->regulator_vdd_mcu_1p8));
-		}
+	} else if (regulator_is_enabled(data->regulator_vdd_mcu_1p8) > 0) {
+		/* the unused-regulator cleanup must not cut the hub's power */
+		if (regulator_enable(data->regulator_vdd_mcu_1p8))
+			pr_err("[SSP]: could not adopt vdd_mcu_1p8\n");
 	}
 
-	data->shub_en = of_get_named_gpio(np, "ssp-pwr-en", 0);
-	pr_err("[SSPBBD] ssp-pwr-en=%d\n", data->shub_en);
-	if (data->shub_en < 0) {
-		pr_err("[SSPBBD]: GPIO value not correct\n");
-	} else {
-		/* Config GPIO */
-		errorno = gpio_request(data->shub_en, "SHUB EN");
-		if (errorno)
-			pr_err("[SSPBBD]: failed to request SHUB EN, ret:%d", errorno);
-
-		errorno = gpio_direction_output(data->shub_en, 0);
-		if (errorno)
-			pr_err("[SSPBBD]: failed set SHUB EN as output mode, ret:%d", errorno);
-	}
+	data->shub_en = devm_gpiod_get_optional(dev, "ssp-pwr-en", GPIOD_OUT_LOW);
+	if (IS_ERR(data->shub_en))
+		data->shub_en = NULL;
+	pr_err("[SSPBBD] ssp-pwr-en=%d\n", data->shub_en ? desc_to_gpio(data->shub_en) : -1);
 
 #ifdef CONFIG_SENSORS_SSP_HIFI_BATCHING
-	data->mcu_host_wake_int = of_get_named_gpio(np,
-					"ssp-batch-wake-irq", 0);
-	/* pr_info("[SSP_IRQ] of_get_named_gpio 'ssp-batch-wake-irq' : %d\n", data->mcu_host_wake_int); */
-	if (data->mcu_host_wake_int < 0) {
-		pr_info("[SSP_IRQ] Failed to of_get_named_gpio 'ssp-batch-wake-irq'\n");
-		errorno = data->mcu_host_wake_int;
+	data->mcu_host_wake_int = devm_gpiod_get(dev, "batch-wake", GPIOD_IN);
+	if (IS_ERR(data->mcu_host_wake_int)) {
+		pr_info("[SSP_IRQ] Failed to get 'batch-wake' gpio\n");
+		errorno = PTR_ERR(data->mcu_host_wake_int);
 		goto dt_exit;
 	}
-
-	errorno = gpio_request(data->mcu_host_wake_int, "ssp-batch-wake-irq");
-	/* pr_info("[SSP_IRQ] gpio_request SSP_HOST_WAKE : %d\n", errorno); */
-	if (errorno) {
-		pr_info("[SSP_IRQ] Failed to request SSP_HOST_WAKE\n");
-		goto dt_exit;
-	}
-	errorno = gpio_direction_input(data->mcu_host_wake_int);
 #endif
 
 	if (of_property_read_u32(np, "ssp-acc-position", &data->accel_position))
@@ -525,38 +487,6 @@ dt_exit:
 	return errorno;
 }
 
-#if defined(CONFIG_MUIC_NOTIFIER)
-static int exynos_cpuidle_muic_notifier(struct notifier_block *nb,
-				unsigned long action, void *data)
-{
-	struct ssp_data *ssp_data;
-	muic_attached_dev_t attached_dev = *(muic_attached_dev_t *)data;
-
-	ssp_data = container_of(nb, struct ssp_data, cpuidle_muic_nb);
-
-	switch (attached_dev) {
-	case ATTACHED_DEV_JIG_UART_OFF_MUIC:
-	case ATTACHED_DEV_JIG_UART_OFF_VB_MUIC:
-	case ATTACHED_DEV_JIG_UART_OFF_VB_OTG_MUIC:
-	case ATTACHED_DEV_JIG_UART_OFF_VB_FG_MUIC:
-	case ATTACHED_DEV_JIG_UART_ON_MUIC:
-		if (action == MUIC_NOTIFY_CMD_DETACH)
-			ssp_data->jig_is_attached = false;
-		else if (action == MUIC_NOTIFY_CMD_ATTACH)
-			ssp_data->jig_is_attached = true;
-		else
-			pr_err("[SSP] %s: ACTION Error!\n", __func__);
-		break;
-	default:
-		break;
-	}
-
-	pr_info("[SSP] %s: dev=%d, action=%lu\n",
-			__func__, attached_dev, action);
-
-	return NOTIFY_DONE;
-}
-#endif
 
 /*
  *#if defined (CONFIG_SENSORS_SSP_VLTE)
@@ -730,11 +660,9 @@ static int ssp_probe(struct spi_device *spi)
 	pr_info("\n#####################################################\n");
 
 	initialize_variable(data);
-	wake_lock_init(&data->ssp_wake_lock,
-		WAKE_LOCK_SUSPEND, "ssp_wake_lock");
+	data->ssp_wake_lock = wakeup_source_register(NULL, "ssp_wake_lock");
 
-	wake_lock_init(&data->ssp_comm_wake_lock,
-		WAKE_LOCK_SUSPEND, "ssp_comm_wake_lock");
+	data->ssp_comm_wake_lock = wakeup_source_register(NULL, "ssp_comm_wake_lock");
 
 	iRet = initialize_input_dev(data);
 	if (iRet < 0) {
@@ -782,7 +710,7 @@ static int ssp_probe(struct spi_device *spi)
 	}
 
 	/* HIFI Sensor + Normal Indexing */
-	data->mcu_host_wake_irq = gpio_to_irq(data->mcu_host_wake_int);
+	data->mcu_host_wake_irq = gpiod_to_irq(data->mcu_host_wake_int);
 
 	iRet = request_irq(data->mcu_host_wake_irq,
 			ssp_mcu_host_wake_irq_handler,
@@ -797,7 +725,7 @@ static int ssp_probe(struct spi_device *spi)
 
 	if (iRet < 0) {
 		pr_info("[SSP_IRQ]: request_irq(%d) failed for gpio %d (%d)\n",
-				data->mcu_host_wake_int,
+				desc_to_gpio(data->mcu_host_wake_int),
 				data->mcu_host_wake_irq,
 				iRet);
 		iRet = -ENODEV;
@@ -814,10 +742,6 @@ static int ssp_probe(struct spi_device *spi)
 	register_early_suspend(&data->early_suspend);
 #endif
 
-#if defined(CONFIG_MUIC_NOTIFIER)
-	muic_notifier_register(&data->cpuidle_muic_nb,
-		exynos_cpuidle_muic_notifier, MUIC_NOTIFY_DEV_CPUIDLE);
-#endif
 
 /*
  *#if defined (CONFIG_SENSORS_SSP_VLTE)
@@ -864,7 +788,6 @@ err_create_motor_workqueue:
 #ifdef CONFIG_SENSORS_SSP_HIFI_BATCHING
 /* Test PIN for Camera - Gyro Sync */
 err_request_irq:
-	gpio_free(data->mcu_host_wake_int);
 err_create_batch_workqueue:
 	destroy_workqueue(data->batch_wq);
 	mutex_destroy(&data->batch_events_lock);
@@ -876,8 +799,8 @@ err_sysfs_create:
 err_create_workqueue:
 	remove_input_dev(data);
 err_input_register_device:
-	wake_lock_destroy(&data->ssp_comm_wake_lock);
-	wake_lock_destroy(&data->ssp_wake_lock);
+	wakeup_source_unregister(data->ssp_comm_wake_lock);
+	wakeup_source_unregister(data->ssp_wake_lock);
 err_reset_null:
 	mutex_destroy(&data->comm_mutex);
 	mutex_destroy(&data->pending_mutex);
@@ -900,7 +823,7 @@ static void ssp_shutdown(struct spi_device *spi)
 {
 	struct ssp_data *data = spi_get_drvdata(spi);
 
-	pr_err("[SSP] lpm %d recovery\n", lpcharge);
+	pr_err("[SSP] recovery\n");
 	func_dbg();
 	if (data->bProbeIsDone == false)
 		goto exit;
@@ -937,7 +860,6 @@ static void ssp_shutdown(struct spi_device *spi)
 	cancel_work_sync(&data->work_bbd_mcu_ready);
 	destroy_workqueue(data->bbd_mcu_ready_wq);
 #ifdef CONFIG_SENSORS_SSP_HIFI_BATCHING
-	gpio_free(data->mcu_host_wake_int); /* HIFI */
 	destroy_workqueue(data->batch_wq); /* HIFI */
 	mutex_destroy(&data->batch_events_lock);
 #endif
@@ -961,11 +883,11 @@ static void ssp_shutdown(struct spi_device *spi)
 	ssp_sensorhub_remove(data);
 #endif
 
-	del_timer_sync(&data->debug_timer);
+	timer_delete_sync(&data->debug_timer);
 	cancel_work_sync(&data->work_debug);
 	destroy_workqueue(data->debug_wq);
-	wake_lock_destroy(&data->ssp_comm_wake_lock);
-	wake_lock_destroy(&data->ssp_wake_lock);
+	wakeup_source_unregister(data->ssp_comm_wake_lock);
+	wakeup_source_unregister(data->ssp_wake_lock);
 #ifdef CONFIG_SENSORS_SSP_SHTC1
 	mutex_destroy(&data->bulk_temp_read_lock);
 	mutex_destroy(&data->cp_temp_adc_lock);
@@ -1062,8 +984,7 @@ static int ssp_resume(struct device *dev)
 }
 
 static const struct dev_pm_ops ssp_pm_ops = {
-	.suspend = ssp_suspend,
-	.resume = ssp_resume
+	SYSTEM_SLEEP_PM_OPS(ssp_suspend, ssp_resume)
 };
 #endif /* CONFIG_HAS_EARLYSUSPEND */
 
@@ -1088,7 +1009,7 @@ static struct spi_driver ssp_driver = {
 };
 
 struct spi_driver *pssp_driver = &ssp_driver;
-module_spi_driver(ssp_driver);
 MODULE_DESCRIPTION("ssp spi driver");
 MODULE_AUTHOR("Samsung Electronics");
 MODULE_LICENSE("GPL");
+MODULE_IMPORT_NS("ANDROID_GKI_VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver");

@@ -442,7 +442,7 @@ static ssize_t set_shake_cam(struct device *dev,
 		send_instruction(data, REMOVE_SENSOR, SHAKE_CAM,
 				buffer, sizeof(buffer));
 		uNewEnable =
-			(u64)atomic_read(&data->aSensorEnable)
+			(u64)atomic64_read(&data->aSensorEnable)
 			& (~(u64)(1 << SHAKE_CAM));
 	}
 
@@ -1111,10 +1111,10 @@ static ssize_t show_mcu_power(struct device *dev,
 		pr_err("[SSP] %s: vdd_mcu_1p8, is enabled %d\n", __func__,
 				regulator_is_enabled(data->regulator_vdd_mcu_1p8));
 		return sprintf(buf, "%d\n", regulator_is_enabled(data->regulator_vdd_mcu_1p8));
-	} else if (data->shub_en >= 0) {
+	} else if (data->shub_en) {
 		pr_err("[SSP] %s: shub_en(%d), is enabled %d\n", __func__,
-				data->shub_en, gpio_get_value(data->shub_en));
-		return sprintf(buf, "%d\n", gpio_get_value(data->shub_en));
+				desc_to_gpio(data->shub_en), gpiod_get_value(data->shub_en));
+		return sprintf(buf, "%d\n", gpiod_get_value(data->shub_en));
 	}
 	return 0;
 }
@@ -1147,18 +1147,18 @@ static ssize_t set_mcu_power(struct device *dev,
 		msleep(20);
 		pr_err("[SSP] %s: enable vdd_mcu_1p8(%lld), is enabled %d\n", __func__,
 				enable, regulator_is_enabled(data->regulator_vdd_mcu_1p8));
-	} else if (data->shub_en >= 0) {
+	} else if (data->shub_en) {
 		switch (enable) {
 		case 0:
-			gpio_set_value(data->shub_en, 0);
+			gpiod_set_value(data->shub_en, 0);
 			break;
 		case 1:
-			gpio_set_value(data->shub_en, 1);
+			gpiod_set_value(data->shub_en, 1);
 			break;
 		}
 		msleep(20);
 		pr_err("[SSP] %s: enable shub_en(%d), is enabled %d\n", __func__,
-				data->shub_en, gpio_get_value(data->shub_en));
+				desc_to_gpio(data->shub_en), gpiod_get_value(data->shub_en));
 	} else {
 		pr_err("[SSP] %s:no support to individual power source for sensorhub\n", __func__);
 	}

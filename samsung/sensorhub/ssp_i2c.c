@@ -315,7 +315,7 @@ int send_instruction(struct ssp_data *data, u8 uInst,
 		if (uLength >= 9)
 			BatchTimeforReset = *(unsigned int *)(&uSendBuf[4]);// Add / change normal case, not factory.
 	//pr_info("[SSP] %s timeForRest %d", __func__, BatchTimeforReset);
-			data->IsBypassMode[uSensorType] = (BatchTimeforReset == 0);
+		data->IsBypassMode[uSensorType] = (BatchTimeforReset == 0);
 	//pr_info("[SSP] sensor%d mode%d Time %lld\n", uSensorType, data->IsBypassMode[uSensorType], current_Ts);
 	}
 	return iRet;
@@ -935,11 +935,11 @@ int set_time(struct ssp_data *data)
 {
 	int iRet;
 	struct ssp_msg *msg;
-	struct timespec ts;
+	struct timespec64 ts;
 	struct rtc_time tm;
 
-	getnstimeofday(&ts);
-	rtc_time_to_tm(ts.tv_sec, &tm);
+	ktime_get_real_ts64(&ts);
+	rtc_time64_to_tm(ts.tv_sec, &tm);
 	pr_info("[SSP]: %s %d-%02d-%02d %02d:%02d:%02d.%09lu UTC\n",
 			__func__,
 			tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
@@ -983,11 +983,11 @@ int get_time(struct ssp_data *data)
 	int iRet;
 	char buffer[12] = { 0, };
 	struct ssp_msg *msg;
-	struct timespec ts;
+	struct timespec64 ts;
 	struct rtc_time tm;
 
-	getnstimeofday(&ts);
-	rtc_time_to_tm(ts.tv_sec, &tm);
+	ktime_get_real_ts64(&ts);
+	rtc_time64_to_tm(ts.tv_sec, &tm);
 	pr_info("[SSP]: %s ap %d-%02d-%02d %02d:%02d:%02d.%09lu UTC\n",
 			__func__,
 			tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
@@ -1019,10 +1019,10 @@ int get_time(struct ssp_data *data)
 	tm.tm_mon = msg->buffer[5] - 1;
 	tm.tm_mday = buffer[6];
 	tm.tm_year = buffer[7] + 100;
-	rtc_tm_to_time(&tm, &ts.tv_sec);
+	ts.tv_sec = rtc_tm_to_time64(&tm);
 	memcpy(&ts.tv_nsec, &msg->buffer[8], 4);
 
-	rtc_time_to_tm(ts.tv_sec, &tm);
+	rtc_time64_to_tm(ts.tv_sec, &tm);
 	pr_info("[SSP]: %s mcu %d-%02d-%02d %02d:%02d:%02d.%09lu UTC\n",
 			__func__,
 			tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,

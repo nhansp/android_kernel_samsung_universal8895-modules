@@ -53,7 +53,6 @@ struct light_coef_predefine_item light_coef_predefine_table[COLOR_NUM+1] = {
 int light_corloid_read_colorid(void)
 {
 	int iRet = 0;
-	mm_segment_t old_fs;
 	struct file *colorid_filp = NULL;
 	int color_id;
 	char buf[8] = {0, };
@@ -61,8 +60,6 @@ int light_corloid_read_colorid(void)
 	char *token, *str;
 
 	//read current colorid
-	old_fs = get_fs();
-	set_fs(KERNEL_DS);
 
 	colorid_filp = filp_open(COLOR_ID_PATH, O_RDONLY, 0660);
 	if (IS_ERR(colorid_filp)) {
@@ -70,21 +67,18 @@ int light_corloid_read_colorid(void)
 		if (iRet != -ENOENT)
 			pr_err("[SSP] %s - Can't open colorid file\n",
 				__func__);
-		set_fs(old_fs);
 		return iRet;
 	}
 
-	iRet = vfs_read(colorid_filp,
+	iRet = kernel_read(colorid_filp,
 		(char *)buf, sizeof(char)*8, &colorid_filp->f_pos);
 	if (iRet < 0) {
 		pr_err("[SSP] %s - Can't read the colorid data\n", __func__);
 		filp_close(colorid_filp, current->files);
-		set_fs(old_fs);
 		return iRet;
 	}
 
 	filp_close(colorid_filp, current->files);
-	set_fs(old_fs);
 
 	str = buf;
 	token = strsep(&str, " ");
@@ -102,24 +96,20 @@ int light_corloid_read_colorid(void)
 int light_colorid_read_efs_version(char buf[], int buf_length)
 {
 	int iRet = 0;
-	mm_segment_t old_fs;
 	struct file *version_filp = NULL;
 
 	memset(buf, 0, sizeof(char)*buf_length);
 
-	old_fs = get_fs();
-	set_fs(KERNEL_DS);
 
 	version_filp = filp_open(VERSION_FILE_NAME, O_RDONLY, 0660);
 
 	if (IS_ERR(version_filp)) {
 		iRet = PTR_ERR(version_filp);
 		pr_err("[SSP] %s - Can't open version file %d\n", __func__, iRet);
-		set_fs(old_fs);
 		return iRet;
 	}
 
-	iRet = vfs_read(version_filp,
+	iRet = kernel_read(version_filp,
 		(char *)buf, buf_length * sizeof(char), &version_filp->f_pos);
 
 
@@ -127,7 +117,6 @@ int light_colorid_read_efs_version(char buf[], int buf_length)
 		pr_err("[SSP] %s - Can't read the version data %d\n", __func__, iRet);
 
 	filp_close(version_filp, current->files);
-	set_fs(old_fs);
 
 	pr_info("[SSP] %s - %s\n", __func__, buf);
 
@@ -137,12 +126,9 @@ int light_colorid_read_efs_version(char buf[], int buf_length)
 int light_colorid_write_efs_version(int version, char *color_ids)
 {
 	int iRet = 0;
-	mm_segment_t old_fs;
 	struct file *version_filp = NULL;
 	char file_contents[COLOR_ID_VERSION_FILE_LENGTH] = {0, };
 
-	old_fs = get_fs();
-	set_fs(KERNEL_DS);
 
 	snprintf(file_contents, sizeof(file_contents), "%d.%s", version, color_ids);
 
@@ -151,12 +137,11 @@ int light_colorid_write_efs_version(int version, char *color_ids)
 
 	if (IS_ERR(version_filp)) {
 		pr_err("[SSP] %s - Can't open version file\n", __func__);
-		set_fs(old_fs);
 		iRet = PTR_ERR(version_filp);
 		return iRet;
 	}
 
-	iRet = vfs_write(version_filp, (char *)&file_contents,
+	iRet = kernel_write(version_filp, (char *)&file_contents,
 		sizeof(char)*COLOR_ID_VERSION_FILE_LENGTH, &version_filp->f_pos);
 	if (iRet < 0) {
 		pr_err("[SSP] %s - Can't write the version data to file\n", __func__);
@@ -164,7 +149,6 @@ int light_colorid_write_efs_version(int version, char *color_ids)
 	}
 
 	filp_close(version_filp, current->files);
-	set_fs(old_fs);
 
 	return iRet;
 }
@@ -211,13 +195,10 @@ bool light_colorid_check_efs_version(void)
 int light_colorid_write_predefined_file(int color_id, int coef[], int thresh[],  int thresh_alert)
 {
 	int iRet = 0, crc;
-	mm_segment_t old_fs;
 	struct file *coef_filp = NULL;
 	char file_name[COLOR_ID_PREDEFINED_FILENAME_LENTH] = {0, };
 	char file_contents[COLOR_ID_PREDEFINED_FILE_LENGTH] = {0, };
 
-	old_fs = get_fs();
-	set_fs(KERNEL_DS);
 
 	snprintf(file_name, sizeof(file_name), "%s%d", PREDEFINED_FILE_NAME, color_id);
 
@@ -230,19 +211,19 @@ int light_colorid_write_predefined_file(int color_id, int coef[], int thresh[], 
 
 	if (IS_ERR(coef_filp)) {
 		pr_err("[SSP] %s - Can't open coef file %d\n", __func__, color_id);
-		set_fs(old_fs);
 		iRet = PTR_ERR(coef_filp);
 		return iRet;
 	}
 
-	iRet = vfs_write(coef_filp, (char *)file_contents, sizeof(char)*COLOR_ID_PREDEFINED_FILE_LENGTH, &coef_filp->f_pos);
+	iRet = kernel_write(coef_filp, (char *)file_contents,
+			    sizeof(char) * COLOR_ID_PREDEFINED_FILE_LENGTH,
+			    &coef_filp->f_pos);
 	if (iRet < 0) {
 		pr_err("[SSP] %s - Can't write the coef data to file\n", __func__);
 		iRet = -EIO;
 	}
 
 	filp_close(coef_filp, current->files);
-	set_fs(old_fs);
 
 	return iRet;
 }
@@ -250,14 +231,11 @@ int light_colorid_write_predefined_file(int color_id, int coef[], int thresh[], 
 int light_colorid_read_predefined_file(int color_id, int coef[], unsigned int thresh[], unsigned int *thresh_alert)
 {
 	int iRet = 0, crc, i;
-	mm_segment_t old_fs;
 	struct file *coef_filp = NULL;
 	char file_name[COLOR_ID_PREDEFINED_FILENAME_LENTH] = {0, };
 	char file_contents[COLOR_ID_PREDEFINED_FILE_LENGTH] = {0, };
 	char *token, *str;
 
-	old_fs = get_fs();
-	set_fs(KERNEL_DS);
 
 	snprintf(file_name, sizeof(file_name), "%s%d", PREDEFINED_FILE_NAME, color_id);
 
@@ -265,7 +243,6 @@ int light_colorid_read_predefined_file(int color_id, int coef[], unsigned int th
 
 	if (IS_ERR(coef_filp)) {
 		pr_err("[SSP] %s - Can't open coef file %d\n", __func__, color_id);
-		set_fs(old_fs);
 		iRet = PTR_ERR(coef_filp);
 		memcpy(coef, light_coef_predefine_table[0].coef, sizeof(int)*7);
 		memcpy(thresh, light_coef_predefine_table[0].thresh, sizeof(unsigned int)*2);
@@ -273,7 +250,7 @@ int light_colorid_read_predefined_file(int color_id, int coef[], unsigned int th
 		return iRet;
 	}
 
-	iRet = vfs_read(coef_filp,
+	iRet = kernel_read(coef_filp,
 		(char *)file_contents, sizeof(char)*COLOR_ID_PREDEFINED_FILE_LENGTH, &coef_filp->f_pos);
 
 	if (iRet != sizeof(char)*COLOR_ID_PREDEFINED_FILE_LENGTH) {
@@ -282,12 +259,10 @@ int light_colorid_read_predefined_file(int color_id, int coef[], unsigned int th
 		memcpy(thresh, light_coef_predefine_table[0].thresh, sizeof(unsigned int)*2);
 		memcpy(thresh_alert, &light_coef_predefine_table[0].thresh_alert, sizeof(unsigned int));
 		filp_close(coef_filp, current->files);
-		set_fs(old_fs);
 		return -EIO;
 	}
 
 	filp_close(coef_filp, current->files);
-	set_fs(old_fs);
 
 	//parsing
 	str = file_contents;
@@ -530,7 +505,7 @@ ssize_t light_hiddenhole_version_store(struct device *dev,
 	}
 
 	if (strlen(str) < COLOR_ID_IDS_LENGTH)
-		sscanf(str, "%20s", str_ids);
+		sscanf(str, "%19s", str_ids);
 	else {
 		pr_err("[SSP] %s - ids overflow\n", __func__);
 		return -EINVAL;
@@ -584,13 +559,10 @@ ssize_t light_hiddenhole_write_all_data_store(struct device *dev,
 	int iRet = 0;
 	int temp_ret = 0;
 
-	mm_segment_t old_fs;
 	struct file *coef_filp = NULL;
 	char file_name[COLOR_ID_PREDEFINED_FILENAME_LENTH] = {0, };
 	char file_contents[COLOR_ID_PREDEFINED_FILE_LENGTH] = {0, };
 
-	old_fs = get_fs();
-	set_fs(KERNEL_DS);
 	pr_info("[SSP] %s - %s\n", __func__, buf);
 
 	temp_ret = sscanf(buf, "%2d,%6d,%6d,%6d,%6d,%6d,%6d,%6d,%6d,%6d,%6d,%7d",
@@ -600,7 +572,6 @@ ssize_t light_hiddenhole_write_all_data_store(struct device *dev,
 
 	if ((coef[0]+coef[1]+coef[2]+coef[3]+coef[4]+coef[5]+coef[6]+thresh[0]+thresh[1]+thresh_alert != crc) ||
 		(temp_ret != WRITE_ALL_DATA_NUMBER)) {
-		set_fs(old_fs);
 		pr_info("[SSP] %s - crc is wrong\n", __func__);
 		return -EINVAL;
 	}
@@ -619,12 +590,11 @@ ssize_t light_hiddenhole_write_all_data_store(struct device *dev,
 
 	if (IS_ERR(coef_filp)) {
 		pr_err("[SSP] %s - Can't open coef file %d\n", __func__, color_id);
-		set_fs(old_fs);
 		iRet = PTR_ERR(coef_filp);
 		return iRet;
 	}
 
-	iRet = vfs_write(coef_filp, (char *)file_contents,
+	iRet = kernel_write(coef_filp, (char *)file_contents,
 		sizeof(char)*COLOR_ID_PREDEFINED_FILE_LENGTH, &coef_filp->f_pos);
 	if (iRet < 0) {
 		pr_err("[SSP] %s - Can't write the coef data to file\n", __func__);
@@ -632,7 +602,6 @@ ssize_t light_hiddenhole_write_all_data_store(struct device *dev,
 	}
 
 	filp_close(coef_filp, current->files);
-	set_fs(old_fs);
 
 	pr_info("[SSP] %s - Success %d\n", __func__, iRet);
 	return size;
@@ -642,7 +611,6 @@ ssize_t  light_hiddendhole_is_exist_efs_show(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
 	int is_exist = 1, colorid;
-	mm_segment_t old_fs;
 	struct file *coef_filp = NULL;
 	char file_name[COLOR_ID_PREDEFINED_FILENAME_LENTH];
 
@@ -653,8 +621,6 @@ ssize_t  light_hiddendhole_is_exist_efs_show(struct device *dev,
 		pr_err("[SSP] %s - read colorid failed - %d\n", __func__, colorid);
 		is_exist = 0;
 	} else {
-		old_fs = get_fs();
-		set_fs(KERNEL_DS);
 
 		snprintf(file_name, sizeof(file_name), "%s%d", PREDEFINED_FILE_NAME, colorid);
 
@@ -662,11 +628,9 @@ ssize_t  light_hiddendhole_is_exist_efs_show(struct device *dev,
 
 		if (IS_ERR(coef_filp)) {
 			pr_err("[SSP] %s - Can't open coef file %d\n", __func__, colorid);
-			set_fs(old_fs);
 			is_exist = 0;
 		} else {
 			filp_close(coef_filp, current->files);
-			set_fs(old_fs);
 		}
 	}
 	return snprintf(buf, PAGE_SIZE, "%s\n", (is_exist == 1) ? "TRUE" : "FALSE");

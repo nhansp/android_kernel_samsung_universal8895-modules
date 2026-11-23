@@ -14,7 +14,6 @@
  */
 #include "ssp.h"
 #include <linux/fs.h>
-#include <linux/sec_debug.h>
 #include <linux/iio/iio.h>
 #include <linux/iio/buffer.h>
 
@@ -507,9 +506,10 @@ static void debug_work_func(struct work_struct *work)
 			|| data->batchLatencyBuf[uSensorCnt]) {
 			print_sensordata(data, uSensorCnt);
 			if (data->indio_dev[uSensorCnt] != NULL
-					&& list_empty(&data->indio_dev[uSensorCnt]->buffer->buffer_list)) {
-				pr_err("[SSP] %u : buffer_list of iio:device%d is empty!\n",
-						 uSensorCnt, data->indio_dev[uSensorCnt]->id);
+					&& !iio_buffer_enabled(data->indio_dev[uSensorCnt])) {
+				pr_err("[SSP] %u : iio:device%d buffer not enabled\n",
+				       uSensorCnt,
+				       iio_device_id(data->indio_dev[uSensorCnt]));
 			}
 		}
 	}
@@ -536,9 +536,9 @@ exit:
 	data->uIrqCnt = 0;
 }
 
-static void debug_timer_func(unsigned long ptr)
+static void debug_timer_func(struct timer_list *t)
 {
-	struct ssp_data *data = (struct ssp_data *)ptr;
+	struct ssp_data *data = timer_container_of(data, t, debug_timer);
 
 	queue_work(data->debug_wq, &data->work_debug);
 	mod_timer(&data->debug_timer,
@@ -553,13 +553,13 @@ void enable_debug_timer(struct ssp_data *data)
 
 void disable_debug_timer(struct ssp_data *data)
 {
-	del_timer_sync(&data->debug_timer);
+	timer_delete_sync(&data->debug_timer);
 	cancel_work_sync(&data->work_debug);
 }
 
 int initialize_debug_timer(struct ssp_data *data)
 {
-	setup_timer(&data->debug_timer, debug_timer_func, (unsigned long)data);
+	timer_setup(&data->debug_timer, debug_timer_func, 0);
 
 	data->debug_wq = create_singlethread_workqueue("ssp_debug_wq");
 	if (!data->debug_wq)

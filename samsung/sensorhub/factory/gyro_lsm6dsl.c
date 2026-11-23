@@ -64,15 +64,11 @@ static ssize_t gyro_name_show(struct device *dev,
 int gyro_open_calibration(struct ssp_data *data)
 {
 	int iRet = 0;
-	mm_segment_t old_fs;
 	struct file *cal_filp = NULL;
 
-	old_fs = get_fs();
-	set_fs(KERNEL_DS);
 
 	cal_filp = filp_open(CALIBRATION_FILE_PATH, O_RDONLY | O_NOFOLLOW | O_NONBLOCK, 0660);
 	if (IS_ERR(cal_filp)) {
-		set_fs(old_fs);
 		iRet = PTR_ERR(cal_filp);
 
 		data->gyrocal.x = 0;
@@ -83,14 +79,13 @@ int gyro_open_calibration(struct ssp_data *data)
 		return iRet;
 	}
 
-	iRet = vfs_read(cal_filp, (char *)&data->gyrocal, 3 * sizeof(int), &cal_filp->f_pos);
+	iRet = kernel_read(cal_filp, (char *)&data->gyrocal, 3 * sizeof(int), &cal_filp->f_pos);
 	if (iRet < 0) {
 		pr_err("[SSP]: %s - Can't read gyro cal to file\n", __func__);
 		iRet = -EIO;
 	}
 
 	filp_close(cal_filp, current->files);
-	set_fs(old_fs);
 
 	ssp_dbg("[SSP]: open gyro calibration %d, %d, %d\n",
 		data->gyrocal.x, data->gyrocal.y, data->gyrocal.z);
@@ -101,7 +96,6 @@ int save_gyro_caldata(struct ssp_data *data, s32 *iCalData)
 {
 	int iRet = 0;
 	struct file *cal_filp = NULL;
-	mm_segment_t old_fs;
 
 	data->gyrocal.x = iCalData[0];
 	data->gyrocal.y = iCalData[1];
@@ -110,25 +104,21 @@ int save_gyro_caldata(struct ssp_data *data, s32 *iCalData)
 	ssp_dbg("[SSP]: do gyro calibrate %d, %d, %d\n",
 		data->gyrocal.x, data->gyrocal.y, data->gyrocal.z);
 
-	old_fs = get_fs();
-	set_fs(KERNEL_DS);
 
 	cal_filp = filp_open(CALIBRATION_FILE_PATH, O_CREAT | O_TRUNC | O_WRONLY | O_NOFOLLOW | O_NONBLOCK, 0660);
 	if (IS_ERR(cal_filp)) {
 		pr_err("[SSP]: %s - Can't open calibration file\n", __func__);
-		set_fs(old_fs);
 		iRet = PTR_ERR(cal_filp);
 		return -EIO;
 	}
 
-	iRet = vfs_write(cal_filp, (char *)&data->gyrocal, 3 * sizeof(int), &cal_filp->f_pos);
+	iRet = kernel_write(cal_filp, (char *)&data->gyrocal, 3 * sizeof(int), &cal_filp->f_pos);
 	if (iRet < 0) {
 		pr_err("[SSP]: %s - Can't write gyro cal to file\n", __func__);
 		iRet = -EIO;
 	}
 
 	filp_close(cal_filp, current->files);
-	set_fs(old_fs);
 
 	return iRet;
 }

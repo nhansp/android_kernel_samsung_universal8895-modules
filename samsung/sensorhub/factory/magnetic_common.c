@@ -460,16 +460,12 @@ exit:
 int mag_open_hwoffset(struct ssp_data *data)
 {
 	int iRet = 0;
-	mm_segment_t old_fs;
 	struct file *cal_filp = NULL;
 
-	old_fs = get_fs();
-	set_fs(KERNEL_DS);
 
 	cal_filp = filp_open(MAG_HW_OFFSET_FILE_PATH, O_RDONLY, 0);
 	if (IS_ERR(cal_filp)) {
 		pr_err("[SSP] %s: filp_open failed\n", __func__);
-		set_fs(old_fs);
 		iRet = PTR_ERR(cal_filp);
 
 		data->magoffset.x = 0;
@@ -479,7 +475,7 @@ int mag_open_hwoffset(struct ssp_data *data)
 		return iRet;
 	}
 
-	iRet = cal_filp->f_op->read(cal_filp, (char *)&data->magoffset,
+	iRet = kernel_read(cal_filp, (char *)&data->magoffset,
 		3 * sizeof(char), &cal_filp->f_pos);
 	if (iRet != 3 * sizeof(char)) {
 		pr_err("[SSP] %s: filp_open failed\n", __func__);
@@ -487,7 +483,6 @@ int mag_open_hwoffset(struct ssp_data *data)
 	}
 
 	filp_close(cal_filp, current->files);
-	set_fs(old_fs);
 
 	ssp_dbg("[SSP]: %s: %d, %d, %d\n", __func__,
 		(s8)data->magoffset.x,
@@ -505,25 +500,21 @@ int mag_store_hwoffset(struct ssp_data *data)
 {
 	int iRet = 0;
 	struct file *cal_filp = NULL;
-	mm_segment_t old_fs;
 
 	if (get_hw_offset(data) < 0) {
 		pr_err("[SSP]: %s - get_hw_offset failed\n", __func__);
 		return ERROR;
 	}
-	old_fs = get_fs();
-	set_fs(KERNEL_DS);
 
 	cal_filp = filp_open(MAG_HW_OFFSET_FILE_PATH,
 		O_CREAT | O_TRUNC | O_WRONLY, 0660);
 	if (IS_ERR(cal_filp)) {
 		pr_err("[SSP]: %s - Can't open hw_offset file\n",
 			__func__);
-		set_fs(old_fs);
 		iRet = PTR_ERR(cal_filp);
 		return iRet;
 	}
-	iRet = cal_filp->f_op->write(cal_filp,
+	iRet = kernel_write(cal_filp,
 		(char *)&data->magoffset,
 		3 * sizeof(char), &cal_filp->f_pos);
 	if (iRet != 3 * sizeof(char)) {
@@ -532,7 +523,6 @@ int mag_store_hwoffset(struct ssp_data *data)
 		iRet = -EIO;
 	}
 	filp_close(cal_filp, current->files);
-	set_fs(old_fs);
 	return iRet;
 }
 
@@ -801,29 +791,24 @@ static ssize_t raw_data_show(struct device *dev,
 int load_magnetic_cal_param_from_nvm(u8 *data, u8 length)
 {
 	int iRet = 0;
-	mm_segment_t old_fs;
 	struct file *cal_filp = NULL;
 
-	old_fs = get_fs();
-	set_fs(KERNEL_DS);
 
 	cal_filp = filp_open(MAG_CAL_PARAM_FILE_PATH, O_RDONLY, 0);
 	if (IS_ERR(cal_filp)) {
 		pr_err("[SSP] %s: filp_open failed\n", __func__);
-		set_fs(old_fs);
 		iRet = PTR_ERR(cal_filp);
 
 		return iRet;
 	}
 
-	iRet = vfs_read(cal_filp, (char *)data, length * sizeof(char), &cal_filp->f_pos);
+	iRet = kernel_read(cal_filp, (char *)data, length * sizeof(char), &cal_filp->f_pos);
 	if (iRet != length * sizeof(char)) {
 		pr_err("[SSP] %s: filp_open failed\n", __func__);
 		iRet = -EIO;
 	}
 
 	filp_close(cal_filp, current->files);
-	set_fs(old_fs);
 
 	return iRet;
 
@@ -885,7 +870,6 @@ int save_magnetic_cal_param_to_nvm(struct ssp_data *data, char *pchRcvDataFrame,
 {
 	int iRet = 0;
 	struct file *cal_filp = NULL;
-	mm_segment_t old_fs;
 	int i = 0;
 	int length = 0;
 	u8 mag_caldata_akm[MAC_CAL_PARAM_SIZE_AKM] = {0, }; //AKM uses 13 byte.
@@ -909,21 +893,20 @@ int save_magnetic_cal_param_to_nvm(struct ssp_data *data, char *pchRcvDataFrame,
 			ssp_dbg("[SSP] mag cal param[%d] %d\n", i, mag_caldata_yas[i]);
 	}
 
-	old_fs = get_fs();
-	set_fs(KERNEL_DS);
 
 	cal_filp = filp_open(MAG_CAL_PARAM_FILE_PATH, O_CREAT | O_TRUNC | O_WRONLY | O_NOFOLLOW | O_NONBLOCK, 0660);
 	if (IS_ERR(cal_filp)) {
-		set_fs(old_fs);
 		iRet = PTR_ERR(cal_filp);
 		pr_err("[SSP]: %s - Can't open mag cal file err(%d)\n", __func__, iRet);
 		return -EIO;
 	}
 
 	if (data->mag_type == MAG_TYPE_AKM)
-		iRet = vfs_write(cal_filp, (char *)mag_caldata_akm, length * sizeof(char), &cal_filp->f_pos);
+		iRet = kernel_write(cal_filp, (char *)mag_caldata_akm,
+				    length * sizeof(char), &cal_filp->f_pos);
 	else
-		iRet = vfs_write(cal_filp, (char *)mag_caldata_yas, length * sizeof(char), &cal_filp->f_pos);
+		iRet = kernel_write(cal_filp, (char *)mag_caldata_yas,
+				    length * sizeof(char), &cal_filp->f_pos);
 
 	if (iRet != length * sizeof(char)) {
 		pr_err("[SSP]: %s - Can't write mag cal to file\n", __func__);
@@ -931,7 +914,6 @@ int save_magnetic_cal_param_to_nvm(struct ssp_data *data, char *pchRcvDataFrame,
 	}
 
 	filp_close(cal_filp, current->files);
-	set_fs(old_fs);
 
 	*iDataIdx += length;
 

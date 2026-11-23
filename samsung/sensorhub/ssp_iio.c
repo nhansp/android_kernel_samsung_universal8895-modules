@@ -20,6 +20,7 @@
 #include <linux/iio/buffer.h>
 #include <linux/iio/types.h>
 #include <linux/iio/kfifo_buf.h>
+#include <linux/iio/buffer_impl.h>
 
 static struct sensor_info info_table[] = {
 	SENSOR_INFO_ACCELEROMETER,
@@ -56,11 +57,42 @@ static struct sensor_info info_table[] = {
 int info_table_size =  sizeof(info_table)/sizeof(struct sensor_info);
 
 static struct sensor_info sensors_info[SENSOR_MAX];
-static struct iio_chan_spec indio_channels[SENSOR_MAX];
 
 static const struct iio_info indio_info = {
-	.driver_module = THIS_MODULE,
 };
+
+static DEFINE_MUTEX(ssp_iio_push_lock);
+#define SSP_IIO_MAX_DATUM	80	/* scontext_iio, the largest datum, is 72 bytes */
+
+/* realbits and storagebits are u8, so an element is at most 16 bytes */
+static unsigned int ssp_iio_elem_bytes(unsigned int d)
+{
+	unsigned int e = d & -d;
+
+	return e > 16 ? 16 : e;
+}
+
+static struct iio_chan_spec *ssp_iio_make_channels(unsigned int d, unsigned int *num)
+{
+	unsigned int e = ssp_iio_elem_bytes(d), n = d / e, i;
+	struct iio_chan_spec *ch = kcalloc(n, sizeof(*ch), GFP_KERNEL);
+
+	if (!ch)
+		return NULL;
+	for (i = 0; i < n; i++) {
+		/* the type is irrelevant, the HAL reads only /dev/iio:deviceN */
+		ch[i].type = IIO_ACTIVITY;
+		ch[i].indexed = 1;
+		ch[i].channel = i;
+		ch[i].scan_index = i;
+		ch[i].scan_type.sign = 's';
+		ch[i].scan_type.realbits = e * 8;
+		ch[i].scan_type.storagebits = e * 8;
+		ch[i].scan_type.shift = 0;
+	}
+	*num = n;
+	return ch;
+}
 
 int initialize_iio_buffer_and_device(struct iio_dev *indio_dev, struct ssp_data *data)
 {
@@ -70,17 +102,19 @@ int initialize_iio_buffer_and_device(struct iio_dev *indio_dev, struct ssp_data 
 	if (iRet)
 		goto err_config_ring_buffer;
 
+	iio_device_set_drvdata(indio_dev, data);
+
 	iRet = iio_device_register(indio_dev);
 	if (iRet)
 		goto err_register_device;
 
-	iio_device_set_drvdata(indio_dev, data);
+	/* the HAL never writes scan_elements and an empty mask cannot be enabled */
+	bitmap_fill(indio_dev->buffer->scan_mask, indio_dev->num_channels);
 
 	return iRet;
 
 err_register_device:
 	pr_err("[SSP]: failed to register %s device\n", indio_dev->name);
-	iio_device_unregister(indio_dev);
 err_config_ring_buffer:
 	pr_err("[SSP]: failed to configure %s buffer\n", indio_dev->name);
 	ssp_iio_unconfigure_ring(indio_dev);
@@ -90,14 +124,16 @@ err_config_ring_buffer:
 
 static int ssp_push_iio_buffer(struct iio_dev *indio_dev, u64 timestamp, u8 *data, int data_len)
 {
-	u8 buf[data_len + sizeof(timestamp)];
+	u8 buf[SSP_IIO_MAX_DATUM] = { 0 };
 
+	if (!indio_dev || data_len < 0 || data_len + sizeof(timestamp) > sizeof(buf))
+		return -EINVAL;
 	memcpy(buf, data, data_len);
 	memcpy(&buf[data_len], &timestamp, sizeof(timestamp));
 
-	mutex_lock(&indio_dev->mlock);
+	mutex_lock(&ssp_iio_push_lock);
 	iio_push_to_buffers(indio_dev, buf);
-	mutex_unlock(&indio_dev->mlock);
+	mutex_unlock(&ssp_iio_push_lock);
 
 	return 0;
 }
@@ -208,7 +244,7 @@ void report_sig_motion_data(struct ssp_data *data,
 	struct sensor_value *sig_motion_data)
 {
 	report_iio_data(data, SIG_MOTION_SENSOR, sig_motion_data);
-	wake_lock_timeout(&data->ssp_wake_lock, 0.3*HZ);
+	__pm_wakeup_event(data->ssp_wake_lock, 300);
 }
 
 void report_rot_data(struct ssp_data *data, struct sensor_value *rotdata)
@@ -301,7 +337,7 @@ void report_prox_data(struct ssp_data *data, struct sensor_value *proxdata)
         usleep_range(500, 1000);
 
 	report_iio_data(data, PROXIMITY_SENSOR, proxdata);
-	wake_lock_timeout(&data->ssp_wake_lock, 0.3*HZ);
+	__pm_wakeup_event(data->ssp_wake_lock, 300);
 
         ts_high = (u32)((proxdata->timestamp)>>32);
         ts_low = (u32)((proxdata->timestamp)&0x00000000ffffffff);
@@ -341,7 +377,7 @@ void report_prox_raw_data(struct ssp_data *data,
 void report_prox_alert_data(struct ssp_data *data, struct sensor_value *prox_alert_data)
 {
 	report_iio_data(data, PROXIMITY_ALERT_SENSOR, prox_alert_data);
-	wake_lock_timeout(&data->ssp_wake_lock, 0.3*HZ);
+	__pm_wakeup_event(data->ssp_wake_lock, 300);
     
         ssp_dbg("[SSP] Proximity alert Sensor Detect : %d, raw : %u ts : %llu\n",
             prox_alert_data->prox_alert_detect, prox_alert_data->prox_alert_adc, prox_alert_data->timestamp);
@@ -367,7 +403,7 @@ void report_tilt_data(struct ssp_data *data,
 		struct sensor_value *tilt_data)
 {
 	report_iio_data(data, TILT_DETECTOR, tilt_data);
-	wake_lock_timeout(&data->ssp_wake_lock, 0.3*HZ);
+	__pm_wakeup_event(data->ssp_wake_lock, 300);
 	pr_err("[SSP]: %s: %d", __func__,  tilt_data->tilt_detector);
 }
 
@@ -375,7 +411,7 @@ void report_pickup_data(struct ssp_data *data,
 		struct sensor_value *pickup_data)
 {
 	report_iio_data(data, PICKUP_GESTURE, pickup_data);
-	wake_lock_timeout(&data->ssp_wake_lock, 0.3*HZ);
+	__pm_wakeup_event(data->ssp_wake_lock, 300);
 	pr_err("[SSP]: %s: %d", __func__,  pickup_data->pickup_gesture);
 }
 
@@ -385,7 +421,7 @@ void report_wakeup_motion_data(struct ssp_data *data,
 	memcpy(&data->buf[WAKE_UP_MOTION], &wakeup_motion_data->wakeup_event, sensors_info[WAKE_UP_MOTION].get_data_len);
 	ssp_push_iio_buffer(data->indio_dev[WAKE_UP_MOTION], wakeup_motion_data->timestamp, 
 		(u8 *)(&data->buf[WAKE_UP_MOTION]), sensors_info[WAKE_UP_MOTION].report_data_len);
-	wake_lock_timeout(&data->ssp_wake_lock, 0.3*HZ);
+	__pm_wakeup_event(data->ssp_wake_lock, 300);
 	pr_err("[SSP]: %s: %d", __func__,  wakeup_motion_data->wakeup_event);
 }
 void report_scontext_data(struct ssp_data *data,
@@ -398,11 +434,11 @@ void report_scontext_data(struct ssp_data *data,
 	memcpy(&start, printbuf+4, sizeof(short));
 	memcpy(&end, printbuf+6, sizeof(short));
 	ssp_sensorhub_log("ssp_AlgoPacket", printbuf + 8, end - start + 1);
-	mutex_lock(&data->indio_scontext_dev->mlock);
+	mutex_lock(&ssp_iio_push_lock);
 	iio_push_to_buffers(data->indio_scontext_dev, scontextbuf);
-	mutex_unlock(&data->indio_scontext_dev->mlock);
+	mutex_unlock(&ssp_iio_push_lock);
 
-	wake_lock_timeout(&data->ssp_wake_lock, 0.3*HZ);
+	__pm_wakeup_event(data->ssp_wake_lock, 300);
 }
 void report_uncalib_accel_data(struct ssp_data *data, struct sensor_value *acceldata)
 {
@@ -438,27 +474,6 @@ void remove_event_symlink(struct ssp_data *data)
 	return;
 }
 
-static const struct iio_chan_spec indio_meta_channels[] = {
-	{
-		.type = IIO_TIMESTAMP,
-		.channel = IIO_CHANNEL,
-		.scan_index = IIO_SCAN_INDEX,
-		.scan_type = IIO_ST('s', 16 * 8, 16 * 8, 0)
-	}
-};
-
-static const struct iio_chan_spec indio_scontext_channels[] = {
-	{
-		.type = IIO_TIMESTAMP,
-		.channel = IIO_CHANNEL,
-		.scan_index = IIO_SCAN_INDEX,
-		.scan_type.sign = 's',
-		.scan_type.realbits = 192,
-		.scan_type.storagebits = 192,
-		.scan_type.shift = 0,
-		.scan_type.repeat = 3
-	}
-};
 
 int initialize_input_dev(struct ssp_data *data)
 {
@@ -469,40 +484,34 @@ int initialize_input_dev(struct ssp_data *data)
 	for (i = 0; i < info_table_size; i++) {
 		int index = info_table[i].type;
 
-		if (index < SENSOR_MAX) {
-			int bit_size = (info_table[i].report_data_len + 8) * BITS_PER_BYTE;
-			int repeat_size = bit_size / 256 + 1;
-
+		if (index < SENSOR_MAX)
 			sensors_info[index] = info_table[i];
-
-			indio_channels[index].type = IIO_TIMESTAMP;
-			indio_channels[index].channel = IIO_CHANNEL;
-			indio_channels[index].scan_index = IIO_SCAN_INDEX;
-			indio_channels[index].scan_type.sign = 's';
-			indio_channels[index].scan_type.realbits = bit_size / repeat_size;
-			indio_channels[index].scan_type.storagebits = bit_size / repeat_size;
-			indio_channels[index].scan_type.shift = 0;
-			indio_channels[index].scan_type.repeat = repeat_size;
-		}
 
 		// we do not check index < SENSOR_MAX because of META_SENSOR
 		// scontext indio is not a sensor type
 		if (index != -1 && info_table[i].report_data_len > 0) {
-			struct iio_dev *indio_dev = NULL;
+			struct iio_dev *indio_dev;
+			struct iio_chan_spec *ch;
+			unsigned int d = info_table[i].report_data_len + 8, n;
 
-			indio_dev = iio_device_alloc(0);
+			ch = ssp_iio_make_channels(d, &n);
+			indio_dev = iio_device_alloc(&data->spi->dev, 0);
+			if (!ch || !indio_dev) {
+				kfree(ch);
+				if (indio_dev)
+					iio_device_free(indio_dev);
+				iRet = -ENOMEM;
+				pr_err("[SSP] %s(%d) - iio_device alloc failed\n",
+				       info_table[i].name, i);
+				continue;
+			}
 			indio_dev->name = info_table[i].name;
-			indio_dev->dev.parent = &data->spi->dev;
 			indio_dev->info = &indio_info;
-			if (index == META_SENSOR)
-				indio_dev->channels = indio_meta_channels;
-			else if (strcmp(info_table[i].name, "scontext_iio") == 0)
-				indio_dev->channels = indio_scontext_channels;
-			else
-				indio_dev->channels = &indio_channels[index];
-			indio_dev->num_channels = 1;
+			indio_dev->channels = ch;
+			indio_dev->num_channels = n;
 			indio_dev->modes = INDIO_DIRECT_MODE;
-			indio_dev->currentmode = INDIO_DIRECT_MODE;
+			dev_dbg(&data->spi->dev, "%s: %u-byte datum as %u channels\n",
+				info_table[i].name, d, n);
 
 			iRet = initialize_iio_buffer_and_device(indio_dev, data);
 

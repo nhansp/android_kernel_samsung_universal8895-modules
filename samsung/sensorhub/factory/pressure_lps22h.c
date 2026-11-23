@@ -54,11 +54,8 @@ int pressure_open_calibration(struct ssp_data *data)
 {
 	char chBuf[10] = {0,};
 	int iErr = 0;
-	mm_segment_t old_fs;
 	struct file *cal_filp = NULL;
 
-	old_fs = get_fs();
-	set_fs(KERNEL_DS);
 
 	cal_filp = filp_open(CALIBRATION_FILE_PATH, O_RDONLY, 0660);
 	if (IS_ERR(cal_filp)) {
@@ -66,19 +63,16 @@ int pressure_open_calibration(struct ssp_data *data)
 		if (iErr != -ENOENT)
 			pr_err("[SSP]: %s - Can't open calibration file(%d)\n",
 				__func__, iErr);
-		set_fs(old_fs);
 		return iErr;
 	}
 
-	iErr = vfs_read(cal_filp, chBuf, 10 * sizeof(char), &cal_filp->f_pos);
+	iErr = kernel_read(cal_filp, chBuf, 10 * sizeof(char), &cal_filp->f_pos);
 	if (iErr < 0) {
 		pr_err("[SSP]: %s - Can't read the cal data from file (%d)\n", __func__, iErr);
 	filp_close(cal_filp, current->files);
-	set_fs(old_fs);
 		return iErr;
 	}
 	filp_close(cal_filp, current->files);
-	set_fs(old_fs);
 
 	iErr = kstrtoint(chBuf, 10, &data->iPressureCal);
 	if (iErr < 0) {
