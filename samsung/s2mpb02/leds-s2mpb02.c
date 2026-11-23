@@ -488,7 +488,7 @@ static int of_s2mpb02_torch_dt(struct s2mpb02_dev *iodev,
 		gpio_free(flash1_gpio);
 	}
 
-	pdata->num_leds = of_get_child_count(np);
+	pdata->num_leds = min_t(int, of_get_child_count(np), S2MPB02_LED_MAX);
 
 	for_each_child_of_node(np, c_np) {
 		ret = of_property_read_u32(c_np, "id", &temp);
@@ -496,6 +496,10 @@ static int of_s2mpb02_torch_dt(struct s2mpb02_dev *iodev,
 			pr_info("%s failed to get a id\n", __func__);
 		}
 		index = temp;
+		if (ret || index >= S2MPB02_LED_MAX) {
+			pr_info("%s invalid id %d\n", __func__, index);
+			continue;
+		}
 		pdata->leds[index].id = temp;
 
 		ret = of_property_read_string(c_np, "ledname", &temp_str);
