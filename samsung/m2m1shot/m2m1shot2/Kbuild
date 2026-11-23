@@ -1,0 +1,3 @@
+# SPDX-License-Identifier: GPL-2.0-only
+
+obj-m += m2m1shot2.o

@@ -29,8 +29,8 @@
 #include <linux/dma-buf.h>
 
 #include <uapi/linux/m2m1shot2.h>
-
-#include "../../drivers/staging/android/sw_sync.h"
+#include <linux/dma-fence.h>
+#include <linux/sync_file.h>
 
 struct m2m1shot2_device;
 struct m2m1shot2_context;
@@ -47,6 +47,8 @@ struct m2m1shot2_context;
  * @addr	: userptr address if the memory type is userptr
  * @vma		: copy of the head vma of the list of vm_area_struct that
  *		   describes the user area [@addr, @addr + @length)
+ * @attachment	: attachment to the dma-buf whose mmap covers the user area
+ *		  if that mapping cannot be pinned
  * @sgt		: scatterlist table if the buffer type is dmabuf
  * @dma_addr	: DMA address for the client device
  * @priv	: for the private use of the client device driver
@@ -63,6 +65,7 @@ struct m2m1shot2_dma_buffer {
 			u32				length;
 			unsigned long			addr;
 			struct vm_area_struct		*vma;
+			struct dma_buf_attachment	*attachment;
 		} userptr;
 	};
 	struct sg_table			*sgt;
@@ -110,8 +113,9 @@ struct m2m1shot2_context_image {
 	unsigned int			num_planes;
 	struct m2m1shot2_dma_buffer	plane[M2M1SHOT2_MAX_PLANES];
 
-	struct sync_fence_waiter	waiter;
-	struct sync_fence		*fence;
+	struct dma_fence		*fence;
+	struct dma_fence_cb		cb;
+	struct m2m1shot2_context	*ctx;
 };
 
 /**
@@ -251,14 +255,14 @@ struct m2m1shot2_context {
 	struct m2m1shot2_source_image	source[M2M1SHOT2_MAX_IMAGES];
 	struct m2m1shot2_context_image	target;
 
-	struct sw_sync_timeline		*timeline;
+	u64				fence_ctx;
+	struct dma_fence		*release_fence;
 	enum m2m1shot2_priority		priority;
 	u32				timeline_max;
 	u32				ctx_private;
 	u32				ctx_private2;
 	u64				work_delay_in_nsec;
 	struct timer_list		timer;
-	struct sync_fence		*release_fence;
 	spinlock_t			fence_timeout_lock;
 };
 
@@ -311,6 +315,7 @@ struct m2m1shot2_device {
 	const struct m2m1shot2_devops	*ops;
 	struct workqueue_struct		*schedule_workqueue;
 	struct workqueue_struct		*destroy_workqueue;
+	struct work_struct		schedule_work;
 	unsigned char			prior_stats[M2M1SHOT2_PRIORITY_END];
 	struct mutex			lock_qos;
 	struct list_head		qos_contexts;
@@ -324,12 +329,15 @@ struct m2m1shot2_device *m2m1shot2_create_device(struct device *dev,
 			const char *nodename, int id, unsigned long attr);
 void m2m1shot2_destroy_device(struct m2m1shot2_device *m21dev);
 void m2m1shot2_finish_context(struct m2m1shot2_context *ctx, bool success);
+void m2m1shot2_finish_context_deferred(struct m2m1shot2_context *ctx, bool success);
 
 static inline u32 m2m1shot2_get_payload(struct m2m1shot2_context *ctx,
 					unsigned int index, unsigned int plane)
 {
-	BUG_ON(index >= M2M1SHOT2_MAX_IMAGES);
-	BUG_ON(plane >= ctx->source[index].img.num_planes);
+	if (WARN_ON_ONCE(index >= M2M1SHOT2_MAX_IMAGES))
+		return 0;
+	if (WARN_ON_ONCE(plane >= ctx->source[index].img.num_planes))
+		return 0;
 
 	return ctx->source[index].img.plane[plane].payload;
 }
@@ -337,11 +345,14 @@ static inline u32 m2m1shot2_get_payload(struct m2m1shot2_context *ctx,
 static inline void m2m1shot2_set_payload(struct m2m1shot2_context *ctx,
 					unsigned int plane, u32 payload)
 {
-	BUG_ON(plane >= ctx->target.num_planes);
-	BUG_ON((ctx->target.memory == M2M1SHOT2_BUFTYPE_DMABUF)
-		&& (payload > ctx->target.plane[plane].dmabuf.dmabuf->size));
-	BUG_ON((ctx->target.memory == M2M1SHOT2_BUFTYPE_USERPTR)
-		&& (payload > ctx->target.plane[plane].userptr.length));
+	if (WARN_ON_ONCE(plane >= ctx->target.num_planes))
+		return;
+	if (WARN_ON_ONCE(ctx->target.memory == M2M1SHOT2_BUFTYPE_DMABUF &&
+			 payload > ctx->target.plane[plane].dmabuf.dmabuf->size))
+		return;
+	if (WARN_ON_ONCE(ctx->target.memory == M2M1SHOT2_BUFTYPE_USERPTR &&
+			 payload > ctx->target.plane[plane].userptr.length))
+		return;
 
 	ctx->target.plane[plane].payload = payload;
 }
@@ -349,8 +360,10 @@ static inline void m2m1shot2_set_payload(struct m2m1shot2_context *ctx,
 static inline dma_addr_t m2m1shot2_src_dma_addr(struct m2m1shot2_context *ctx,
 					unsigned int index, unsigned int plane)
 {
-	BUG_ON(index >= M2M1SHOT2_MAX_IMAGES);
-	BUG_ON(plane >= ctx->source[index].img.num_planes);
+	if (WARN_ON_ONCE(index >= M2M1SHOT2_MAX_IMAGES))
+		return 0;
+	if (WARN_ON_ONCE(plane >= ctx->source[index].img.num_planes))
+		return 0;
 
 	return ctx->source[index].img.plane[plane].dma_addr;
 }
@@ -358,7 +371,8 @@ static inline dma_addr_t m2m1shot2_src_dma_addr(struct m2m1shot2_context *ctx,
 static inline dma_addr_t m2m1shot2_dst_dma_addr(struct m2m1shot2_context *ctx,
 						unsigned int plane)
 {
-	BUG_ON(plane >= ctx->target.num_planes);
+	if (WARN_ON_ONCE(plane >= ctx->target.num_planes))
+		return 0;
 
 	return ctx->target.plane[plane].dma_addr;
 }
@@ -366,7 +380,8 @@ static inline dma_addr_t m2m1shot2_dst_dma_addr(struct m2m1shot2_context *ctx,
 static inline struct m2m1shot2_context_format *m2m1shot2_src_format(
 			struct m2m1shot2_context *ctx, unsigned int index)
 {
-	BUG_ON(index >= M2M1SHOT2_MAX_IMAGES);
+	if (WARN_ON_ONCE(index >= M2M1SHOT2_MAX_IMAGES))
+		return NULL;
 
 	return &ctx->source[index].img.fmt;
 }
@@ -391,6 +406,7 @@ static inline struct m2m1shot2_device *m2m1shot2_create_device(
 }
 #define m2m1shot2_destroy_device(m21dev)		do { } while (0)
 #define m2m1shot2_finish_context(ctx, success)		do { } while (0)
+#define m2m1shot2_finish_context_deferred(ctx, success)	do { } while (0)
 static inline u32 m2m1shot2_get_payload(struct m2m1shot2_context *ctx,
 					unsigned int index, unsigned int plane)
 {
