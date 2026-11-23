@@ -1767,6 +1767,9 @@ int fimc_is_sensor_close(struct fimc_is_device_sensor *device)
 		}
 	}
 
+	/* a pending non-blocking stream-on would start the sensor after front_stop() */
+	flush_work(&device->instant_work);
+
 	ret = fimc_is_sensor_back_stop(device, GET_QUEUE(device->vctx));
 	if (ret)
 		merr("fimc_is_sensor_back_stop is fail(%d)", device, ret);
