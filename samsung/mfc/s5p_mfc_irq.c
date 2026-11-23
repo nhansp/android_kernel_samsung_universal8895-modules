@@ -379,13 +379,13 @@ static void mfc_handle_frame_new(struct s5p_mfc_ctx *ctx, unsigned int err)
 				mfc_debug(3, "black bar detected\n");
 			}
 
-			if (ctx->src_fmt->mem_planes == 1) {
+			if (ctx->dst_fmt->mem_planes == 1) {
 				vb2_set_plane_payload(&ref_mb->vb.vb2_buf, 0,
 							raw->total_plane_size);
 				mfc_debug(5, "single plane payload: %d\n",
 							raw->total_plane_size);
 			} else {
-				for (i = 0; i < ctx->src_fmt->mem_planes; i++) {
+				for (i = 0; i < ctx->dst_fmt->mem_planes; i++) {
 					vb2_set_plane_payload(&ref_mb->vb.vb2_buf, i,
 							raw->plane_size[i]);
 				}
