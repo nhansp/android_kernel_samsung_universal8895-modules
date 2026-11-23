@@ -6548,6 +6548,11 @@ exit:
 }
 #endif /* NDO_CONFIG_SUPPORT */
 
+/* The HAL nests the attributes, which nl80211 refuses for VENDOR_CMD_RAW_DATA */
+static const struct nla_policy wl_cfgvendor_country_policy[ANDR_WIFI_ATTRIBUTE_COUNTRY + 1] = {
+	[ANDR_WIFI_ATTRIBUTE_COUNTRY] = { .type = NLA_NUL_STRING, .len = WLC_CNTRY_BUF_SZ - 1 },
+};
+
 static const struct wiphy_vendor_command wl_vendor_cmds [] = {
 	{
 		{
@@ -6745,7 +6750,8 @@ static const struct wiphy_vendor_command wl_vendor_cmds [] = {
 			.subcmd = ANDR_WIFI_SET_COUNTRY
 		},
 		.flags = WIPHY_VENDOR_CMD_NEED_WDEV | WIPHY_VENDOR_CMD_NEED_NETDEV,
-		.policy = VENDOR_CMD_RAW_DATA,
+		.policy = wl_cfgvendor_country_policy,
+		.maxattr = ANDR_WIFI_ATTRIBUTE_COUNTRY,
 		.doit = wl_cfgvendor_set_country
 	},
 #ifdef LINKSTAT_SUPPORT
