@@ -29,7 +29,7 @@
 #include <linux/pinctrl/consumer.h>
 #include <linux/pm_qos.h>
 #ifdef CONFIG_OF
-#include <linux/of_gpio.h>
+#include <linux/gpio/consumer.h>
 #endif
 
 
@@ -145,11 +145,12 @@ struct hrm_device_data {
 	char *led_3p3;
 	char *vdd_1p8;
 	char *i2c_1p8;
+	struct regulator *reg_vdd_1p8, *reg_led_3p3, *reg_i2c_1p8;
 	struct hrm_func *h_func;
 	enum hrm_mode hrm_enabled_mode;
 	enum hrm_mode hrm_prev_mode;
 	u8 regulator_state;
-	s32 hrm_int;
+	struct gpio_desc *hrm_int;
 	s32 hrm_en;
 	s32 hrm_irq;
 	u8 irq_state;

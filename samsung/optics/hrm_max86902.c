@@ -525,8 +525,8 @@ struct  max86902_eol_freq_data {
 	int skew_retry;
 	unsigned long end_time;
 	unsigned long start_time;
-	struct timeval start_time_t;
-	struct timeval work_time_t;
+	struct timespec64 start_time_t;
+	struct timespec64 work_time_t;
 	unsigned long prev_time;
 	int count;
 	int skip_count;
@@ -537,8 +537,8 @@ struct  max86902_eol_data {
 	int eol_count;
 	u8 state;
 	int eol_hrm_flag;
-	struct timeval start_time;
-	struct timeval end_time;
+	struct timespec64 start_time;
+	struct timespec64 end_time;
 	struct  max86902_eol_flicker_data eol_flicker_data;
 	struct  max86902_eol_hrm_data eol_hrm_data[EOL_NEW_HRM_ARRY_SIZE];
 	struct  max86902_eol_freq_data eol_freq_data;	/* test the ir routine. */
@@ -643,8 +643,8 @@ struct  max86902_self_seq3_data {
 	int skew_retry;
 	unsigned long end_time;
 	unsigned long start_time;
-	struct timeval start_time_t;
-	struct timeval work_time_t;
+	struct timespec64 start_time_t;
+	struct timespec64 work_time_t;
 	unsigned long prev_time;
 	int count;
 	int skip_count;
@@ -665,8 +665,8 @@ struct  max86902_selftest_data {
 
 	int selftest_count;
 	u8 status;
-	struct timeval start_time;
-	struct timeval end_time;
+	struct timespec64 start_time;
+	struct timespec64 end_time;
 	struct  max86902_self_seq1_data seq1_data;
 	struct  max86902_self_seq2_data seq2_data;
 	struct  max86902_self_seq3_data	seq3_data;
@@ -2577,7 +2577,7 @@ static void __max869_div_str(char *left_integer, char *left_decimal, char *right
 static void __max869_init_eol_data(struct max86902_eol_data *eol_data)
 {
 	memset(eol_data, 0, sizeof(struct max86902_eol_data));
-	do_gettimeofday(&eol_data->start_time);
+	ktime_get_real_ts64(&eol_data->start_time);
 	eol_data->state = _EOL_STATE_TYPE_NEW_INIT;
 }
 static void __max869_eol_flicker_data(int ir_data, struct  max86902_eol_data *eol_data)
@@ -2711,7 +2711,7 @@ static void __max869_eol_freq_data(struct  max86902_eol_data *eol_data, u8 divid
 	case 0:
 		HRM_dbg("%s - EOL FREQ 7 stated ###\n", __func__);
 		eol_data->eol_freq_data.start_time = jiffies;
-		do_gettimeofday(&eol_data->eol_freq_data.start_time_t);
+		ktime_get_real_ts64(&eol_data->eol_freq_data.start_time_t);
 		eol_data->eol_freq_data.end_time = jiffies + HZ;        /* timeout in 1s */
 		eol_data->eol_freq_data.state = 1;
 		eol_data->eol_freq_data.count++;
@@ -2731,7 +2731,7 @@ static void __max869_eol_freq_data(struct  max86902_eol_data *eol_data, u8 divid
 					eol_data->eol_freq_data.prev_time = 0;
 				}
 			}
-			do_gettimeofday(&eol_data->eol_freq_data.work_time_t);
+			ktime_get_real_ts64(&eol_data->eol_freq_data.work_time_t);
 		} else {
 			if (eol_data->eol_freq_data.count < freq_interrupt_min && eol_data->eol_freq_data.retry < EOL_NEW_FREQ_SKEW_RETRY_CNT) {
 				HRM_dbg("%s - !!!!!! EOL FREQ 7 CNT Gap too large : %d, retry : %d\n", __func__, eol_data->eol_freq_data.count, eol_data->eol_freq_data.retry);
@@ -2742,8 +2742,10 @@ static void __max869_eol_freq_data(struct  max86902_eol_data *eol_data, u8 divid
 			} else {
 				eol_data->eol_freq_data.count *= divid;
 				eol_data->eol_freq_data.done = 1;
-				freq_start_time = (eol_data->eol_freq_data.start_time_t.tv_sec * 1000) + (eol_data->eol_freq_data.start_time_t.tv_usec / 1000);
-				freq_work_time = (eol_data->eol_freq_data.work_time_t.tv_sec * 1000) + (eol_data->eol_freq_data.work_time_t.tv_usec / 1000);
+				freq_start_time = (eol_data->eol_freq_data.start_time_t.tv_sec * 1000) +
+						   (eol_data->eol_freq_data.start_time_t.tv_nsec / 1000000);
+				freq_work_time = (eol_data->eol_freq_data.work_time_t.tv_sec * 1000) +
+						  (eol_data->eol_freq_data.work_time_t.tv_nsec / 1000000);
 				HRM_dbg("%s - EOL FREQ 7 Done###\n", __func__);
 				HRM_dbg("%s - EOL FREQ 7 sample_no_cnt : %d, time : %d ms, divid : %d\n", __func__,
 					eol_data->eol_freq_data.count, freq_work_time - freq_start_time, divid);
@@ -2766,9 +2768,11 @@ static int __max869_eol_check_done(struct max86902_eol_data *eol_data, u8 mode, 
 	int end_time;
 
 	if (eol_data->eol_flicker_data.done && (eol_data->eol_hrm_flag == EOL_NEW_HRM_COMPLETE_ALL_STEP) && eol_data->eol_freq_data.done) {
-		do_gettimeofday(&eol_data->end_time);
-		start_time = (eol_data->start_time.tv_sec * 1000) + (eol_data->start_time.tv_usec / 1000);
-		end_time = (eol_data->end_time.tv_sec * 1000) + (eol_data->end_time.tv_usec / 1000);
+		ktime_get_real_ts64(&eol_data->end_time);
+		start_time = (eol_data->start_time.tv_sec * 1000) +
+			      (eol_data->start_time.tv_nsec / 1000000);
+		end_time = (eol_data->end_time.tv_sec * 1000) +
+			    (eol_data->end_time.tv_nsec / 1000000);
 		HRM_dbg("%s - EOL Tested Time :  %d ms Tested Count : %d\n", __func__, end_time - start_time, device->sample_cnt);
 
 		HRM_dbg("%s - SETTING CUREENT %x, %x\n", __func__, EOL_NEW_DC_HIGH_LED_IR_CURRENT, EOL_NEW_DC_HIGH_LED_RED_CURRENT);
@@ -3732,7 +3736,7 @@ static int __max869_enable_eol_step3_ppg_mode(struct max869_device_data *data)
 static void __max869_init_selftest_data(struct max86902_selftest_data *self_data)
 {
 	memset(self_data, 0, sizeof(struct max86902_selftest_data));
-	do_gettimeofday(&self_data->start_time);
+	ktime_get_real_ts64(&self_data->start_time);
 }
 
 static void __max869_selftest_sequence_1(int ir_data, int red_data, struct  max86902_selftest_data *self_data)
@@ -3897,7 +3901,7 @@ static void __max869_selftest_sequence_3(struct  max86902_selftest_data *self_da
 	case 0:
 		HRM_dbg("EOL_TEST sequence 3 stated ###");
 		self_data->seq3_data.start_time = jiffies;
-		do_gettimeofday(&self_data->seq3_data.start_time_t);
+		ktime_get_real_ts64(&self_data->seq3_data.start_time_t);
 		self_data->seq3_data.end_time = jiffies + HZ;        /* timeout in 1s */
 		self_data->seq3_data.state = 1;
 		self_data->seq3_data.count++;
@@ -3918,7 +3922,7 @@ static void __max869_selftest_sequence_3(struct  max86902_selftest_data *self_da
 					self_data->seq3_data.prev_time = 0;
 				}
 			}
-			do_gettimeofday(&self_data->seq3_data.work_time_t);
+			ktime_get_real_ts64(&self_data->seq3_data.work_time_t);
 		} else {
 			if (self_data->seq3_data.count < self_interrupt_min && self_data->seq3_data.retry < SELF_RETRY_COUNT) {
 				HRM_dbg("!!!!!! EOL_TEST sequence 3 CNT Gap too large : %d, retry : %d", self_data->seq3_data.count, self_data->seq3_data.retry);
@@ -3929,8 +3933,10 @@ static void __max869_selftest_sequence_3(struct  max86902_selftest_data *self_da
 			} else {
 				self_data->seq3_data.count *= divid;
 				self_data->seq3_data.done = 1;
-				seq3_start_time = (self_data->seq3_data.start_time_t.tv_sec * 1000) + (self_data->seq3_data.start_time_t.tv_usec / 1000);
-				seq3_work_time = (self_data->seq3_data.work_time_t.tv_sec * 1000) + (self_data->seq3_data.work_time_t.tv_usec / 1000);
+				seq3_start_time = (self_data->seq3_data.start_time_t.tv_sec * 1000) +
+						   (self_data->seq3_data.start_time_t.tv_nsec / 1000000);
+				seq3_work_time = (self_data->seq3_data.work_time_t.tv_sec * 1000) +
+						  (self_data->seq3_data.work_time_t.tv_nsec / 1000000);
 				HRM_dbg("EOL_TEST sequence 3 Done###");
 				HRM_dbg("EOL_TEST sequence 3 sample_no_cnt : %d, time : %d ms, divid : %d ",
 					self_data->seq3_data.count, seq3_work_time - seq3_start_time, divid);
@@ -4003,10 +4009,12 @@ static int __max869_selftest_check_done(struct max86902_selftest_data *self_data
 	u32 self_sq2_size = SELF_SQ2_SIZE;
 
 	if (self_data->seq1_data.done && self_data->seq2_data.done && self_data->seq3_data.done && self_data->seq4_data.done) {
-		do_gettimeofday(&self_data->end_time);
+		ktime_get_real_ts64(&self_data->end_time);
 
-		start_time = (self_data->start_time.tv_sec * 1000) + (self_data->start_time.tv_usec / 1000);
-		end_time = (self_data->end_time.tv_sec * 1000) + (self_data->end_time.tv_usec / 1000);
+		start_time = (self_data->start_time.tv_sec * 1000) +
+			      (self_data->start_time.tv_nsec / 1000000);
+		end_time = (self_data->end_time.tv_sec * 1000) +
+			    (self_data->end_time.tv_nsec / 1000000);
 		HRM_dbg("Tested Time :  %d ms Tested Count : %d\n", end_time - start_time, self_data->seq3_data.count);
 
 		for (i = 0; i < self_sq2_size; i++) {
@@ -6103,26 +6111,26 @@ int max869_set_curr_adc(void)
 int max869_get_name_chipset(char *name)
 {
 	if (max869_data->part_type < PART_TYPE_MAX86902A)
-		strlcpy(name, MAX86900_CHIP_NAME, strlen(MAX86900_CHIP_NAME) + 1);
+		strscpy(name, MAX86900_CHIP_NAME, strlen(MAX86900_CHIP_NAME) + 1);
 	else if (max869_data->part_type < PART_TYPE_MAX86907)
-		strlcpy(name, MAX86902_CHIP_NAME, strlen(MAX86902_CHIP_NAME) + 1);
+		strscpy(name, MAX86902_CHIP_NAME, strlen(MAX86902_CHIP_NAME) + 1);
 	else if (max869_data->part_type < PART_TYPE_MAX86907A)
-		strlcpy(name, MAX86907_CHIP_NAME, strlen(MAX86907_CHIP_NAME) + 1);
+		strscpy(name, MAX86907_CHIP_NAME, strlen(MAX86907_CHIP_NAME) + 1);
 	else if (max869_data->part_type < PART_TYPE_MAX86907B)
-		strlcpy(name, MAX86907A_CHIP_NAME, strlen(MAX86907A_CHIP_NAME) + 1);
+		strscpy(name, MAX86907A_CHIP_NAME, strlen(MAX86907A_CHIP_NAME) + 1);
 	else if (max869_data->part_type < PART_TYPE_MAX86907E)
-		strlcpy(name, MAX86907B_CHIP_NAME, strlen(MAX86907B_CHIP_NAME) + 1);
+		strscpy(name, MAX86907B_CHIP_NAME, strlen(MAX86907B_CHIP_NAME) + 1);
 	else if (max869_data->part_type < PART_TYPE_MAX86909)
-		strlcpy(name, MAX86907E_CHIP_NAME, strlen(MAX86907E_CHIP_NAME) + 1);
+		strscpy(name, MAX86907E_CHIP_NAME, strlen(MAX86907E_CHIP_NAME) + 1);
 	else
-		strlcpy(name, MAX86909_CHIP_NAME, strlen(MAX86909_CHIP_NAME) + 1);
+		strscpy(name, MAX86909_CHIP_NAME, strlen(MAX86909_CHIP_NAME) + 1);
 
 	return 0;
 }
 
 int max869_get_name_vendor(char *name)
 {
-	strlcpy(name, VENDOR, strlen(VENDOR) + 1);
+	strscpy(name, VENDOR, strlen(VENDOR) + 1);
 	if (strncmp(name, VENDOR, strlen(VENDOR) + 1))
 		return -EINVAL;
 	else
