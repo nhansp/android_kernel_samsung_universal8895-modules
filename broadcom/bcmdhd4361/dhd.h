@@ -2013,7 +2013,8 @@ enum d11_lpbk_type {
 
 #ifdef KEEP_ALIVE
 extern int dhd_dev_start_mkeep_alive(dhd_pub_t *dhd_pub, uint8 mkeep_alive_id, uint8 *ip_pkt,
-	uint16 ip_pkt_len, uint8* src_mac_addr, uint8* dst_mac_addr, uint32 period_msec);
+	uint16 ip_pkt_len, uint8* src_mac_addr, uint8* dst_mac_addr, uint32 period_msec,
+	uint16 ether_type);
 extern int dhd_dev_stop_mkeep_alive(dhd_pub_t *dhd_pub, uint8 mkeep_alive_id);
 #endif /* KEEP_ALIVE */
 

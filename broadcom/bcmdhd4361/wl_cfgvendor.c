@@ -6284,7 +6284,9 @@ static int wl_cfgvendor_start_mkeep_alive(struct wiphy *wiphy, struct wireless_d
 	uint16 ip_pkt_len = 0;
 	uint8 src_mac[ETHER_ADDR_LEN];
 	uint8 dst_mac[ETHER_ADDR_LEN];
+	bool have_src_mac = false, have_dst_mac = false;
 	uint32 period_msec = 0;
+	uint16 ether_type = ETHER_TYPE_IP;
 	const struct nlattr *iter;
 	struct bcm_cfg80211 *cfg = wiphy_priv(wiphy);
 	dhd_pub_t *dhd_pub = cfg->pub;
@@ -6313,6 +6315,11 @@ static int wl_cfgvendor_start_mkeep_alive(struct wiphy *wiphy, struct wireless_d
 					WL_ERR(("ip packet length is 0\n"));
 					goto exit;
 				}
+				if (nla_len(iter) < ip_pkt_len) {
+					ret = BCME_BADARG;
+					WL_ERR(("ip packet is shorter than its length\n"));
+					goto exit;
+				}
 				ip_pkt = (u8 *)MALLOCZ(cfg->osh, ip_pkt_len);
 				if (ip_pkt == NULL) {
 					ret = BCME_NOMEM;
@@ -6323,12 +6330,22 @@ static int wl_cfgvendor_start_mkeep_alive(struct wiphy *wiphy, struct wireless_d
 				break;
 			case MKEEP_ALIVE_ATTRIBUTE_SRC_MAC_ADDR:
 				memcpy(src_mac, nla_data(iter), ETHER_ADDR_LEN);
+				have_src_mac = true;
 				break;
 			case MKEEP_ALIVE_ATTRIBUTE_DST_MAC_ADDR:
 				memcpy(dst_mac, nla_data(iter), ETHER_ADDR_LEN);
+				have_dst_mac = true;
 				break;
 			case MKEEP_ALIVE_ATTRIBUTE_PERIOD_MSEC:
 				period_msec = nla_get_u32(iter);
+				break;
+			case MKEEP_ALIVE_ATTRIBUTE_ETHER_TYPE:
+				ether_type = nla_get_u16(iter);
+				if (ether_type != ETHER_TYPE_IP && ether_type != ETHER_TYPE_IPV6) {
+					ret = BCME_BADARG;
+					WL_ERR(("invalid ether type 0x%04x\n", ether_type));
+					goto exit;
+				}
 				break;
 			default:
 				WL_ERR(("Unknown type: %d\n", type));
@@ -6343,8 +6360,14 @@ static int wl_cfgvendor_start_mkeep_alive(struct wiphy *wiphy, struct wireless_d
 		goto exit;
 	}
 
+	if (!have_src_mac || !have_dst_mac) {
+		ret = BCME_BADARG;
+		WL_ERR(("source or destination mac address is missing\n"));
+		goto exit;
+	}
+
 	ret = dhd_dev_start_mkeep_alive(dhd_pub, mkeep_alive_id, ip_pkt, ip_pkt_len, src_mac,
-		dst_mac, period_msec);
+		dst_mac, period_msec, ether_type);
 	if (ret < 0) {
 		WL_ERR(("start_mkeep_alive is failed ret: %d\n", ret));
 	}

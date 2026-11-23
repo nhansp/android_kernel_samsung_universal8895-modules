@@ -15603,7 +15603,7 @@ int dhd_dev_rtt_cancel_responder(struct net_device *dev)
 
 int
 dhd_dev_start_mkeep_alive(dhd_pub_t *dhd_pub, uint8 mkeep_alive_id, uint8 *ip_pkt,
-	uint16 ip_pkt_len, uint8* src_mac, uint8* dst_mac, uint32 period_msec)
+	uint16 ip_pkt_len, uint8 *src_mac, uint8 *dst_mac, uint32 period_msec, uint16 ether_type)
 {
 	const int		ETHERTYPE_LEN = 2;
 	char			*pbuf = NULL;
@@ -15708,9 +15708,8 @@ dhd_dev_start_mkeep_alive(dhd_pub_t *dhd_pub, uint8 mkeep_alive_id, uint8 *ip_pk
 	memcpy(pmac_frame, src_mac, ETHER_ADDR_LEN);
 	pmac_frame += ETHER_ADDR_LEN;
 
-	/* Mapping Ethernet type (ETHERTYPE_IP: 0x0800) */
-	*(pmac_frame++) = 0x08;
-	*(pmac_frame++) = 0x00;
+	*(pmac_frame++) = ether_type >> 8;
+	*(pmac_frame++) = ether_type & 0xff;
 
 	/* Mapping IP pkt */
 	memcpy(pmac_frame, ip_pkt, ip_pkt_len);
