@@ -208,15 +208,22 @@ static struct mm_struct *get_mm_from_client_fd(int client_fd)
 	if (!sock)
 		return NULL;
 
-	if (sock->sk && sock->sk->sk_peer_pid) {
+	if (sock->sk) {
 		struct task_struct *task;
+		struct pid *peer_pid;
 
-		rcu_read_lock();
-		task = pid_task(sock->sk->sk_peer_pid, PIDTYPE_PID);
-		if (task)
-			mm = get_task_mm(task);
+		spin_lock(&sock->sk->sk_peer_lock);
+		peer_pid = get_pid(sock->sk->sk_peer_pid);
+		spin_unlock(&sock->sk->sk_peer_lock);
+		if (peer_pid) {
+			rcu_read_lock();
+			task = pid_task(peer_pid, PIDTYPE_PID);
+			if (task)
+				mm = get_task_mm(task);
 
-		rcu_read_unlock();
+			rcu_read_unlock();
+			put_pid(peer_pid);
+		}
 	}
 
 	sockfd_put(sock);
