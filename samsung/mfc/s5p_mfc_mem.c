@@ -11,6 +11,7 @@
  */
 
 #include <linux/dma-buf.h>
+#include <linux/iommu.h>
 #include <linux/slab.h>
 
 #include "s5p_mfc_mem.h"
@@ -35,6 +36,39 @@ void *s5p_mfc_mem_alloc(struct device *dev, size_t size)
 	return cookie;
 }
 
+/*
+ * The DT keeps dma-iommu away from this IOVA (memory-region with
+ * iommu-addresses). The DMA API mapping stays for the free.
+ */
+int s5p_mfc_mem_map_fixed(void *cookie, dma_addr_t iova)
+{
+	struct s5p_mfc_mem_cookie *c = cookie;
+	struct iommu_domain *domain = iommu_get_domain_for_dev(c->dev);
+	struct sg_table sgt;
+	ssize_t mapped;
+	int ret;
+
+	if (!domain)
+		return -ENODEV;
+
+	ret = dma_get_sgtable_attrs(c->dev, &sgt, c->vaddr, c->daddr, c->size,
+				    DMA_ATTR_WRITE_COMBINE);
+	if (ret)
+		return ret;
+
+	mapped = iommu_map_sgtable(domain, iova, &sgt, IOMMU_READ | IOMMU_WRITE);
+	sg_free_table(&sgt);
+	if (mapped < 0)
+		return mapped;
+	if (mapped < c->size) {
+		iommu_unmap(domain, iova, mapped);
+		return -ENOMEM;
+	}
+
+	c->fixed = iova;
+	return 0;
+}
+
 void s5p_mfc_mem_free(void *cookie)
 {
 	struct s5p_mfc_mem_cookie *c = cookie;
@@ -42,6 +76,9 @@ void s5p_mfc_mem_free(void *cookie)
 	if (IS_ERR_OR_NULL(c))
 		return;
 
+	if (c->fixed)
+		iommu_unmap(iommu_get_domain_for_dev(c->dev), c->fixed,
+			    PAGE_ALIGN(c->size));
 	dma_free_attrs(c->dev, c->size, c->vaddr, c->daddr, DMA_ATTR_WRITE_COMBINE);
 	kfree(c);
 }

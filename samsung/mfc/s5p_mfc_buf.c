@@ -17,6 +17,9 @@
 
 #include "s5p_mfc_mem.h"
 
+/* Bottom of the MFC IOVA window, kept free by the DT's mfc_iova reservation */
+#define MFC_FW_IOVA	0x10000000
+
 static int mfc_alloc_common_context(struct s5p_mfc_dev *dev,
 					enum mfc_buf_usage_type buf_type)
 {
@@ -602,6 +605,13 @@ int s5p_mfc_alloc_firmware(struct s5p_mfc_dev *dev)
 	if (IS_ERR_OR_NULL(dev->fw_buf.alloc)) {
 		dev->fw_buf.alloc = NULL;
 		mfc_err_dev("Allocating bitprocessor buffer failed\n");
+		return -ENOMEM;
+	}
+
+	if (s5p_mfc_mem_map_fixed(dev->fw_buf.alloc, MFC_FW_IOVA)) {
+		mfc_err_dev("Mapping the firmware at 0x%x failed\n", MFC_FW_IOVA);
+		s5p_mfc_mem_free(dev->fw_buf.alloc);
+		dev->fw_buf.alloc = NULL;
 		return -ENOMEM;
 	}
 
