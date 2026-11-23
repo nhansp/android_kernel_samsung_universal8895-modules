@@ -208,7 +208,7 @@ static int s2mpb02_i2c_probe(struct i2c_client *i2c)
 		ret = of_s2mpb02_dt(&i2c->dev, pdata);
 		if (ret < 0) {
 			dev_err(&i2c->dev, "Failed to get device of_node\n");
-			goto err;
+			goto err_pdata;
 		}
 
 		i2c->dev.platform_data = pdata;
@@ -222,7 +222,7 @@ static int s2mpb02_i2c_probe(struct i2c_client *i2c)
 		s2mpb02->wakeup = pdata->wakeup;
 	} else {
 		ret = -EINVAL;
-		goto err;
+		goto err_pdata;
 	}
 	mutex_init(&s2mpb02->i2c_lock);
 
@@ -252,8 +252,6 @@ static int s2mpb02_i2c_probe(struct i2c_client *i2c)
 
 err_mfd:
 	mutex_destroy(&s2mpb02->i2c_lock);
-err:
-	kfree(pdata);
 err_pdata:
 	kfree(s2mpb02);
 
