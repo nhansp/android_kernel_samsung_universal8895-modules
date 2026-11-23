@@ -450,7 +450,9 @@ typedef enum wl_vendor_event {
 	BRCM_VENDOR_EVENT_HANGED		= 33
 } wl_vendor_event_t;
 
+/* Numbered from an INVALID 0 as the Android Wi-Fi HAL numbers them; Samsung's started at 0 */
 enum andr_wifi_attr {
+	ANDR_WIFI_ATTRIBUTE_INVALID,
 	ANDR_WIFI_ATTRIBUTE_NUM_FEATURE_SET,
 	ANDR_WIFI_ATTRIBUTE_FEATURE_SET,
 	ANDR_WIFI_ATTRIBUTE_RANDOM_MAC_OUI,
