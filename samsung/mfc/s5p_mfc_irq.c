@@ -309,7 +309,7 @@ static void mfc_handle_frame_new(struct s5p_mfc_ctx *ctx, unsigned int err)
 			mfc_debug(2, "Listing: %d\n", ref_mb->vb.vb2_buf.index);
 			/* Check if this is the buffer we're looking for */
 			mfc_debug(2, "Found 0x%08llx, looking for 0x%08llx\n",
-				s5p_mfc_mem_get_daddr_vb(&ref_mb->vb.vb2_buf, 0), dspl_y_addr);
+				ref_mb->planes.raw[0], dspl_y_addr);
 
 			index = ref_mb->vb.vb2_buf.index;
 
@@ -332,7 +332,7 @@ static void mfc_handle_frame_new(struct s5p_mfc_ctx *ctx, unsigned int err)
 			mfc_debug(2, "Listing: %d\n", ref_mb->vb.vb2_buf.index);
 			/* Check if this is the buffer we're looking for */
 			mfc_debug(2, "Found 0x%08llx, looking for 0x%08llx\n",
-				s5p_mfc_mem_get_daddr_vb(&ref_mb->vb.vb2_buf, 0), dspl_y_addr);
+				ref_mb->planes.raw[0], dspl_y_addr);
 
 			index = ref_mb->vb.vb2_buf.index;
 
@@ -544,7 +544,7 @@ static void mfc_handle_ref_frame(struct s5p_mfc_ctx *ctx)
 			&ctx->ref_buf_queue, &ctx->dst_buf_queue, dec_addr);
 	if (dst_mb) {
 		mfc_debug(2, "Found in dst queue = 0x%08llx, buf = 0x%08llx\n",
-				dec_addr, s5p_mfc_mem_get_daddr_vb(&dst_mb->vb.vb2_buf, 0));
+				dec_addr, dst_mb->planes.raw[0]);
 
 		if (!(dec->dynamic_set & s5p_mfc_get_dec_used_flag()))
 			dec->dynamic_used |= dec->dynamic_set;

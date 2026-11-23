@@ -169,6 +169,33 @@ static void s5p_mfc_dec_lock(struct vb2_queue *q)
 	mutex_lock(&dev->mfc_mutex);
 }
 
+static void mfc_dec_set_raw_planes(struct s5p_mfc_ctx *ctx,
+				   struct s5p_mfc_buf *buf,
+				   const dma_addr_t addr[MFC_MAX_PLANES])
+{
+	dma_addr_t start_raw = addr[0];
+	int i;
+
+	if (ctx->dst_fmt->fourcc == V4L2_PIX_FMT_NV12N) {
+		buf->planes.raw[0] = start_raw;
+		buf->planes.raw[1] = NV12N_CBCR_BASE(start_raw, ctx->img_width,
+						     ctx->img_height);
+	} else if (ctx->dst_fmt->fourcc == V4L2_PIX_FMT_NV12N_10B) {
+		buf->planes.raw[0] = start_raw;
+		buf->planes.raw[1] = NV12N_10B_CBCR_BASE(start_raw, ctx->img_width,
+							 ctx->img_height);
+	} else if (ctx->dst_fmt->fourcc == V4L2_PIX_FMT_YUV420N) {
+		buf->planes.raw[0] = start_raw;
+		buf->planes.raw[1] = YUV420N_CB_BASE(start_raw, ctx->img_width,
+						     ctx->img_height);
+		buf->planes.raw[2] = YUV420N_CR_BASE(start_raw, ctx->img_width,
+						     ctx->img_height);
+	} else {
+		for (i = 0; i < ctx->dst_fmt->mem_planes; i++)
+			buf->planes.raw[i] = addr[i];
+	}
+}
+
 static int s5p_mfc_dec_buf_init(struct vb2_buffer *vb)
 {
 	struct vb2_queue *vq = vb->vb2_queue;
@@ -176,7 +203,7 @@ static int s5p_mfc_dec_buf_init(struct vb2_buffer *vb)
 	struct s5p_mfc_dev *dev;
 	struct s5p_mfc_dec *dec;
 	struct s5p_mfc_buf *buf = vb_to_mfc_buf(vb);
-	dma_addr_t start_raw;
+	dma_addr_t addr[MFC_MAX_PLANES];
 	int i, ret;
 
 	mfc_debug_enter();
@@ -200,29 +227,9 @@ static int s5p_mfc_dec_buf_init(struct vb2_buffer *vb)
 		if (ret < 0)
 			return ret;
 
-		start_raw = s5p_mfc_mem_get_daddr_vb(vb, 0);
-		if (ctx->dst_fmt->fourcc == V4L2_PIX_FMT_NV12N) {
-			buf->planes.raw[0] = start_raw;
-			buf->planes.raw[1] = NV12N_CBCR_BASE(start_raw,
-							ctx->img_width,
-							ctx->img_height);
-		} else if (ctx->dst_fmt->fourcc == V4L2_PIX_FMT_NV12N_10B) {
-			buf->planes.raw[0] = start_raw;
-			buf->planes.raw[1] = NV12N_10B_CBCR_BASE(start_raw,
-							ctx->img_width,
-							ctx->img_height);
-		} else if (ctx->dst_fmt->fourcc == V4L2_PIX_FMT_YUV420N) {
-			buf->planes.raw[0] = start_raw;
-			buf->planes.raw[1] = YUV420N_CB_BASE(start_raw,
-							ctx->img_width,
-							ctx->img_height);
-			buf->planes.raw[2] = YUV420N_CR_BASE(start_raw,
-							ctx->img_width,
-							ctx->img_height);
-		} else {
-			for (i = 0; i < ctx->dst_fmt->mem_planes; i++)
-				buf->planes.raw[i] = s5p_mfc_mem_get_daddr_vb(vb, i);
-		}
+		for (i = 0; i < ctx->dst_fmt->mem_planes; i++)
+			addr[i] = s5p_mfc_mem_get_daddr_vb(vb, i);
+		mfc_dec_set_raw_planes(ctx, buf, addr);
 
 		if (call_cop(ctx, init_buf_ctrls, ctx, MFC_CTRL_TYPE_DST,
 					vb->index) < 0)
@@ -286,6 +293,16 @@ static int s5p_mfc_dec_buf_prepare(struct vb2_buffer *vb)
 					return -EINVAL;
 				}
 			}
+		}
+
+		if (vb->memory == VB2_MEMORY_DMABUF) {
+			dma_addr_t addr[MFC_MAX_PLANES];
+			int ret;
+
+			ret = s5p_mfc_dpb_pin_get(ctx, vb, addr);
+			if (ret)
+				return ret;
+			mfc_dec_set_raw_planes(ctx, vb_to_mfc_buf(vb), addr);
 		}
 	} else if (vq->type == V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE) {
 		mfc_debug(2, "Plane size: %lu, ctx->dec_src_buf_size: %u\n",
@@ -539,6 +556,10 @@ static void s5p_mfc_dec_stop_streaming(struct vb2_queue *q)
 
 		s5p_mfc_change_state(ctx, prev_state);
 	}
+
+	/* Only after the DPB flush: the firmware may read them until then */
+	if (q->type == V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE)
+		s5p_mfc_dpb_pin_release_all(ctx);
 
 	mfc_debug(2, "buffer cleanup & flush is done in stop_streaming, type : %d\n", q->type);
 

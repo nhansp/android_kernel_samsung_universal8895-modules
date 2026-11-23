@@ -418,6 +418,7 @@ int s5p_mfc_set_dynamic_dpb(struct s5p_mfc_ctx *ctx, struct s5p_mfc_buf *dst_mb)
 
 	dst_index = dst_mb->vb.vb2_buf.index;
 	set_bit(dst_index, &dec->available_dpb);
+	set_bit(dst_index, &dec->dpb_sent);
 	dec->dynamic_set = 1 << dst_index;
 	mfc_debug(2, "ADDING Flag after: 0x%lx\n", dec->available_dpb);
 	mfc_debug(2, "Dst addr [%d] = 0x%08llx\n", dst_index, dst_mb->planes.raw[0]);

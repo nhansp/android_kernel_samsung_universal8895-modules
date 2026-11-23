@@ -251,9 +251,9 @@ struct s5p_mfc_buf *s5p_mfc_get_move_buf_addr(spinlock_t *plock,
 
 	mfc_buf = list_entry(from_queue->head.next, struct s5p_mfc_buf, list);
 
-	if (s5p_mfc_mem_get_daddr_vb(&mfc_buf->vb.vb2_buf, 0) == addr) {
+	if (mfc_buf->planes.raw[0] == addr) {
 		mfc_debug(2, "First plane address: 0x%08llx\n",
-				s5p_mfc_mem_get_daddr_vb(&mfc_buf->vb.vb2_buf, 0));
+				mfc_buf->planes.raw[0]);
 
 		list_del(&mfc_buf->list);
 		from_queue->count--;
@@ -280,7 +280,7 @@ struct s5p_mfc_buf *s5p_mfc_find_buf_vb(spinlock_t *plock, struct s5p_mfc_buf_qu
 
 	mfc_debug(2, "Looking for this address: 0x%08llx\n", addr);
 	list_for_each_entry(mfc_buf, &queue->head, list) {
-		mb_addr = s5p_mfc_mem_get_daddr_vb(&mfc_buf->vb.vb2_buf, 0);
+		mb_addr = mfc_buf->planes.raw[0];
 		mfc_debug(2, "plane[0] addr: 0x%08llx\n", mb_addr);
 
 		if (addr == mb_addr) {
@@ -338,7 +338,7 @@ struct s5p_mfc_buf *s5p_mfc_find_del_buf_vb(spinlock_t *plock, struct s5p_mfc_bu
 
 	mfc_debug(2, "Looking for this address: 0x%08llx\n", addr);
 	list_for_each_entry(mfc_buf, &queue->head, list) {
-		mb_addr = s5p_mfc_mem_get_daddr_vb(&mfc_buf->vb.vb2_buf, 0);
+		mb_addr = mfc_buf->planes.raw[0];
 		mfc_debug(2, "plane[0] addr: 0x%08llx\n", mb_addr);
 
 		if (addr == mb_addr) {
@@ -372,7 +372,7 @@ struct s5p_mfc_buf *s5p_mfc_find_move_buf_vb(spinlock_t *plock,
 
 	mfc_debug(2, "Looking for this address: 0x%08llx\n", addr);
 	list_for_each_entry(mfc_buf, &from_queue->head, list) {
-		mb_addr = s5p_mfc_mem_get_daddr_vb(&mfc_buf->vb.vb2_buf, 0);
+		mb_addr = mfc_buf->planes.raw[0];
 		mfc_debug(2, "plane[0] addr: 0x%08llx\n", mb_addr);
 
 		if (addr == mb_addr) {
@@ -411,7 +411,7 @@ struct s5p_mfc_buf *s5p_mfc_find_move_buf_vb_used(spinlock_t *plock,
 
 	mfc_debug(2, "Looking for this address: 0x%08llx\n", addr);
 	list_for_each_entry(mfc_buf, &from_queue->head, list) {
-		mb_addr = s5p_mfc_mem_get_daddr_vb(&mfc_buf->vb.vb2_buf, 0);
+		mb_addr = mfc_buf->planes.raw[0];
 		mfc_debug(2, "plane[0] addr: 0x%08llx, used: %d\n",
 				mb_addr, mfc_buf->used);
 

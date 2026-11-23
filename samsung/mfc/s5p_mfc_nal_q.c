@@ -678,6 +678,7 @@ static int mfc_nal_q_run_in_buf_dec(struct s5p_mfc_ctx *ctx, DecoderInputStr *pI
 	/* dst buffer setting */
 	dst_index = dst_mb->vb.vb2_buf.index;
 	set_bit(dst_index, &dec->available_dpb);
+	set_bit(dst_index, &dec->dpb_sent);
 	dec->dynamic_set = 1 << dst_index;
 
 	for (i = 0; i < raw->num_planes; i++) {
@@ -934,7 +935,7 @@ static void mfc_nal_q_handle_ref_frame(struct s5p_mfc_ctx *ctx, DecoderOutputStr
 	dst_mb = s5p_mfc_find_move_buf_vb_used(&ctx->buf_queue_lock,
 		&ctx->ref_buf_queue, &ctx->dst_buf_nal_queue, dec_addr);
 	if (dst_mb) {
-		buf_addr = s5p_mfc_mem_get_daddr_vb(&dst_mb->vb.vb2_buf, 0);
+		buf_addr = dst_mb->planes.raw[0];
 		mfc_debug(2, "NAL Q: Found in dst queue, "
 				"dec addr: 0x%08llx, buf addr: 0x%08llx, used: %d\n",
 				dec_addr, buf_addr, dst_mb->used);
@@ -1072,7 +1073,7 @@ static void mfc_nal_q_handle_frame_new(struct s5p_mfc_ctx *ctx, unsigned int err
 			mfc_debug(2, "NAL Q: find display buf, index: %d\n", dst_mb->vb.vb2_buf.index);
 			/* Check if this is the buffer we're looking for */
 			mfc_debug(2, "NAL Q: buf addr: 0x%08llx, disp addr: 0x%08llx\n",
-				s5p_mfc_mem_get_daddr_vb(&dst_mb->vb.vb2_buf, 0), dspl_y_addr);
+				dst_mb->planes.raw[0], dspl_y_addr);
 
 			index = dst_mb->vb.vb2_buf.index;
 
@@ -1095,7 +1096,7 @@ static void mfc_nal_q_handle_frame_new(struct s5p_mfc_ctx *ctx, unsigned int err
 			mfc_debug(2, "NAL Q: find display buf, index: %d\n", ref_mb->vb.vb2_buf.index);
 			/* Check if this is the buffer we're looking for */
 			mfc_debug(2, "NAL Q: buf addr: 0x%08llx, disp addr: 0x%08llx\n",
-				s5p_mfc_mem_get_daddr_vb(&ref_mb->vb.vb2_buf, 0), dspl_y_addr);
+				ref_mb->planes.raw[0], dspl_y_addr);
 
 			index = ref_mb->vb.vb2_buf.index;
 

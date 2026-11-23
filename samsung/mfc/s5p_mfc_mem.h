@@ -65,6 +65,10 @@ void s5p_mfc_mem_invalidate(void *vb_priv, void *start, off_t offset,
 int s5p_mfc_mem_clean_vb(struct vb2_buffer *vb, u32 num_planes);
 int s5p_mfc_mem_inv_vb(struct vb2_buffer *vb, u32 num_planes);
 
+int s5p_mfc_dpb_pin_get(struct s5p_mfc_ctx *ctx, struct vb2_buffer *vb,
+			dma_addr_t addr[MFC_MAX_PLANES]);
+void s5p_mfc_dpb_pin_release_all(struct s5p_mfc_ctx *ctx);
+
 int s5p_mfc_mem_get_user_shared_handle(struct s5p_mfc_ctx *ctx,
 		struct mfc_user_shared_handle *handle);
 int s5p_mfc_mem_cleanup_user_shared_handle(struct s5p_mfc_ctx *ctx,

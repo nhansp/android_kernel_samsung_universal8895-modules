@@ -105,11 +105,15 @@ extern struct s5p_mfc_fmt dec_formats[];
 
 static void mfc_deinit_dec_ctx(struct s5p_mfc_ctx *ctx)
 {
+	s5p_mfc_dpb_pin_release_all(ctx);
+
 	s5p_mfc_delete_queue(&ctx->src_buf_queue);
 	s5p_mfc_delete_queue(&ctx->dst_buf_queue);
 	s5p_mfc_delete_queue(&ctx->src_buf_nal_queue);
 	s5p_mfc_delete_queue(&ctx->dst_buf_nal_queue);
 	s5p_mfc_delete_queue(&ctx->ref_buf_queue);
+
+	mutex_destroy(&ctx->dec_priv->dpb_mutex);
 }
 
 static int mfc_init_dec_ctx(struct s5p_mfc_ctx *ctx)
@@ -124,6 +128,7 @@ static int mfc_init_dec_ctx(struct s5p_mfc_ctx *ctx)
 		return -ENOMEM;
 	}
 	ctx->dec_priv = dec;
+	mutex_init(&dec->dpb_mutex);
 
 	ctx->inst_no = MFC_NO_INSTANCE_SET;
 
