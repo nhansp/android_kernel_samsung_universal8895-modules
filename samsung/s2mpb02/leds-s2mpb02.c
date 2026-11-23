@@ -719,8 +719,10 @@ static void s2mpb02_led_remove(struct platform_device *pdev)
 	}
 }
 
-static void s2mpb02_led_shutdown(struct device *dev)
+static void s2mpb02_led_shutdown(struct platform_device *pdev)
 {
+	if (!global_led_datas[S2MPB02_TORCH_LED_1])
+		return;
 	global_led_datas[S2MPB02_TORCH_LED_1]->data->brightness = LED_OFF;
 	led_set(global_led_datas[S2MPB02_TORCH_LED_1], S2MPB02_LED_TURN_WAY_I2C);
 }
@@ -728,9 +730,9 @@ static void s2mpb02_led_shutdown(struct device *dev)
 static struct platform_driver s2mpb02_led_driver = {
 	.probe		= s2mpb02_led_probe,
 	.remove		= s2mpb02_led_remove,
+	.shutdown	= s2mpb02_led_shutdown,
 	.driver		= {
 	.name		= "s2mpb02-led",
-	.shutdown	= s2mpb02_led_shutdown,
 	},
 };
 
