@@ -82,10 +82,20 @@ static const struct exynos8895_gpu_qos *exynos8895_gpu_qos_of(unsigned long gpu_
 static void exynos8895_gpu_qos_apply(struct exynos8895_gpu *gpu, unsigned long rate)
 {
 	const struct exynos8895_gpu_qos *q = exynos8895_gpu_qos_of(rate);
+	const struct exynos8895_gpu_qos *c = q;
+	int base = READ_ONCE(exynos8895_gpu_dvfs_data.base_level);
+
+	/*
+	 * The MIF vote follows the clock the GPU runs at, the CPU votes the level
+	 * the table chose: a headroom boost for a late frame must not cap the big
+	 * cluster.
+	 */
+	if (rate && base >= 0)
+		c = exynos8895_gpu_qos_of(exynos8895_gpu_levels[base].freq_hz);
 
 	exynos_bus_qos_update_request(&gpu->mif_req, q ? q->mif_khz : 0);
-	mm_qos_update_request(&gpu->cl0_min_req, q ? q->cl0_min_khz : 0);
-	mm_qos_update_request(&gpu->cl1_max_req, q ? q->cl1_max_khz : INT_MAX);
+	mm_qos_update_request(&gpu->cl0_min_req, c ? c->cl0_min_khz : 0);
+	mm_qos_update_request(&gpu->cl1_max_req, c ? c->cl1_max_khz : INT_MAX);
 }
 
 static struct kbase_vendor_callbacks exynos8895_vendor_cb;

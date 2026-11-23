@@ -369,12 +369,44 @@ static ssize_t utilization_show(struct device *dev,
 }
 static DEVICE_ATTR_RO(utilization);
 
+/* the last target, not 0 while the GPU is off: the power HAL drops its boost on 0 */
+static ssize_t cur_freq_show(struct device *dev, struct device_attribute *attr,
+			     char *buf)
+{
+	struct exynos8895_gpu *gpu = exynos8895_gpu_of_dev(dev);
+
+	return sysfs_emit(buf, "%lu\n", gpu->kbdev->current_nominal_freq / 1000);
+}
+static DEVICE_ATTR_RO(cur_freq);
+
+static ssize_t capacity_headroom_show(struct device *dev,
+				      struct device_attribute *attr, char *buf)
+{
+	return sysfs_emit(buf, "%u\n",
+			  READ_ONCE(exynos8895_gpu_dvfs_data.capacity_headroom_khz));
+}
+
+static ssize_t capacity_headroom_store(struct device *dev,
+				       struct device_attribute *attr,
+				       const char *buf, size_t count)
+{
+	unsigned int khz;
+
+	if (kstrtouint(buf, 0, &khz))
+		return -EINVAL;
+	WRITE_ONCE(exynos8895_gpu_dvfs_data.capacity_headroom_khz, khz);
+	return count;
+}
+static DEVICE_ATTR_RW(capacity_headroom);
+
 static const struct attribute *exynos8895_gpu_attrs[] = {
 	&dev_attr_dvfs_table.attr,
 	&dev_attr_dvfs_min_lock.attr,
 	&dev_attr_dvfs_max_lock.attr,
 	&dev_attr_clock.attr,
 	&dev_attr_utilization.attr,
+	&dev_attr_cur_freq.attr,
+	&dev_attr_capacity_headroom.attr,
 	NULL,
 };
 
