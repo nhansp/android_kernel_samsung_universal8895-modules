@@ -6576,6 +6576,169 @@ static const struct nla_policy wl_cfgvendor_country_policy[ANDR_WIFI_ATTRIBUTE_C
 	[ANDR_WIFI_ATTRIBUTE_COUNTRY] = { .type = NLA_NUL_STRING, .len = WLC_CNTRY_BUF_SZ - 1 },
 };
 
+static int
+wl_cfgvendor_get_usable_channels(struct wiphy *wiphy,
+	struct wireless_dev *wdev, const void *data, int len)
+{
+	struct bcm_cfg80211 *cfg = wiphy_priv(wiphy);
+	struct net_device *ndev = bcmcfg_to_prmry_ndev(cfg);
+	dhd_pub_t *dhdp = cfg->pub;
+	u32 band_mask = 0, mode_mask = 0, filter_mask = 0, max_size = 0;
+	struct wl_usable_channel *chans = NULL;
+	chanspec_t sta_chanspec = 0;
+	u32 cur_chanspec;
+	wl_uint32_list_t *list;
+	struct sk_buff *skb;
+	const struct nlattr *iter;
+	u32 count, num = 0, i, j;
+	u8 *buf = NULL;
+	int rem, ret;
+
+	nla_for_each_attr(iter, data, len, rem) {
+		switch (nla_type(iter)) {
+		case USABLECHAN_ATTRIBUTE_BAND:
+			band_mask = nla_get_u32(iter);
+			break;
+		case USABLECHAN_ATTRIBUTE_IFACE:
+			mode_mask = nla_get_u32(iter);
+			break;
+		case USABLECHAN_ATTRIBUTE_FILTER:
+			filter_mask = nla_get_u32(iter);
+			break;
+		case USABLECHAN_ATTRIBUTE_MAX_SIZE:
+			max_size = nla_get_u32(iter);
+			break;
+		}
+	}
+
+	if (filter_mask) {
+		WL_ERR(("usable channel filter 0x%x is not supported\n", filter_mask));
+		return -EOPNOTSUPP;
+	}
+
+	RETURN_EIO_IF_NOT_UP(cfg);
+
+	buf = MALLOCZ(cfg->osh, WLC_IOCTL_MAXLEN);
+	if (!buf) {
+		ret = -ENOMEM;
+		goto exit;
+	}
+
+	ret = wldev_iovar_getbuf_bsscfg(ndev, "chanspecs", NULL, 0, buf, WLC_IOCTL_MAXLEN, 0,
+		&cfg->ioctl_buf_sync);
+	if (ret) {
+		WL_ERR(("get chanspecs failed: %d\n", ret));
+		ret = -EIO;
+		goto exit;
+	}
+	list = (wl_uint32_list_t *)buf;
+	count = min_t(u32, dtoh32(list->count),
+		(WLC_IOCTL_MAXLEN - sizeof(list->count)) / sizeof(list->element[0]));
+
+	chans = kcalloc(min(max_size, count), sizeof(*chans), GFP_KERNEL);
+	if (!chans) {
+		ret = -ENOMEM;
+		goto exit;
+	}
+
+	if (wl_get_drv_status(cfg, CONNECTED, ndev) &&
+	    wldev_iovar_getint(ndev, "chanspec", (s32 *)&cur_chanspec) == BCME_OK)
+		sta_chanspec = wl_chspec_driver_to_host((chanspec_t)cur_chanspec);
+
+	for (i = 0; i < count; i++) {
+		chanspec_t c = wl_chspec_driver_to_host((chanspec_t)dtoh32(list->element[i]));
+		u32 chan = wf_chspec_ctlchan(c);
+		s32 info, freq, width;
+		u32 modes;
+
+		if (CHSPEC_IS2G(c) && (band_mask & WL_USABLECHAN_BAND_2G))
+			freq = ieee80211_channel_to_frequency(chan, NL80211_BAND_2GHZ);
+		else if (CHSPEC_IS5G(c) && (band_mask & WL_USABLECHAN_BAND_5G))
+			freq = ieee80211_channel_to_frequency(chan, NL80211_BAND_5GHZ);
+		else
+			continue;
+
+		if (CHSPEC_IS20(c))
+			width = WL_USABLECHAN_WIDTH_20;
+		else if (CHSPEC_IS40(c))
+			width = WL_USABLECHAN_WIDTH_40;
+		else if (CHSPEC_IS80(c))
+			width = WL_USABLECHAN_WIDTH_80;
+		else if (CHSPEC_IS160(c))
+			width = WL_USABLECHAN_WIDTH_160;
+		else if (CHSPEC_IS8080(c))
+			width = WL_USABLECHAN_WIDTH_80P80;
+		else
+			continue;
+
+		for (j = 0; j < num; j++) {
+			if (chans[j].freq == freq)
+				break;
+		}
+		if (j < num) {
+			if (width > chans[j].width)
+				chans[j].width = width;
+			continue;
+		}
+
+		info = chan | (CHSPEC_IS2G(c) ? WL_CHANSPEC_BAND_2G : WL_CHANSPEC_BAND_5G) |
+			WL_CHANSPEC_BW_20;
+		info = wl_chspec_host_to_driver(info);
+		ret = wldev_iovar_getint(ndev, "per_chan_info", &info);
+		if (ret) {
+			WL_ERR(("get per_chan_info of channel %u failed: %d\n", chan, ret));
+			ret = -EIO;
+			goto exit;
+		}
+
+		modes = WL_USABLECHAN_MODE_STA;
+		if (!(info & (WL_CHAN_RADAR | WL_CHAN_PASSIVE | WL_CHAN_CLM_RESTRICTED))) {
+			modes |= WL_USABLECHAN_MODE_SOFTAP | WL_USABLECHAN_MODE_P2P_GO |
+				WL_USABLECHAN_MODE_P2P_CLIENT;
+			if (FW_SUPPORTED(dhdp, nan))
+				modes |= WL_USABLECHAN_MODE_NAN;
+		}
+		if (sta_chanspec && wf_chspec_ctlchan(sta_chanspec) == chan &&
+		    FW_SUPPORTED(dhdp, tdls) && (CHSPEC_IS2G(c) ||
+		    !(info & WL_CHAN_CLM_RESTRICTED) ||
+		    ((info & WL_CHAN_RADAR) && (info & WL_CHAN_PASSIVE))))
+			modes |= WL_USABLECHAN_MODE_TDLS;
+		modes &= mode_mask;
+		if (!modes)
+			continue;
+
+		if (num == max_size) {
+			WL_ERR(("more usable channels than the %u requested\n", max_size));
+			break;
+		}
+		chans[num].freq = freq;
+		chans[num].width = width;
+		chans[num].iface_mode_mask = modes;
+		num++;
+	}
+
+	skb = cfg80211_vendor_cmd_alloc_reply_skb(wiphy, VENDOR_REPLY_OVERHEAD +
+		ATTRIBUTE_U32_LEN + NLA_HDRLEN + num * sizeof(*chans));
+	if (!skb) {
+		ret = -ENOMEM;
+		goto exit;
+	}
+	if (nla_put_u32(skb, USABLECHAN_ATTRIBUTE_SIZE, num) ||
+	    nla_put(skb, USABLECHAN_ATTRIBUTE_CHANNELS, num * sizeof(*chans), chans)) {
+		kfree_skb(skb);
+		ret = -EMSGSIZE;
+		goto exit;
+	}
+	ret = cfg80211_vendor_cmd_reply(skb);
+	if (unlikely(ret))
+		WL_ERR(("Vendor Command reply failed ret:%d\n", ret));
+exit:
+	kfree(chans);
+	if (buf)
+		MFREE(cfg->osh, buf, WLC_IOCTL_MAXLEN);
+	return ret;
+}
+
 /* The attributes each handler reads, at the width it reads them */
 static const struct nla_policy wl_cfgvendor_rand_mac_oui_policy[] = {
 	[ANDR_WIFI_ATTRIBUTE_RANDOM_MAC_OUI] = NLA_POLICY_EXACT_LEN(DOT11_OUI_LEN),
@@ -6586,6 +6749,13 @@ static const struct nla_policy wl_cfgvendor_nodfs_policy[] = {
 	[ANDR_WIFI_ATTRIBUTE_NODFS_SET] = { .type = NLA_U32 },
 };
 #endif /* CUSTOM_FORCE_NODFS_FLAG */
+
+static const struct nla_policy wl_cfgvendor_usable_channel_policy[] = {
+	[USABLECHAN_ATTRIBUTE_BAND] = { .type = NLA_U32 },
+	[USABLECHAN_ATTRIBUTE_IFACE] = { .type = NLA_U32 },
+	[USABLECHAN_ATTRIBUTE_FILTER] = { .type = NLA_U32 },
+	[USABLECHAN_ATTRIBUTE_MAX_SIZE] = { .type = NLA_U32 },
+};
 
 #if defined(GSCAN_SUPPORT) || defined(DHD_GET_VALID_CHANNELS)
 static const struct nla_policy wl_cfgvendor_channel_list_policy[] = {
@@ -7181,6 +7351,15 @@ static const struct wiphy_vendor_command wl_vendor_cmds [] = {
 		.doit = wl_cfgvendor_dbg_get_rx_pkt_fates
 	},
 #endif /* DBG_PKT_MON */
+	{
+		{
+			.vendor_id = OUI_GOOGLE,
+			.subcmd = WIFI_SUBCMD_USABLE_CHANNEL
+		},
+		.flags = WIPHY_VENDOR_CMD_NEED_WDEV | WIPHY_VENDOR_CMD_NEED_NETDEV,
+		WL_CFGVENDOR_POLICY(wl_cfgvendor_usable_channel_policy),
+		.doit = wl_cfgvendor_get_usable_channels
+	},
 #ifdef KEEP_ALIVE
 	{
 		{
