@@ -1595,6 +1595,10 @@ static int sx9320_probe(struct i2c_client *client)
 
 	/* create memory for main struct */
 	data = kzalloc(sizeof(struct sx9320_p), GFP_KERNEL);
+	if (!data) {
+		ret = -ENOMEM;
+		goto exit;
+	}
 
 	i2c_set_clientdata(client, data);
 	data->client = client;
