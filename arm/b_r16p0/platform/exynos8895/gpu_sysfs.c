@@ -247,11 +247,12 @@ static ssize_t exynos8895_gpu_store_int(struct exynos8895_gpu *gpu,
 					int (*set)(struct exynos8895_gpu *, int),
 					const char *name)
 {
+	size_t len = count;
 	int khz, ret;
 
-	if (count && buf[count - 1] == '\n')
-		count--;
-	if (!count)
+	if (len && buf[len - 1] == '\n')
+		len--;
+	if (!len)
 		return -EINVAL;
 
 	khz = 0;
