@@ -11777,7 +11777,9 @@ dhd_preinit_ioctls(dhd_pub_t *dhd)
 #endif /* PNO_SUPPORT */
 	/* enable dongle roaming event */
 #ifdef WL_CFG80211
+#if !defined(ROAM_EVT_DISABLE)
 	setbit(eventmask, WLC_E_ROAM);
+#endif /* !ROAM_EVT_DISABLE */
 	setbit(eventmask, WLC_E_BSSID);
 #endif /* WL_CFG80211 */
 #ifdef BCMCCX
