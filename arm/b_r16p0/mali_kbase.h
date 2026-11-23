@@ -71,8 +71,6 @@
 #include "mali_kbase_ioctl.h"
 #include "mali_kbase_vinstr.h"
 
-#include "ipa/mali_kbase_ipa.h"
-
 #include <mali_kbase_uku.h>
 
 #ifdef CONFIG_GPU_TRACEPOINTS

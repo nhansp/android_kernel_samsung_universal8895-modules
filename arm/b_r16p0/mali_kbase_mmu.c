@@ -48,9 +48,6 @@
 #include <mali_kbase_hwaccess_time.h>
 #include <mali_kbase_mem.h>
 
-/* MALI_SEC_INTEGRATION */
-#include <gpu_control.h>
-
 #define KBASE_MMU_PAGE_ENTRIES 512
 
 /**
@@ -1515,12 +1512,6 @@ static void kbase_mmu_flush_invalidate(struct kbase_context *kctx,
 	/* Early out if there is nothing to do */
 	if (nr == 0)
 		return;
-
-	/* MALI_SEC_INTEGRATION */
-#ifdef CONFIG_MALI_RT_PM
-	if (!gpu_is_power_on())
-		return;
-#endif
 
 	kbdev = kctx->kbdev;
 	mutex_lock(&kbdev->js_data.queue_mutex);

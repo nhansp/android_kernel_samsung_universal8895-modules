@@ -59,7 +59,8 @@ int kbase_sync_fence_stream_create(const char *name, int *const out_fd)
 	return 0;
 }
 
-int kbase_sync_fence_out_create(struct kbase_jd_atom *katom, int stream_fd)
+int kbase_sync_fence_out_create(struct kbase_jd_atom *katom, int stream_fd,
+				struct file **file)
 {
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 10, 0))
 	struct fence *fence;
@@ -111,7 +112,8 @@ int kbase_sync_fence_out_create(struct kbase_jd_atom *katom, int stream_fd)
 		return fd;
 	}
 
-	fd_install(fd, sync_file->file);
+	/* installed by the caller */
+	*file = sync_file->file;
 
 	return fd;
 }
@@ -321,7 +323,7 @@ static void kbase_sync_fence_info_get(struct dma_fence *fence,
 	scnprintf(info->name, sizeof(info->name), "%u#%u",
 		  fence->context, fence->seqno);
 #else
-	scnprintf(info->name, sizeof(info->name), "%llu#%u",
+	scnprintf(info->name, sizeof(info->name), "%llu#%llu",
 		  fence->context, fence->seqno);
 #endif
 }

@@ -20,13 +20,17 @@
 #
 
 
+# The Kconfig options this driver is built with for Exynos 8895
+CONFIG_MALI_MIDGARD := m
+CONFIG_MALI_DEVFREQ := y
+CONFIG_MALI_PLATFORM_THIRDPARTY_NAME := "exynos8895"
+ccflags-y += -DCONFIG_MALI_DEVFREQ=1
+
 # Driver version string which is returned to userspace via an ioctl
 MALI_RELEASE_NAME ?= "r16p0-01rel0"
 
 # Paths required for build
 KBASE_PATH = $(src)
-KBASE_PLATFORM_PATH = $(KBASE_PATH)/platform_dummy
-UMP_PATH = $(src)/../../../base
 
 # Set up defaults if not defined by build system
 MALI_CUSTOMER_RELEASE ?= 1
@@ -54,13 +58,11 @@ else
 DEFINES +=-DMALI_KBASE_PLATFORM_PATH=$(src)/platform/$(CONFIG_MALI_PLATFORM_THIRDPARTY_NAME)
 endif
 
-DEFINES += -I$(srctree)/drivers/staging/android
-
 DEFINES += -DMALI_KBASE_BUILD
 
 # Use our defines when compiling
-ccflags-y += $(DEFINES) -I$(KBASE_PATH)   -I$(KBASE_PLATFORM_PATH) -I$(UMP_PATH) -I$(srctree)/include/linux
-subdir-ccflags-y += $(DEFINES) -I$(KBASE_PATH)   -I$(KBASE_PLATFORM_PATH) -I$(UMP_PATH) -I$(srctree)/include/linux
+ccflags-y += $(DEFINES) -I$(KBASE_PATH)
+subdir-ccflags-y += $(DEFINES) -I$(KBASE_PATH)
 
 SRC := \
 	mali_kbase_device.c \
@@ -136,16 +138,9 @@ mali_kbase-y := $(SRC:.c=.o)
 platform_name := $(shell echo $(CONFIG_MALI_PLATFORM_THIRDPARTY_NAME))
 MALI_PLATFORM_DIR := platform/$(platform_name)
 ccflags-y += -I$(src)/$(MALI_PLATFORM_DIR)
-#include $(src)/$(MALI_PLATFORM_DIR)/Kbuild
-obj-$(CONFIG_MALI_MIDGARD) += platform/
+include $(src)/$(MALI_PLATFORM_DIR)/Kbuild
 #mali_kbase-y += $(PLATFORM_THIRDPARTY:.c=.o)
 
-
-ifeq ($(CONFIG_MALI_DEVFREQ),y)
-  ifeq ($(CONFIG_DEVFREQ_THERMAL),y)
-    include $(src)/ipa/Kbuild
-  endif
-endif
 
 ifeq ($(MALI_USE_CSF),1)
 	include $(src)/csf/Kbuild
@@ -155,7 +150,6 @@ mali_kbase-$(CONFIG_MALI_DMA_FENCE) += \
 	mali_kbase_dma_fence.o \
 	mali_kbase_fence.o
 mali_kbase-$(CONFIG_SYNC) += \
-	mali_kbase_sync_android.o \
 	mali_kbase_sync_common.o
 mali_kbase-$(CONFIG_SYNC_FILE) += \
 	mali_kbase_sync_file.o \
@@ -168,6 +162,3 @@ mali_kbase-y += $(BACKEND:.c=.o)
 
 ccflags-y += -I$(src)/backend/gpu
 subdir-ccflags-y += -I$(src)/backend/gpu
-
-# For kutf and mali_kutf_irq_latency_test
-obj-$(CONFIG_MALI_KUTF) += tests/

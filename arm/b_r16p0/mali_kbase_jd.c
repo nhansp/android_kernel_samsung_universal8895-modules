@@ -39,10 +39,6 @@
 
 #include "mali_kbase_dma_fence.h"
 
-/* MALI_SEC_INTEGRATION */
-#include <linux/smc.h>
-#include "platform/exynos/gpu_integration_defs.h"
-
 #define beenthere(kctx, f, a...)  dev_dbg(kctx->kbdev->dev, "%s:" f, __func__, ##a)
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(3, 8, 0)
@@ -269,7 +265,7 @@ static int kbase_jd_pre_external_resources(struct kbase_jd_atom *katom, const st
 #endif /* CONFIG_MALI_DMA_FENCE */
 
 	/* Take the processes mmap lock */
-	down_read(&current->mm->mmap_sem);
+	mmap_read_lock(current->mm);
 
 	/* need to keep the GPU VM locked while we set up UMM buffers */
 	kbase_gpu_vm_lock(katom->kctx);
@@ -329,7 +325,7 @@ static int kbase_jd_pre_external_resources(struct kbase_jd_atom *katom, const st
 	kbase_gpu_vm_unlock(katom->kctx);
 
 	/* Release the processes mmap lock */
-	up_read(&current->mm->mmap_sem);
+	mmap_read_unlock(current->mm);
 
 #ifdef CONFIG_MALI_DMA_FENCE
 	if (implicit_sync) {
@@ -354,7 +350,7 @@ static int kbase_jd_pre_external_resources(struct kbase_jd_atom *katom, const st
 #ifdef CONFIG_MALI_DMA_FENCE
 failed_dma_fence_setup:
 	/* Lock the processes mmap lock */
-	down_read(&current->mm->mmap_sem);
+	mmap_read_lock(current->mm);
 
 	/* lock before we unmap */
 	kbase_gpu_vm_lock(katom->kctx);
@@ -370,7 +366,7 @@ failed_dma_fence_setup:
 	kbase_gpu_vm_unlock(katom->kctx);
 
 	/* Release the processes mmap lock */
-	up_read(&current->mm->mmap_sem);
+	mmap_read_unlock(current->mm);
 
  early_err_out:
 	kfree(katom->extres);
@@ -1563,7 +1559,7 @@ void kbase_jd_zap_context(struct kbase_context *kctx)
 	 * queued outside the job scheduler.
 	 */
 
-	del_timer_sync(&kctx->soft_job_timeout);
+	timer_delete_sync(&kctx->soft_job_timeout);
 	list_for_each_safe(entry, tmp, &kctx->waiting_soft_jobs) {
 		katom = list_entry(entry, struct kbase_jd_atom, queue);
 		kbase_cancel_soft_job(katom);

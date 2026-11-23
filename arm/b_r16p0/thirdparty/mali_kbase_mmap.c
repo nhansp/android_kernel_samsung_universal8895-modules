@@ -39,77 +39,84 @@
  */
 
 
-/**
- * align_and_check() - Align the specified pointer to the provided alignment and
- *                     check that it is still in range.
- * @gap_end:        Highest possible start address for allocation (end of gap in
- *                  address space)
- * @gap_start:      Start address of current memory area / gap in address space
- * @info:           vm_unmapped_area_info structure passed to caller, containing
- *                  alignment, length and limits for the allocation
- * @is_shader_code: True if the allocation is for shader code (which has
- *                  additional alignment requirements)
- * @is_same_4gb_page: True if the allocation needs to reside completely within
- *                    a 4GB chunk
- *
- * Return: true if gap_end is now aligned correctly and is still in range,
- *         false otherwise
+/*
+ * The VMA tree cannot be walked any more: search with vm_unmapped_area() and
+ * lower high_limit until the shader code or same 4GB alignment holds, as later
+ * Arm releases do.
  */
-static bool align_and_check(unsigned long *gap_end, unsigned long gap_start,
-		struct vm_unmapped_area_info *info, bool is_shader_code,
-		bool is_same_4gb_page)
+
+/**
+ * shader_code_align_and_check() - Align the specified pointer according to shader code
+ *                     requirement.
+ *
+ * @gap_end:           Highest possible start address for alignment. The caller must ensure
+ *                     the input has already been properly aligned with info contained fields.
+ * @info:              vm_unmapped_area_info structure passed, containing alignment, length
+ *                     and limits for the allocation
+ *
+ * Return: true if gap_end is now aligned correctly, false otherwise
+ */
+static bool shader_code_align_and_check(unsigned long *gap_end,
+					struct vm_unmapped_area_info *info)
 {
-	/* Compute highest gap address at the desired alignment */
-	(*gap_end) -= info->length;
-	(*gap_end) -= (*gap_end - info->align_offset) & info->align_mask;
+	unsigned long align_adjust = (info->align_offset ? info->align_offset :
+			info->length);
+	unsigned long align_floor = info->low_limit + align_adjust;
 
-	if (is_shader_code) {
-		/* Check for 4GB boundary */
-		if (0 == (*gap_end & BASE_MEM_MASK_4GB))
-			(*gap_end) -= (info->align_offset ? info->align_offset :
-					info->length);
-		if (0 == ((*gap_end + info->length) & BASE_MEM_MASK_4GB))
-			(*gap_end) -= (info->align_offset ? info->align_offset :
-					info->length);
+	/* Check for 4GB boundary */
+	if (0 == (*gap_end & BASE_MEM_MASK_4GB) && *gap_end >= align_floor)
+		(*gap_end) -= align_adjust;
+	if (0 == ((*gap_end + info->length) & BASE_MEM_MASK_4GB) &&
+	    *gap_end >= align_floor)
+		(*gap_end) -= align_adjust;
 
-		if (!(*gap_end & BASE_MEM_MASK_4GB) || !((*gap_end +
-				info->length) & BASE_MEM_MASK_4GB))
+	return ((*gap_end & BASE_MEM_MASK_4GB) &&
+		((*gap_end + info->length) & BASE_MEM_MASK_4GB));
+}
+
+/**
+ * align_4gb_no_straddle() - Align the specified pointer not to straddle over a
+ *                           4GB boundary.
+ *
+ * @gap_end:           Highest possible start address for alignment. The caller must ensure
+ *                     the input has already been properly aligned with info contained fields.
+ * @info:              vm_unmapped_area_info structure passed, containing alignment, length
+ *                     and limits for the allocation
+ *
+ * Return: true is always expected and the gap_end is aligned correctly
+ */
+static bool align_4gb_no_straddle(unsigned long *gap_end,
+				  struct vm_unmapped_area_info *info)
+{
+	unsigned long start = *gap_end;
+	unsigned long end = *gap_end + info->length;
+	unsigned long mask = ~((unsigned long)U32_MAX);
+
+	/* Check if 4GB boundary is straddled */
+	if ((start & mask) != ((end - 1) & mask)) {
+		unsigned long offset = end - (end & mask);
+		/* This is to ensure that alignment doesn't get
+		 * disturbed in an attempt to prevent straddling at
+		 * 4GB boundary. The GPU VA is aligned to 2MB when the
+		 * allocation size is > 2MB and there is enough CPU &
+		 * GPU virtual space.
+		 */
+		unsigned long rounded_offset =
+				ALIGN(offset, info->align_mask + 1);
+
+		start -= rounded_offset;
+		end -= rounded_offset;
+
+		*gap_end = start;
+
+		/* The preceding 4GB boundary shall not get straddled,
+		 * even after accounting for the alignment, as the
+		 * size of allocation is limited to 4GB and the initial
+		 * start location was already aligned.
+		 */
+		if (WARN_ON((start & mask) != ((end - 1) & mask)))
 			return false;
-	} else if (is_same_4gb_page) {
-		unsigned long start = *gap_end;
-		unsigned long end = *gap_end + info->length;
-		unsigned long mask = ~((unsigned long)U32_MAX);
-
-		/* Check if 4GB boundary is straddled */
-		if ((start & mask) != ((end - 1) & mask)) {
-			unsigned long offset = end - (end & mask);
-			/* This is to ensure that alignment doesn't get
-			 * disturbed in an attempt to prevent straddling at
-			 * 4GB boundary. The GPU VA is aligned to 2MB when the
-			 * allocation size is > 2MB and there is enough CPU &
-			 * GPU virtual space.
-			 */
-			unsigned long rounded_offset =
-					ALIGN(offset, info->align_mask + 1);
-
-			start -= rounded_offset;
-			end -= rounded_offset;
-
-			*gap_end = start;
-
-			/* The preceding 4GB boundary shall not get straddled,
-			 * even after accounting for the alignment, as the
-			 * size of allocation is limited to 4GB and the initial
-			 * start location was already aligned.
-			 */
-			WARN_ON((start & mask) != ((end - 1) & mask));
-		}
 	}
-
-
-	if ((*gap_end < info->low_limit) || (*gap_end < gap_start))
-		return false;
-
 
 	return true;
 }
@@ -124,125 +131,80 @@ static bool align_and_check(unsigned long *gap_end, unsigned long gap_start,
  * @is_same_4gb_page: Boolean which indicates whether the allocated area needs
  *                    to reside completely within a 4GB chunk.
  *
- * The unmapped_area_topdown() function in the Linux kernel is not exported
- * using EXPORT_SYMBOL_GPL macro. To allow us to call this function from a
- * module and also make use of the fact that some of the requirements for
- * the unmapped area are known in advance, we implemented an extended version
- * of this function and prefixed it with 'kbase_'.
- *
- * The difference in the call parameter list comes from the fact that
- * kbase_unmapped_area_topdown() is called with additional parameters which
- * are provided to indicate whether the allocation is for a shader core memory,
- * which has additional alignment requirements, and whether the allocation can
- * straddle a 4GB boundary.
- *
- * The modification of the original Linux function lies in how the computation
- * of the highest gap address at the desired alignment is performed once the
- * gap with desirable properties is found. For this purpose a special function
- * is introduced (@ref align_and_check()) which beside computing the gap end
- * at the desired alignment also performs additional alignment checks for the
- * case when the memory is executable shader core memory, for which it is
- * ensured that the gap does not end on a 4GB boundary, and for the case when
- * memory needs to be confined within a 4GB chunk.
- *
  * Return: address of the found gap end (high limit) if area is found;
  *         -ENOMEM if search is unsuccessful
-*/
-
+ */
 static unsigned long kbase_unmapped_area_topdown(struct vm_unmapped_area_info
 		*info, bool is_shader_code, bool is_same_4gb_page)
 {
-	struct mm_struct *mm = current->mm;
-	struct vm_area_struct *vma;
-	unsigned long length, low_limit, high_limit, gap_start, gap_end;
+	struct vm_unmapped_area_info tmp_info = *info;
+	unsigned long length;
 
-	/* Adjust search length to account for worst case alignment overhead */
+	tmp_info.flags |= VM_UNMAPPED_AREA_TOPDOWN;
+	if (!(is_shader_code || is_same_4gb_page))
+		return vm_unmapped_area(&tmp_info);
+
 	length = info->length + info->align_mask;
-	if (length < info->length)
-		return -ENOMEM;
 
-	/*
-	 * Adjust search limits by the desired length.
-	 * See implementation comment at top of unmapped_area().
+	/* Due to additional alignment requirement, shader_code or same_4gb_page
+	 * needs iterations for alignment search and confirmation check.
 	 */
-	gap_end = info->high_limit;
-	if (gap_end < length)
-		return -ENOMEM;
-	high_limit = gap_end - length;
-
-	if (info->low_limit > high_limit)
-		return -ENOMEM;
-	low_limit = info->low_limit + length;
-
-	/* Check highest gap, which does not precede any rbtree node */
-	gap_start = mm->highest_vm_end;
-	if (gap_start <= high_limit) {
-		if (align_and_check(&gap_end, gap_start, info,
-				is_shader_code, is_same_4gb_page))
-			return gap_end;
-	}
-
-	/* Check if rbtree root looks promising */
-	if (RB_EMPTY_ROOT(&mm->mm_rb))
-		return -ENOMEM;
-	vma = rb_entry(mm->mm_rb.rb_node, struct vm_area_struct, vm_rb);
-	if (vma->rb_subtree_gap < length)
-		return -ENOMEM;
-
 	while (true) {
-		/* Visit right subtree if it looks promising */
-		gap_start = vma->vm_prev ? vma->vm_prev->vm_end : 0;
-		if (gap_start <= high_limit && vma->vm_rb.rb_right) {
-			struct vm_area_struct *right =
-				rb_entry(vma->vm_rb.rb_right,
-					 struct vm_area_struct, vm_rb);
-			if (right->rb_subtree_gap >= length) {
-				vma = right;
-				continue;
+		unsigned long saved_high_lmt = tmp_info.high_limit;
+		unsigned long gap_end, start, rev_high_limit;
+
+		gap_end = vm_unmapped_area(&tmp_info);
+		if (IS_ERR_VALUE(gap_end))
+			return gap_end;
+
+		start = gap_end;
+		if (is_shader_code) {
+			bool shader_code_aligned;
+			unsigned long align_cmp_ref;
+
+			while (true) {
+				/* The loop ends when the alignment holds or
+				 * cannot progress any further.
+				 */
+				align_cmp_ref = gap_end;
+
+				shader_code_aligned =
+					shader_code_align_and_check(&gap_end, &tmp_info);
+				if (shader_code_aligned || align_cmp_ref == gap_end)
+					break;
 			}
-		}
 
-check_current:
-		/* Check if current node has a suitable gap */
-		gap_end = vma->vm_start;
-		if (gap_end < low_limit)
-			return -ENOMEM;
-		if (gap_start <= high_limit && gap_end - gap_start >= length) {
-			/* We found a suitable gap. Clip it with the original
-			 * high_limit. */
-			if (gap_end > info->high_limit)
-				gap_end = info->high_limit;
+			if (!shader_code_aligned)
+				break;
 
-			if (align_and_check(&gap_end, gap_start, info,
-					is_shader_code, is_same_4gb_page))
+			if (start == gap_end)
 				return gap_end;
+
+			rev_high_limit = gap_end + length;
+		} else {
+			/* must be same_4gb_page case */
+			if (unlikely(!align_4gb_no_straddle(&gap_end, &tmp_info)))
+				break;
+
+			if (start == gap_end)
+				return gap_end;
+
+			rev_high_limit = gap_end + length;
 		}
 
-		/* Visit left subtree if it looks promising */
-		if (vma->vm_rb.rb_left) {
-			struct vm_area_struct *left =
-				rb_entry(vma->vm_rb.rb_left,
-					 struct vm_area_struct, vm_rb);
-			if (left->rb_subtree_gap >= length) {
-				vma = left;
-				continue;
-			}
-		}
+		if (rev_high_limit < info->low_limit)
+			break;
 
-		/* Go back up the rbtree to find next candidate node */
-		while (true) {
-			struct rb_node *prev = &vma->vm_rb;
+		if (WARN_ONCE(rev_high_limit >= saved_high_lmt,
+			      "Unexpected recurring high_limit in search, %lx => %lx\n"
+			      "\tinfo-input: limit=[%lx, %lx], mask=%lx, len=%lx\n",
+			      saved_high_lmt, rev_high_limit, info->low_limit, info->high_limit,
+			      info->align_mask, info->length))
+			rev_high_limit = saved_high_lmt -
+					 (info->align_offset ? info->align_offset : info->length);
 
-			if (!rb_parent(prev))
-				return -ENOMEM;
-			vma = rb_entry(rb_parent(prev),
-				       struct vm_area_struct, vm_rb);
-			if (prev == vma->vm_rb.rb_right) {
-				gap_start = vma->vm_prev ?
-					vma->vm_prev->vm_end : 0;
-				goto check_current;
-			}
-		}
+		/* Repeat the search with a decreasing rev_high_limit */
+		tmp_info.high_limit = rev_high_limit;
 	}
 
 	return -ENOMEM;
@@ -259,7 +221,7 @@ unsigned long kbase_get_unmapped_area(struct file *filp,
 {
 	struct kbase_context *kctx = filp->private_data;
 	struct mm_struct *mm = current->mm;
-	struct vm_unmapped_area_info info;
+	struct vm_unmapped_area_info info = {};
 	unsigned long align_offset = 0;
 	unsigned long align_mask = 0;
 	unsigned long high_limit = mm->mmap_base;

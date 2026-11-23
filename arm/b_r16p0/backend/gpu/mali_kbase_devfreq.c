@@ -24,6 +24,7 @@
 #include <mali_kbase_tlstream.h>
 #include <mali_kbase_config_defaults.h>
 #include <backend/gpu/mali_kbase_pm_internal.h>
+#include "mali_kbase_devfreq.h"
 
 #include <linux/of.h>
 #include <linux/clk.h>
@@ -130,7 +131,8 @@ kbase_devfreq_target(struct device *dev, unsigned long *target_freq, u32 flags)
 	}
 #endif
 
-	err = clk_set_rate(kbdev->clock, freq);
+	/* Exynos 8895: deferred to the next runtime resume while pd_g3d is off */
+	err = exynos8895_gpu_set_rate(kbdev, freq);
 	if (err) {
 		dev_err(dev, "Failed to set clock %lu (target %lu)\n",
 				freq, *target_freq);
@@ -350,7 +352,8 @@ int kbase_devfreq_init(struct kbase_device *kbdev)
 	dp = &kbdev->devfreq_profile;
 
 	dp->initial_freq = kbdev->current_freq;
-	dp->polling_ms = 100;
+	/* the polling interval of Samsung's Exynos 8895 GPU DVFS */
+	dp->polling_ms = 30;
 	dp->target = kbase_devfreq_target;
 	dp->get_dev_status = kbase_devfreq_status;
 	dp->get_cur_freq = kbase_devfreq_cur_freq;
@@ -370,7 +373,8 @@ int kbase_devfreq_init(struct kbase_device *kbdev)
 		return err;
 
 	kbdev->devfreq = devfreq_add_device(kbdev->dev, dp,
-				"simple_ondemand", NULL);
+				DEVFREQ_GOV_TABLE_INTERACTIVE,
+				&exynos8895_gpu_dvfs_data);
 	if (IS_ERR(kbdev->devfreq)) {
 		kfree(dp->freq_table);
 		return PTR_ERR(kbdev->devfreq);
@@ -388,16 +392,8 @@ int kbase_devfreq_init(struct kbase_device *kbdev)
 	}
 
 #ifdef CONFIG_DEVFREQ_THERMAL
-	err = kbase_ipa_init(kbdev);
-	if (err) {
-		dev_err(kbdev->dev, "IPA initialization failed\n");
-		goto cooling_failed;
-	}
-
-	kbdev->devfreq_cooling = of_devfreq_cooling_register_power(
-			kbdev->dev->of_node,
-			kbdev->devfreq,
-			&kbase_ipa_power_model_ops);
+	kbdev->devfreq_cooling = devfreq_cooling_em_register(kbdev->devfreq,
+							     NULL);
 	if (IS_ERR_OR_NULL(kbdev->devfreq_cooling)) {
 		err = PTR_ERR(kbdev->devfreq_cooling);
 		dev_err(kbdev->dev,
@@ -431,8 +427,6 @@ void kbase_devfreq_term(struct kbase_device *kbdev)
 #ifdef CONFIG_DEVFREQ_THERMAL
 	if (kbdev->devfreq_cooling)
 		devfreq_cooling_unregister(kbdev->devfreq_cooling);
-
-	kbase_ipa_term(kbdev);
 #endif
 
 	devfreq_unregister_opp_notifier(kbdev->dev, kbdev->devfreq);

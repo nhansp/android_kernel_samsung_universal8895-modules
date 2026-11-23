@@ -76,10 +76,14 @@ int kbase_sync_fence_stream_create(const char *name, int *const out_fd);
  * kbase_sync_fence_out_create Create an explicit output fence to specified atom
  * @katom: Atom to assign the new explicit fence to
  * @stream_fd: File descriptor for stream object to create fence on
+ * @file: Set to the file of the fence. The returned descriptor is reserved,
+ *        not installed: fd_install(fd, *file) once it can be kept, else
+ *        kbase_sync_fence_close_fd(fd, *file)
  *
  * return: Valid file descriptor to fence or < 0 on error
  */
-int kbase_sync_fence_out_create(struct kbase_jd_atom *katom, int stream_fd);
+int kbase_sync_fence_out_create(struct kbase_jd_atom *katom, int stream_fd,
+				struct file **file);
 
 /**
  * kbase_sync_fence_in_from_fd() Assigns an existing fence to specified atom
@@ -156,16 +160,17 @@ void kbase_sync_fence_in_remove(struct kbase_jd_atom *katom);
 void kbase_sync_fence_out_remove(struct kbase_jd_atom *katom);
 
 /**
- * kbase_sync_fence_close_fd() - Close a file descriptor representing a fence
- * @fd: File descriptor to close
+ * kbase_sync_fence_close_fd() - Release a fence descriptor that was not installed
+ * @fd: File descriptor reserved by kbase_sync_fence_out_create()
+ * @file: The fence file it was created with
+ *
+ * Drivers cannot close a descriptor any more, so the fence descriptor is
+ * installed only once it can be kept.
  */
-static inline void kbase_sync_fence_close_fd(int fd)
+static inline void kbase_sync_fence_close_fd(int fd, struct file *file)
 {
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 17, 0)
-	ksys_close(fd);
-#else
-	sys_close(fd);
-#endif
+	put_unused_fd(fd);
+	fput(file);
 }
 
 /**

@@ -28,9 +28,6 @@
 #ifdef CONFIG_MALI_DEVFREQ
 #include <linux/devfreq.h>
 #include <backend/gpu/mali_kbase_devfreq.h>
-#ifdef CONFIG_DEVFREQ_THERMAL
-#include <ipa/mali_kbase_ipa_debugfs.h>
-#endif /* CONFIG_DEVFREQ_THERMAL */
 #endif /* CONFIG_MALI_DEVFREQ */
 #ifdef CONFIG_MALI_NO_MALI
 #include "mali_kbase_model_linux.h"
@@ -101,11 +98,6 @@
 #include <mali_kbase_as_fault_debugfs.h>
 /* MALI_SEC_INTEGRATION */
 #include <backend/gpu/mali_kbase_pm_internal.h>
-
-/* MALI_SEC_INTEGRATION */
-#ifdef CONFIG_MALI_ASV_CALIBRATION_SUPPORT
-#include "./platform/exynos/gpu_control.h"
-#endif
 
 /* GPU IRQ Tags */
 #define	JOB_IRQ_TAG	0
@@ -209,34 +201,21 @@ static int assign_irqs(struct platform_device *pdev)
 	if (!kbdev)
 		return -ENODEV;
 
-	/* 3 IRQ resources */
+	/* DT devices have no IRQ resources: look the three IRQs up by name */
 	for (i = 0; i < 3; i++) {
-		struct resource *irq_res;
-		int irqtag;
+		static const char *const irq_names[] = { "JOB", "MMU", "GPU" };
+		static const int irq_tags[] = {
+			JOB_IRQ_TAG, MMU_IRQ_TAG, GPU_IRQ_TAG
+		};
+		int irq = platform_get_irq_byname(pdev, irq_names[i]);
 
-		irq_res = platform_get_resource(pdev, IORESOURCE_IRQ, i);
-		if (!irq_res) {
-			dev_err(kbdev->dev, "No IRQ resource at index %d\n", i);
-			return -ENOENT;
+		if (irq < 0) {
+			dev_err(kbdev->dev, "No IRQ resource %s\n", irq_names[i]);
+			return irq;
 		}
 
-#ifdef CONFIG_OF
-		if (!strncmp(irq_res->name, "JOB", 4)) {
-			irqtag = JOB_IRQ_TAG;
-		} else if (!strncmp(irq_res->name, "MMU", 4)) {
-			irqtag = MMU_IRQ_TAG;
-		} else if (!strncmp(irq_res->name, "GPU", 4)) {
-			irqtag = GPU_IRQ_TAG;
-		} else {
-			dev_err(&pdev->dev, "Invalid irq res name: '%s'\n",
-				irq_res->name);
-			return -EINVAL;
-		}
-#else
-		irqtag = i;
-#endif /* CONFIG_OF */
-		kbdev->irqs[irqtag].irq = irq_res->start;
-		kbdev->irqs[irqtag].flags = irq_res->flags & IRQF_TRIGGER_MASK;
+		kbdev->irqs[irq_tags[i]].irq = irq;
+		kbdev->irqs[irq_tags[i]].flags = irq_get_trigger_type(irq);
 	}
 
 	return 0;
@@ -423,7 +402,6 @@ static int kbase_open(struct inode *inode, struct file *filp)
 
 	init_waitqueue_head(&kctx->event_queue);
 	filp->private_data = kctx;
-	filp->f_mode |= FMODE_UNSIGNED_OFFSET;
 	kctx->filp = filp;
 
 	if (kbdev->infinite_cache_active_default)
@@ -1467,6 +1445,7 @@ static const struct file_operations kbase_fops = {
 	.mmap = kbase_mmap,
 	.check_flags = kbase_check_flags,
 	.get_unmapped_area = kbase_get_unmapped_area,
+	.fop_flags = FOP_UNSIGNED_OFFSET,
 };
 
 /* MALI_SEC_INTEGRATION */
@@ -3339,7 +3318,7 @@ static int power_control_init(struct platform_device *pdev)
 	/* Register the OPPs if they are available in device tree */
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0)) \
 	|| defined(LSK_OPPV2_BACKPORT)
-	err = dev_pm_opp_of_add_table(kbdev->dev);
+	err = devm_pm_opp_of_add_table(kbdev->dev);
 #elif (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 7, 0))
 	err = of_init_opp_table(kbdev->dev);
 #else
@@ -3370,13 +3349,6 @@ if (kbdev->clock != NULL) {
 
 static void power_control_term(struct kbase_device *kbdev)
 {
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0)) || \
-		defined(LSK_OPPV2_BACKPORT)
-	dev_pm_opp_of_remove_table(kbdev->dev);
-#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 19, 0))
-	of_free_opp_table(kbdev->dev);
-#endif
-
 	if (kbdev->clock) {
 		clk_disable_unprepare(kbdev->clock);
 		clk_put(kbdev->clock);
@@ -3498,9 +3470,11 @@ static int kbase_device_debugfs_init(struct kbase_device *kbdev)
 	kbdev->debugfs_ctx_directory = debugfs_create_dir("ctx",
 			kbdev->mali_debugfs_directory);
 #else
+#if KBASE_TRACE_ENABLE
 	kbdev->trace_dentry = debugfs_create_file("mali_trace", S_IRUGO,
 			kbdev->mali_debugfs_directory, kbdev,
 			&kbasep_trace_debugfs_fops);
+#endif
 
 	kbdev->debugfs_ctx_directory = debugfs_create_dir("mem",
 			kbdev->mali_debugfs_directory);
@@ -3559,13 +3533,6 @@ static int kbase_device_debugfs_init(struct kbase_device *kbdev)
 #if KBASE_TRACE_ENABLE
 	kbasep_trace_debugfs_init(kbdev);
 #endif /* KBASE_TRACE_ENABLE */
-
-#ifdef CONFIG_MALI_DEVFREQ
-#ifdef CONFIG_DEVFREQ_THERMAL
-	if (kbdev->inited_subsys & inited_devfreq)
-		kbase_ipa_debugfs_init(kbdev);
-#endif /* CONFIG_DEVFREQ_THERMAL */
-#endif /* CONFIG_MALI_DEVFREQ */
 
 #ifdef CONFIG_DEBUG_FS
 	debugfs_create_file("serialize_jobs", S_IRUGO | S_IWUSR,
@@ -3695,13 +3662,13 @@ static const struct attribute_group kbase_attr_group = {
 	.attrs = kbase_attrs,
 };
 
-static int kbase_platform_device_remove(struct platform_device *pdev)
+static void kbase_platform_device_remove(struct platform_device *pdev)
 {
 	struct kbase_device *kbdev = to_kbase_device(&pdev->dev);
 	const struct list_head *dev_list;
 
 	if (!kbdev)
-		return -ENODEV;
+		return;
 
 	kfree(kbdev->gpu_props.prop_buffer);
 
@@ -3849,8 +3816,6 @@ static int kbase_platform_device_remove(struct platform_device *pdev)
 		dev_err(kbdev->dev, "Missing sub system termination\n");
 
 	kbase_device_free(kbdev);
-
-	return 0;
 }
 
 
@@ -4353,7 +4318,7 @@ static const struct dev_pm_ops kbase_pm_ops = {
 #ifdef CONFIG_OF
 static const struct of_device_id kbase_dt_ids[] = {
 	/* MALI_SEC_INTEGRATION */
-	{ .compatible = "arm,mali", },
+	{ .compatible = "samsung,exynos8895-mali", },
 	{ /* sentinel */ }
 };
 MODULE_DEVICE_TABLE(of, kbase_dt_ids);
@@ -4410,6 +4375,8 @@ module_exit(kbase_driver_exit);
 #endif /* CONFIG_OF */
 
 MODULE_LICENSE("GPL");
+MODULE_DESCRIPTION("Arm Mali Midgard and Bifrost GPU driver");
+MODULE_IMPORT_NS("DMA_BUF");
 MODULE_VERSION(MALI_RELEASE_NAME " (UK version " \
 		__stringify(BASE_UK_VERSION_MAJOR) "." \
 		__stringify(BASE_UK_VERSION_MINOR) ")");

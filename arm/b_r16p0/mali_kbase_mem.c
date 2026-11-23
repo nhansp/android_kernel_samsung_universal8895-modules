@@ -1272,7 +1272,7 @@ static struct kbase_cpu_mapping *kbasep_find_enclosing_cpu_mapping(
 	unsigned long map_start;
 	size_t map_size;
 
-	lockdep_assert_held(&current->mm->mmap_sem);
+	mmap_assert_locked(current->mm);
 
 	if ((uintptr_t) uaddr + size < (uintptr_t) uaddr) /* overflow check */
 		return NULL;
@@ -3406,11 +3406,11 @@ static int kbase_jd_user_buf_map(struct kbase_context *kctx,
 			reg->flags & KBASE_REG_GPU_WR ? FOLL_WRITE : 0,
 			pages, NULL);
 #else
-	pinned_pages = get_user_pages_remote(NULL, mm,
-			address,
-			alloc->imported.user_buf.nr_pages,
-			reg->flags & KBASE_REG_GPU_WR ? FOLL_WRITE : 0,
-			pages, NULL, NULL);
+	pinned_pages = pin_user_pages_remote(mm, address,
+					     alloc->imported.user_buf.nr_pages,
+					     (reg->flags & KBASE_REG_GPU_WR ?
+					      FOLL_WRITE : 0) | FOLL_LONGTERM,
+					     pages, NULL);
 #endif
 
 	if (pinned_pages <= 0)
@@ -3418,7 +3418,7 @@ static int kbase_jd_user_buf_map(struct kbase_context *kctx,
 
 	if (pinned_pages != alloc->imported.user_buf.nr_pages) {
 		for (i = 0; i < pinned_pages; i++)
-			put_page(pages[i]);
+			unpin_user_page(pages[i]);
 		return -ENOMEM;
 	}
 
@@ -3466,7 +3466,7 @@ unwind:
 	}
 
 	while (++i < pinned_pages) {
-		put_page(pages[i]);
+		unpin_user_page(pages[i]);
 		pages[i] = NULL;
 	}
 
@@ -3491,7 +3491,7 @@ static void kbase_jd_user_buf_unmap(struct kbase_context *kctx,
 				DMA_BIDIRECTIONAL);
 		if (writeable)
 			set_page_dirty_lock(pages[i]);
-		put_page(pages[i]);
+		unpin_user_page(pages[i]);
 		pages[i] = NULL;
 
 		size -= local_size;
@@ -3516,8 +3516,8 @@ static int kbase_jd_umm_map(struct kbase_context *kctx,
 
 	KBASE_DEBUG_ASSERT(alloc->type == KBASE_MEM_TYPE_IMPORTED_UMM);
 	KBASE_DEBUG_ASSERT(NULL == alloc->imported.umm.sgt);
-	sgt = dma_buf_map_attachment(alloc->imported.umm.dma_attachment,
-			DMA_BIDIRECTIONAL);
+	sgt = dma_buf_map_attachment_unlocked(alloc->imported.umm.dma_attachment,
+					      DMA_BIDIRECTIONAL);
 
 	if (IS_ERR_OR_NULL(sgt))
 		return -EINVAL;
@@ -3590,8 +3590,9 @@ err_teardown_orig_pages:
 	kbase_mmu_teardown_pages(kctx->kbdev, &kctx->mmu, reg->start_pfn,
 			count, kctx->as_nr);
 err_unmap_attachment:
-	dma_buf_unmap_attachment(alloc->imported.umm.dma_attachment,
-			alloc->imported.umm.sgt, DMA_BIDIRECTIONAL);
+	dma_buf_unmap_attachment_unlocked(alloc->imported.umm.dma_attachment,
+					  alloc->imported.umm.sgt,
+					  DMA_BIDIRECTIONAL);
 	alloc->imported.umm.sgt = NULL;
 
 	return err;
@@ -3604,8 +3605,9 @@ static void kbase_jd_umm_unmap(struct kbase_context *kctx,
 	KBASE_DEBUG_ASSERT(alloc);
 	KBASE_DEBUG_ASSERT(alloc->imported.umm.dma_attachment);
 	KBASE_DEBUG_ASSERT(alloc->imported.umm.sgt);
-	dma_buf_unmap_attachment(alloc->imported.umm.dma_attachment,
-	    alloc->imported.umm.sgt, DMA_BIDIRECTIONAL);
+	dma_buf_unmap_attachment_unlocked(alloc->imported.umm.dma_attachment,
+					  alloc->imported.umm.sgt,
+					  DMA_BIDIRECTIONAL);
 	alloc->imported.umm.sgt = NULL;
 	alloc->nents = 0;
 }

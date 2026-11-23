@@ -72,7 +72,7 @@
 #include <linux/regulator/consumer.h>
 
 /* MALI_SEC_INTEGRATION */
-#include <platform/exynos/gpu_integration_defs.h>
+#include <mali_kbase_exynos8895.h>
 
 #if defined(CONFIG_PM_RUNTIME) || \
 	(defined(CONFIG_PM) && LINUX_VERSION_CODE >= KERNEL_VERSION(3, 19, 0))
@@ -1029,7 +1029,7 @@ enum kbase_trace_code {
  *                      in the trace message, used during dumping of the message.
  */
 struct kbase_trace {
-	struct timespec timestamp;
+	struct timespec64 timestamp;
 	u32 thread_id;
 	u32 cpu;
 	void *ctx;
@@ -1143,7 +1143,7 @@ struct kbase_mem_pool {
 	size_t		    order;
 	spinlock_t          pool_lock;
 	struct list_head    page_list;
-	struct shrinker     reclaim;
+	struct shrinker     *reclaim;
 
 	struct kbase_mem_pool *next_pool;
 
@@ -1558,24 +1558,6 @@ struct kbase_device {
 #else
 	struct thermal_cooling_device *devfreq_cooling;
 #endif
-	bool ipa_protection_mode_switched;
-	struct {
-		/* Access to this struct must be with ipa.lock held */
-		struct mutex lock;
-		struct kbase_ipa_model *configured_model;
-		struct kbase_ipa_model *fallback_model;
-
-		/* Values of the PM utilization metrics from last time the
-		 * power model was invoked. The utilization is calculated as
-		 * the difference between last_metrics and the current values.
-		 */
-		struct kbasep_pm_metrics last_metrics;
-		/* Model data to pass to ipa_gpu_active/idle() */
-		struct kbase_ipa_model_vinstr_data *model_data;
-
-		/* true if use of fallback model has been forced by the User */
-		bool force_fallback_model;
-	} ipa;
 #endif /* CONFIG_DEVFREQ_THERMAL */
 #endif /* CONFIG_MALI_DEVFREQ */
 
@@ -2061,7 +2043,7 @@ struct kbase_context {
 	struct kbase_mem_pool mem_pool;
 	struct kbase_mem_pool lp_mem_pool;
 
-	struct shrinker         reclaim;
+	struct shrinker         *reclaim;
 	struct list_head        evict_list;
 
 	struct list_head waiting_soft_jobs;

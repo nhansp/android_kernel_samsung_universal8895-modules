@@ -21,7 +21,7 @@
  */
 
 #include <mali_kbase.h>
-#include <gpu_integration_defs.h>
+#include <mali_kbase_exynos8895.h>
 
 #ifdef CONFIG_DEBUG_FS
 /** Show callback for the @c gpu_memory debugfs file.

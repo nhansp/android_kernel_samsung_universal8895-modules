@@ -31,6 +31,7 @@
 #include <linux/seq_file.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
+#include <linux/of.h>
 #include <linux/of_platform.h>
 #include <linux/version.h>
 
@@ -108,9 +109,8 @@ static int kbase_device_as_init(struct kbase_device *kbdev, int i)
 		}
 		INIT_WORK(poke_work, kbasep_as_do_poke);
 
-		hrtimer_init(poke_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
-
-		poke_timer->function = kbasep_as_poke_timer_callback;
+		hrtimer_setup(poke_timer, kbasep_as_poke_timer_callback,
+			      CLOCK_MONOTONIC, HRTIMER_MODE_REL);
 
 		kbdev->as[i].poke_refcount = 0;
 		kbdev->as[i].poke_state = 0u;

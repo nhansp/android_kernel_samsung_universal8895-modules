@@ -28,7 +28,7 @@
 
 /* MALI_SEC_INTEGRATION */
 #ifdef CONFIG_DEBUG_LOCK_ALLOC
-#include <lockdep.h>
+#include <linux/lockdep.h>
 #endif
 
 static bool kbase_event_check_error(struct kbase_context *kctx, struct kbase_jd_atom *katom, base_jd_udata *data)

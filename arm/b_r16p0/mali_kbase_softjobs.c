@@ -135,7 +135,7 @@ static int kbase_dump_cpu_gpu_time(struct kbase_jd_atom *katom)
 {
 	struct kbase_vmap_struct map;
 	void *user_result;
-	struct timespec ts;
+	struct timespec64 ts;
 	struct base_dump_cpu_gpu_counters data;
 	u64 system_time;
 	u64 cycle_counter;
@@ -267,7 +267,7 @@ void kbasep_complete_triggered_soft_events(struct kbase_context *kctx, u64 evt)
 	}
 
 	if (cancel_timer)
-		del_timer(&kctx->soft_job_timeout);
+		timer_delete(&kctx->soft_job_timeout);
 	spin_unlock_irqrestore(&kctx->waiting_soft_jobs_lock, lflags);
 }
 
@@ -756,6 +756,7 @@ int kbase_mem_copy_from_extres(struct kbase_context *kctx,
 	int ret = 0;
 #ifdef CONFIG_DMA_SHARED_BUFFER
 	size_t dma_to_copy;
+	struct iosys_map dma_map;
 #endif
 
 	KBASE_DEBUG_ASSERT(pages != NULL);
@@ -805,20 +806,27 @@ int kbase_mem_copy_from_extres(struct kbase_context *kctx,
 		if (ret)
 			goto out_unlock;
 
-		for (i = 0; i < dma_to_copy/PAGE_SIZE; i++) {
+		/*
+		 * No dma_buf_kmap(): vmap the buffer once. A buffer that cannot be
+		 * mapped, or is I/O memory, is skipped like a page kmap failed on.
+		 */
+		if (!dma_buf_vmap_unlocked(dma_buf, &dma_map)) {
+			for (i = 0; !dma_map.is_iomem &&
+			     i < dma_to_copy / PAGE_SIZE; i++) {
 
-			void *extres_page = dma_buf_kmap(dma_buf, i);
+				void *extres_page = dma_map.vaddr +
+						(size_t)i * PAGE_SIZE;
 
-			if (extres_page)
 				kbase_mem_copy_from_extres_page(kctx,
 						extres_page, pages,
 						buf_data->nr_pages,
 						&target_page_nr,
 						offset, &to_copy);
 
-			dma_buf_kunmap(dma_buf, i, extres_page);
-			if (target_page_nr >= buf_data->nr_pages)
-				break;
+				if (target_page_nr >= buf_data->nr_pages)
+					break;
+			}
+			dma_buf_vunmap_unlocked(dma_buf, &dma_map);
 		}
 		dma_buf_end_cpu_access(dma_buf,
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 6, 0) && !defined(CONFIG_CHROMEOS)
@@ -1540,23 +1548,26 @@ int kbase_prepare_soft_job(struct kbase_jd_atom *katom)
 	case BASE_JD_REQ_SOFT_FENCE_TRIGGER:
 		{
 			struct base_fence fence;
+			struct file *file;
 			int fd;
 
 			if (0 != copy_from_user(&fence, (__user void *)(uintptr_t) katom->jc, sizeof(fence)))
 				return -EINVAL;
 
 			fd = kbase_sync_fence_out_create(katom,
-							 fence.basep.stream_fd);
+							 fence.basep.stream_fd,
+							 &file);
 			if (fd < 0)
 				return -EINVAL;
 
 			fence.basep.fd = fd;
 			if (0 != copy_to_user((__user void *)(uintptr_t) katom->jc, &fence, sizeof(fence))) {
 				kbase_sync_fence_out_remove(katom);
-				kbase_sync_fence_close_fd(fd);
+				kbase_sync_fence_close_fd(fd, file);
 				fence.basep.fd = -EINVAL;
 				return -EINVAL;
 			}
+			fd_install(fd, file);
 		}
 		break;
 	case BASE_JD_REQ_SOFT_FENCE_WAIT:

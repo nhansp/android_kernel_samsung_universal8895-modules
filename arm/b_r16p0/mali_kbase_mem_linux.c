@@ -527,7 +527,7 @@ unsigned long kbase_mem_evictable_reclaim_count_objects(struct shrinker *s,
 	struct kbase_mem_phy_alloc *alloc;
 	unsigned long pages = 0;
 
-	kctx = container_of(s, struct kbase_context, reclaim);
+	kctx = s->private_data;
 
 	mutex_lock(&kctx->jit_evict_lock);
 
@@ -566,7 +566,7 @@ unsigned long kbase_mem_evictable_reclaim_scan_objects(struct shrinker *s,
 	struct kbase_mem_phy_alloc *tmp;
 	unsigned long freed = 0;
 
-	kctx = container_of(s, struct kbase_context, reclaim);
+	kctx = s->private_data;
 	mutex_lock(&kctx->jit_evict_lock);
 
 	list_for_each_entry_safe(alloc, tmp, &kctx->evict_list, evict_node) {
@@ -628,25 +628,21 @@ int kbase_mem_evictable_init(struct kbase_context *kctx)
 	mutex_init(&kctx->jit_evict_lock);
 
 	/* Register shrinker */
-#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 12, 0)
-	kctx->reclaim.shrink = kbase_mem_evictable_reclaim_shrink;
-#else
-	kctx->reclaim.count_objects = kbase_mem_evictable_reclaim_count_objects;
-	kctx->reclaim.scan_objects = kbase_mem_evictable_reclaim_scan_objects;
-#endif
-	kctx->reclaim.seeks = DEFAULT_SEEKS;
-	/* Kernel versions prior to 3.1 :
-	 * struct shrinker does not define batch */
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 1, 0)
-	kctx->reclaim.batch = 0;
-#endif
-	register_shrinker(&kctx->reclaim);
+	kctx->reclaim = shrinker_alloc(0, "mali-mem");
+	if (!kctx->reclaim)
+		return -ENOMEM;
+	kctx->reclaim->count_objects = kbase_mem_evictable_reclaim_count_objects;
+	kctx->reclaim->scan_objects = kbase_mem_evictable_reclaim_scan_objects;
+	kctx->reclaim->seeks = DEFAULT_SEEKS;
+	kctx->reclaim->batch = 0;
+	kctx->reclaim->private_data = kctx;
+	shrinker_register(kctx->reclaim);
 	return 0;
 }
 
 void kbase_mem_evictable_deinit(struct kbase_context *kctx)
 {
-	unregister_shrinker(&kctx->reclaim);
+	shrinker_free(kctx->reclaim);
 }
 
 /**
@@ -799,7 +795,7 @@ int kbase_mem_flags_change(struct kbase_context *kctx, u64 gpu_addr, unsigned in
 		real_flags |= KBASE_REG_SHARE_IN;
 
 	/* now we can lock down the context, and find the region */
-	down_write(&current->mm->mmap_sem);
+	mmap_write_lock(current->mm);
 	kbase_gpu_vm_lock(kctx);
 
 	/* Validate the region */
@@ -867,7 +863,7 @@ int kbase_mem_flags_change(struct kbase_context *kctx, u64 gpu_addr, unsigned in
 
 out_unlock:
 	kbase_gpu_vm_unlock(kctx);
-	up_write(&current->mm->mmap_sem);
+	mmap_write_unlock(current->mm);
 out:
 	return ret;
 }
@@ -1112,7 +1108,7 @@ static struct kbase_va_region *kbase_mem_from_user_buffer(
 		*flags |= KBASE_MEM_IMPORT_HAVE_PAGES;
 	}
 
-	down_read(&current->mm->mmap_sem);
+	mmap_read_lock(current->mm);
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 6, 0)
 	faulted_pages = get_user_pages(current, current->mm, address, *va_pages,
@@ -1121,12 +1117,19 @@ static struct kbase_va_region *kbase_mem_from_user_buffer(
 	faulted_pages = get_user_pages(address, *va_pages,
 			reg->flags & KBASE_REG_GPU_WR, 0, pages, NULL);
 #else
-	faulted_pages = get_user_pages(address, *va_pages,
-			reg->flags & KBASE_REG_GPU_WR ? FOLL_WRITE : 0,
-			pages, NULL);
+	/* pin_user_pages() needs a page array; without one, only fault in */
+	if (pages)
+		faulted_pages = pin_user_pages(address, *va_pages,
+					       (reg->flags & KBASE_REG_GPU_WR ?
+						FOLL_WRITE : 0) | FOLL_LONGTERM,
+					       pages);
+	else
+		faulted_pages = get_user_pages(address, *va_pages,
+					       reg->flags & KBASE_REG_GPU_WR ?
+					       FOLL_WRITE : 0, NULL);
 #endif
 
-	up_read(&current->mm->mmap_sem);
+	mmap_read_unlock(current->mm);
 
 	if (faulted_pages != *va_pages)
 		goto fault_mismatch;
@@ -1175,7 +1178,7 @@ unwind_dma_map:
 fault_mismatch:
 	if (pages) {
 		for (i = 0; i < faulted_pages; i++)
-			put_page(pages[i]);
+			unpin_user_page(pages[i]);
 	}
 no_page_array:
 invalid_flags:
@@ -1583,7 +1586,7 @@ int kbase_mem_commit(struct kbase_context *kctx, u64 gpu_addr, u64 new_pages)
 		return -EINVAL;
 	}
 
-	down_write(&current->mm->mmap_sem);
+	mmap_write_lock(current->mm);
 	kbase_gpu_vm_lock(kctx);
 
 	/* Validate the region */
@@ -1625,7 +1628,7 @@ int kbase_mem_commit(struct kbase_context *kctx, u64 gpu_addr, u64 new_pages)
 		 * No update to the mm so downgrade the writer lock to a read
 		 * lock so other readers aren't blocked after this point.
 		 */
-		downgrade_write(&current->mm->mmap_sem);
+		mmap_write_downgrade(current->mm);
 		read_locked = true;
 
 		/* Allocate some more pages */
@@ -1681,9 +1684,9 @@ int kbase_mem_commit(struct kbase_context *kctx, u64 gpu_addr, u64 new_pages)
 out_unlock:
 	kbase_gpu_vm_unlock(kctx);
 	if (read_locked)
-		up_read(&current->mm->mmap_sem);
+		mmap_read_unlock(current->mm);
 	else
-		up_write(&current->mm->mmap_sem);
+		mmap_write_unlock(current->mm);
 
 	return res;
 }
@@ -1740,7 +1743,7 @@ KBASE_EXPORT_TEST_API(kbase_cpu_vm_close);
 static int kbase_cpu_vm_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 {
 #else
-static int kbase_cpu_vm_fault(struct vm_fault *vmf)
+static vm_fault_t kbase_cpu_vm_fault(struct vm_fault *vmf)
 {
 	struct vm_area_struct *vma = vmf->vma;
 #endif
@@ -1772,9 +1775,10 @@ static int kbase_cpu_vm_fault(struct vm_fault *vmf)
 	addr = (pgoff_t)(vmf->address >> PAGE_SHIFT);
 #endif
 	while (i < map->alloc->nents && (addr < vma->vm_end >> PAGE_SHIFT)) {
-		int ret = vm_insert_pfn(vma, addr << PAGE_SHIFT,
+		/* also VM_FAULT_NOPAGE for a page that is already mapped */
+		vm_fault_t ret = vmf_insert_pfn(vma, addr << PAGE_SHIFT,
 		    PFN_DOWN(as_phys_addr_t(map->alloc->pages[i])));
-		if (ret < 0 && ret != -EBUSY)
+		if (ret != VM_FAULT_NOPAGE)
 			goto locked_bad_fault;
 
 		i++; addr++;
@@ -1832,7 +1836,7 @@ static int kbase_cpu_mmap(struct kbase_context *kctx,
 	 */
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 7, 0))
-	vma->vm_flags |= VM_DONTCOPY | VM_DONTDUMP | VM_DONTEXPAND | VM_IO;
+	vm_flags_set(vma, VM_DONTCOPY | VM_DONTDUMP | VM_DONTEXPAND | VM_IO);
 #else
 	vma->vm_flags |= VM_DONTCOPY | VM_DONTEXPAND | VM_RESERVED | VM_IO;
 #endif
@@ -1887,12 +1891,13 @@ static int kbase_cpu_mmap(struct kbase_context *kctx,
 	if (!kaddr) {
 		unsigned long addr = vma->vm_start + aligned_offset;
 
-		vma->vm_flags |= VM_PFNMAP;
+		vm_flags_set(vma, VM_PFNMAP);
 		for (i = 0; i < nr_pages; i++) {
 			phys_addr_t phys;
 
 			phys = as_phys_addr_t(page_array[i + start_off]);
-			err = vm_insert_pfn(vma, addr, PFN_DOWN(phys));
+			err = vm_fault_to_errno(vmf_insert_pfn(vma, addr,
+							       PFN_DOWN(phys)), 0);
 			if (WARN_ON(err))
 				break;
 
@@ -1901,7 +1906,7 @@ static int kbase_cpu_mmap(struct kbase_context *kctx,
 	} else {
 		WARN_ON(aligned_offset);
 		/* MIXEDMAP so we can vfree the kaddr early and not track it after map time */
-		vma->vm_flags |= VM_MIXEDMAP;
+		vm_flags_set(vma, VM_MIXEDMAP);
 		/* vmalloc remaping is easy... */
 		err = remap_vmalloc_range(vma, kaddr, 0);
 		WARN_ON(err);
@@ -1990,14 +1995,14 @@ void kbase_os_mem_map_lock(struct kbase_context *kctx)
 {
 	struct mm_struct *mm = current->mm;
 	(void)kctx;
-	down_read(&mm->mmap_sem);
+	mmap_read_lock(mm);
 }
 
 void kbase_os_mem_map_unlock(struct kbase_context *kctx)
 {
 	struct mm_struct *mm = current->mm;
 	(void)kctx;
-	up_read(&mm->mmap_sem);
+	mmap_read_unlock(mm);
 }
 
 static int kbasep_reg_mmap(struct kbase_context *kctx,
@@ -2082,9 +2087,9 @@ int kbase_mmap(struct file *file, struct vm_area_struct *vma)
 	dev_dbg(dev, "kbase_mmap\n");
 
 	if (!(vma->vm_flags & VM_READ))
-		vma->vm_flags &= ~VM_MAYREAD;
+		vm_flags_clear(vma, VM_MAYREAD);
 	if (!(vma->vm_flags & VM_WRITE))
-		vma->vm_flags &= ~VM_MAYWRITE;
+		vm_flags_clear(vma, VM_MAYWRITE);
 
 	if (0 == nr_pages) {
 		err = -EINVAL;
@@ -2482,9 +2487,9 @@ static int kbase_tracking_page_setup(struct kbase_context *kctx, struct vm_area_
 	spin_unlock(&kctx->mm_update_lock);
 
 	/* no real access */
-	vma->vm_flags &= ~(VM_READ | VM_MAYREAD | VM_WRITE | VM_MAYWRITE | VM_EXEC | VM_MAYEXEC);
+	vm_flags_clear(vma, VM_READ | VM_MAYREAD | VM_WRITE | VM_MAYWRITE | VM_EXEC | VM_MAYEXEC);
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 7, 0))
-	vma->vm_flags |= VM_DONTCOPY | VM_DONTEXPAND | VM_DONTDUMP | VM_IO;
+	vm_flags_set(vma, VM_DONTCOPY | VM_DONTEXPAND | VM_DONTDUMP | VM_IO);
 #else
 	vma->vm_flags |= VM_DONTCOPY | VM_DONTEXPAND | VM_RESERVED | VM_IO;
 #endif

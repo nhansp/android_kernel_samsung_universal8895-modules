@@ -27,6 +27,11 @@
 
 #include <linux/compiler.h>
 
+/* arm64 no longer provides __asmeq() */
+#ifndef __asmeq
+#define __asmeq(x, y) ".ifnc " x "," y " ; .err ; .endif\n\t"
+#endif
+
 static noinline u64 invoke_smc_fid(u64 function_id,
 		u64 arg0, u64 arg1, u64 arg2)
 {

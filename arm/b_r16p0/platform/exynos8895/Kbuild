@@ -1,0 +1,3 @@
+# SPDX-License-Identifier: GPL-2.0
+
+mali_kbase-y += $(MALI_PLATFORM_DIR)/mali_kbase_config_exynos8895.o

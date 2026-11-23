@@ -608,10 +608,10 @@ atomic_t kbase_tlstream_enabled = {0};
  */
 static u64 kbasep_tlstream_get_timestamp(void)
 {
-	struct timespec ts;
+	struct timespec64 ts;
 	u64             timestamp;
 
-	getrawmonotonic(&ts);
+	ktime_get_raw_ts64(&ts);
 	timestamp = (u64)ts.tv_sec * NSECS_IN_SEC + ts.tv_nsec;
 	return timestamp;
 }
@@ -663,10 +663,8 @@ static size_t kbasep_tlstream_write_string(
 	KBASE_DEBUG_ASSERT(max_write_size >= sizeof(string_len) + sizeof(char));
 	max_write_size -= sizeof(string_len);
 
-	string_len = strlcpy(
-			&buffer[pos + sizeof(string_len)],
-			string,
-			max_write_size);
+	string_len = strscpy(&buffer[pos + sizeof(string_len)], string,
+			     max_write_size);
 	string_len += sizeof(char);
 
 	/* Make sure that the source string fit into the buffer. */
@@ -1279,7 +1277,7 @@ static int kbasep_tlstream_release(struct inode *inode, struct file *filp)
 
 	/* Stop autoflush timer before releasing access to streams. */
 	atomic_set(&autoflush_timer_active, 0);
-	del_timer_sync(&autoflush_timer);
+	timer_delete_sync(&autoflush_timer);
 
 	atomic_set(&kbase_tlstream_enabled, 0);
 	return 0;

@@ -44,7 +44,6 @@
 
  /* MALI_SEC_INTEGRATION */
 #define KBASE_TRANS_READY_LOOPS 10000
-#include <linux/soc/samsung/exynos-soc.h>
 
 #include <linux/of.h>
 
@@ -1064,8 +1063,8 @@ int kbase_pm_state_machine_init(struct kbase_device *kbdev)
 	INIT_WORK(&stt->work, shader_poweroff_timer_stop_callback);
 
 	stt->needed = false;
-	hrtimer_init(&stt->timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
-	stt->timer.function = shader_tick_timer_callback;
+	hrtimer_setup(&stt->timer, shader_tick_timer_callback, CLOCK_MONOTONIC,
+		      HRTIMER_MODE_REL);
 	stt->configured_interval = HR_TIMER_DELAY_NSEC(DEFAULT_PM_GPU_POWEROFF_TICK_NS);
 	stt->configured_ticks = DEFAULT_PM_POWEROFF_TICK_SHADER;
 
@@ -1689,8 +1688,8 @@ static int kbase_pm_do_reset(struct kbase_device *kbdev)
 	rtdata.timed_out = 0;
 
 	/* Create a timer to use as a timeout on the reset */
-	hrtimer_init_on_stack(&rtdata.timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
-	rtdata.timer.function = kbasep_reset_timeout;
+	hrtimer_setup_on_stack(&rtdata.timer, kbasep_reset_timeout,
+			       CLOCK_MONOTONIC, HRTIMER_MODE_REL);
 
 	hrtimer_start(&rtdata.timer, HR_TIMER_DELAY_MSEC(RESET_TIMEOUT),
 							HRTIMER_MODE_REL);

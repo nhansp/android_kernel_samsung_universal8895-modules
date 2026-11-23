@@ -138,9 +138,9 @@ static const struct file_operations vinstr_client_fops = {
  */
 static u64 kbasep_vinstr_timestamp_ns(void)
 {
-	struct timespec ts;
+	struct timespec64 ts;
 
-	getrawmonotonic(&ts);
+	ktime_get_raw_ts64(&ts);
 	return (u64)ts.tv_sec * NSEC_PER_SEC + ts.tv_nsec;
 }
 
@@ -460,8 +460,8 @@ int kbase_vinstr_init(
 
 	mutex_init(&vctx->lock);
 	INIT_LIST_HEAD(&vctx->clients);
-	hrtimer_init(&vctx->dump_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
-	vctx->dump_timer.function = kbasep_vinstr_dump_timer;
+	hrtimer_setup(&vctx->dump_timer, kbasep_vinstr_dump_timer,
+		      CLOCK_MONOTONIC, HRTIMER_MODE_REL);
 	INIT_WORK(&vctx->dump_work, kbasep_vinstr_dump_worker);
 
 	*out_vctx = vctx;
