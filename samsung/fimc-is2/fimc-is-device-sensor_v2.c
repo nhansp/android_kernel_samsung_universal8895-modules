@@ -1011,7 +1011,7 @@ static int fimc_is_sensor_notify_by_fstr(struct fimc_is_device_sensor *device, v
 	int ret = 0;
 	struct fimc_is_framemgr *framemgr;
 	struct fimc_is_frame *frame;
-	u32 hashkey;
+	u32 hashkey, prev_fcount;
 	struct fimc_is_device_csi *csi;
 	struct fimc_is_subdev *dma_subdev;
 	struct v4l2_control ctrl;
@@ -1020,6 +1020,7 @@ static int fimc_is_sensor_notify_by_fstr(struct fimc_is_device_sensor *device, v
 	BUG_ON(!device);
 	BUG_ON(!arg);
 
+	prev_fcount = device->fcount;
 	device->fcount = *(u32 *)arg;
 
 	if (device->instant_cnt) {
@@ -1028,9 +1029,27 @@ static int fimc_is_sensor_notify_by_fstr(struct fimc_is_device_sensor *device, v
 			wake_up(&device->instant_wait);
 	}
 
-	hashkey = device->fcount % FIMC_IS_TIMESTAMP_HASH_KEY;
-	device->timestamp[hashkey] = fimc_is_get_timestamp();
-	device->timestampboot[hashkey] = fimc_is_get_timestamp_boot();
+	/*
+	 * This tasklet can run once for two frame starts: take the times of every
+	 * frame since the last one from those the CSIS interrupt recorded.
+	 */
+	csi = (notification == CSIS_NOTIFY_FSTART) ?
+		v4l2_get_subdevdata(device->subdev_csi) : NULL;
+	if (csi) {
+		u32 n = device->fcount - prev_fcount;
+
+		if (n == 0 || n > FIMC_IS_TIMESTAMP_HASH_KEY)
+			n = 1;
+		while (n--) {
+			hashkey = (device->fcount - n) % FIMC_IS_TIMESTAMP_HASH_KEY;
+			device->timestamp[hashkey] = csi->fstart_ts[hashkey];
+			device->timestampboot[hashkey] = csi->fstart_ts_boot[hashkey];
+		}
+	} else {
+		hashkey = device->fcount % FIMC_IS_TIMESTAMP_HASH_KEY;
+		device->timestamp[hashkey] = fimc_is_get_timestamp();
+		device->timestampboot[hashkey] = fimc_is_get_timestamp_boot();
+	}
 
 	switch (notification) {
 	case CSIS_NOTIFY_FSTART:

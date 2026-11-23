@@ -63,12 +63,16 @@ static enum hrtimer_restart csis_early_buf_done(struct hrtimer *timer)
 
 static inline void csi_frame_start_inline(struct fimc_is_device_csi *csi)
 {
+	u32 hashkey;
+
 #ifdef DBG_CSIISR
 	printk(KERN_CONT "<");
 #endif
 	/* frame start interrupt */
 	csi->sw_checker = EXPECT_FRAME_END;
-	atomic_inc(&csi->fcount);
+	hashkey = (u32)atomic_inc_return(&csi->fcount) % FIMC_IS_TIMESTAMP_HASH_KEY;
+	csi->fstart_ts[hashkey] = fimc_is_get_timestamp();
+	csi->fstart_ts_boot[hashkey] = fimc_is_get_timestamp_boot();
 #ifdef ENABLE_IS_CORE
 	notify_fcount(csi);
 #else

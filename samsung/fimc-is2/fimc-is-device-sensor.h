@@ -82,8 +82,6 @@ struct fimc_is_device_ischain;
 #define SENSOR_SIZE_HEIGHT_MASK		0xFFFF
 #define SENSOR_SIZE_HEIGHT_SHIFT	0
 
-#define FIMC_IS_TIMESTAMP_HASH_KEY	20
-
 #define FIMC_IS_SENSOR_CFG_EXT(w, h, f, s, m, l, ls, vc_1, vc_2, vc_3) {	\
 	.width				= w,					\
 	.height				= h,					\

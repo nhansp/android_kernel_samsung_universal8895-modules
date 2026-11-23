@@ -1,6 +1,9 @@
 #ifndef FIMC_IS_DEVICE_CSI_H
 #define FIMC_IS_DEVICE_CSI_H
 
+/* also used by fimc-is-device-sensor.h, which includes this header first */
+#define FIMC_IS_TIMESTAMP_HASH_KEY	20
+
 #include <linux/interrupt.h>
 #include <media/v4l2-device.h>
 #include "fimc-is-hw.h"
@@ -85,6 +88,9 @@ struct fimc_is_device_csi {
 	u32				overflow_cnt;
 	u32				sw_checker;
 	atomic_t			fcount;
+	/* frame start times, taken in the interrupt, by fcount % FIMC_IS_TIMESTAMP_HASH_KEY */
+	u64				fstart_ts[FIMC_IS_TIMESTAMP_HASH_KEY];
+	u64				fstart_ts_boot[FIMC_IS_TIMESTAMP_HASH_KEY];
 	struct tasklet_struct		tasklet_csis_str;
 	struct tasklet_struct		tasklet_csis_end;
 	struct tasklet_struct		tasklet_csis_line;
