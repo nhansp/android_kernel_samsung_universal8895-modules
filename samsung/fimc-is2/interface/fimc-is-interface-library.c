@@ -997,6 +997,7 @@ struct fimc_is_lib_timer {
 	struct timer_list timer;
 	void (*func)(ulong data);
 	ulong data;
+	struct rcu_head rcu;
 };
 
 /* the callback is library code: FP/SIMD state is saved and it has no CFI hash */
@@ -1030,20 +1031,25 @@ static int fimc_is_timer_create(void **timer, ulong expires,
 	return 0;
 }
 
+/*
+ * The library may delete a timer in atomic context, so do not wait for the
+ * callback: it runs in an RCU read-side section, kfree_rcu() frees after it.
+ */
 static int fimc_is_timer_delete(void *timer)
 {
+	struct fimc_is_lib_timer *lt = timer;
+
 	if (timer == NULL) {
 		err_lib("invalid timer");
 		return -1;
 	}
 
-	/* Stop timer, when timer is started */
-	del_timer((struct timer_list *)timer);
+	timer_shutdown(&lt->timer);
 
 #ifdef LIB_MEM_TRACK
 	add_free_track(MT_TYPE_TIMER, (ulong)timer);
 #endif
-	kfree(timer);
+	kfree_rcu(lt, rcu);
 
 	return 0;
 }
