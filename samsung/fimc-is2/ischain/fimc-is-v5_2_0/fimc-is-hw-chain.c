@@ -651,6 +651,29 @@ int fimc_is_hw_ischain_cfg(void *ischain_data)
 			}
 		}
 	}
+	/*
+	 * The camera HAL picks the 3AA group per stream: an on-the-fly 3AA takes
+	 * this sensor, CSIS0 through BNS and the other channels through WOBNS.
+	 */
+	if (test_bit(FIMC_IS_GROUP_OTF_INPUT, &device->group_3aa.state) &&
+	    (device->group_3aa.id == GROUP_ID_3AA0 ||
+	     device->group_3aa.id == GROUP_ID_3AA1)) {
+		u32 sel = csi->instance ? 1 : 0;	/* 0: BNS output, 1: WOBNS output */
+
+		if (csi->instance)
+			input_wobns = csi->instance;
+		else
+			input_bns = 0;
+
+		if (device->group_3aa.id == GROUP_ID_3AA0) {
+			input_3aaw = sel;
+			input_3aa = !sel;
+		} else {
+			input_3aa = sel;
+			input_3aaw = !sel;
+		}
+	}
+
 	info_itfc("%s: input[bns:%d, wobns:%d], input[3aaw:%d, 3aa:%d], sensor_cnt(%d), chain_config(%d)\n",
 		__func__, input_bns, input_wobns,
 		input_3aaw, input_3aa, sensor_cnt, chain_config);
