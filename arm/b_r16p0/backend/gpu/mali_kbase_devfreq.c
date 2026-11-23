@@ -354,6 +354,8 @@ int kbase_devfreq_init(struct kbase_device *kbdev)
 	dp->initial_freq = kbdev->current_freq;
 	/* the polling interval of Samsung's Exynos 8895 GPU DVFS */
 	dp->polling_ms = 30;
+	/* not postponed while the CPUs idle, like Samsung's DVFS work */
+	dp->timer = DEVFREQ_TIMER_DELAYED;
 	dp->target = kbase_devfreq_target;
 	dp->get_dev_status = kbase_devfreq_status;
 	dp->get_cur_freq = kbase_devfreq_cur_freq;
