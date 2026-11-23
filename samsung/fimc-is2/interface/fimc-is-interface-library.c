@@ -1250,6 +1250,8 @@ static int fimc_is_register_general_interrupt(struct general_intr_handler info)
 		if (ret) {
 			err("Failed to register pdaf irq %d", lib->intr_handler_preproc.irq);
 			ret = -ENODEV;
+		} else {
+			lib->pdaf_irq_requested = true;
 		}
 		break;
 	default:
@@ -1267,7 +1269,12 @@ static int fimc_is_unregister_general_interrupt(struct general_intr_handler info
 
 	switch (info.id) {
 	case ID_GENERAL_INTR_PREPROC_PDAF:
+		if (!lib->pdaf_irq_requested) {
+			err_lib("pdaf irq %d is not requested", lib->intr_handler_preproc.irq);
+			break;
+		}
 		free_irq(lib->intr_handler_preproc.irq, &lib->intr_handler_preproc);
+		lib->pdaf_irq_requested = false;
 		break;
 	default:
 		err_lib("invalid general_interrupt id(%d)", info.id);
@@ -1813,6 +1820,24 @@ void fimc_is_load_clear(void)
 	dbg_lib("binary clear done");
 
 	return;
+}
+
+bool fimc_is_lib_pdaf_irq_requested(void)
+{
+	return gPtr_lib_support.pdaf_irq_requested;
+}
+
+/* the RTA shut-down should have released it already */
+void fimc_is_lib_release_pdaf_irq(void)
+{
+	struct fimc_is_lib_support *lib = &gPtr_lib_support;
+
+	if (!lib->pdaf_irq_requested)
+		return;
+
+	warn_lib("RTA kept pdaf irq %d, freeing it", lib->intr_handler_preproc.irq);
+	free_irq(lib->intr_handler_preproc.irq, &lib->intr_handler_preproc);
+	lib->pdaf_irq_requested = false;
 }
 
 void check_lib_memory_leak(void)

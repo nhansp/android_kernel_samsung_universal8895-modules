@@ -236,6 +236,18 @@ int fimc_is_itf_close_wrap(struct fimc_is_device_ischain *device)
 	path = (struct fimc_is_path_info *)&device->is_region->shared[offset_path];
 	rsccount = atomic_read(&hardware->rsccount);
 
+	/*
+	 * The companion close shuts the RTA down, and so frees the PDAF
+	 * interrupt, only while the sensor is still open. A dead HAL's files
+	 * close in another order: do it here, before the objects go.
+	 */
+	if (rsccount == 1 && fimc_is_lib_pdaf_irq_requested()) {
+		struct fimc_is_sensor_cfg cfg = { .mode = SENSOR_MODE_DEINIT };
+
+		fimc_is_itf_sensor_mode_wrap(device, &cfg);
+		fimc_is_lib_release_pdaf_irq();
+	}
+
 	if (rsccount == 1)
 		fimc_is_flush_ddk_thread();
 

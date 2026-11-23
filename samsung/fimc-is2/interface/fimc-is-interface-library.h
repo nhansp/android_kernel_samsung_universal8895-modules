@@ -221,6 +221,7 @@ struct fimc_is_lib_support {
 	struct lib_mem_tracks			*cur_tracks;
 #endif
 	struct general_intr_handler	intr_handler_preproc;
+	bool					pdaf_irq_requested;
 	struct work_struct			work_stop;
 	char		fw_name[50];		/* DDK */
 	char		rta_fw_name[50];	/* RTA */
@@ -239,6 +240,8 @@ void fimc_is_load_clear(void);
 int fimc_is_init_ddk_thread(void);
 void fimc_is_flush_ddk_thread(void);
 void check_lib_memory_leak(void);
+bool fimc_is_lib_pdaf_irq_requested(void);
+void fimc_is_lib_release_pdaf_irq(void);
 
 int fimc_is_log_write(const char *str, ...);
 int fimc_is_log_write_console(char *str);
