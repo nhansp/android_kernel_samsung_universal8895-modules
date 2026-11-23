@@ -887,6 +887,8 @@ static int exynos_smfc_probe(struct platform_device *pdev)
 
 	smfc->dev = &pdev->dev;
 
+	spin_lock_init(&smfc->flag_lock);
+
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	smfc->reg = devm_ioremap_resource(&pdev->dev, res);
 	if (IS_ERR(smfc->reg))
@@ -936,8 +938,6 @@ static int exynos_smfc_probe(struct platform_device *pdev)
 	timer_setup(&smfc->timer, smfc_timedout_handler, 0);
 
 	platform_set_drvdata(pdev, smfc);
-
-	spin_lock_init(&smfc->flag_lock);
 
 	dev_info(&pdev->dev, "Probed H/W Version: %02x.%02x.%04x\n",
 			(smfc->hwver >> 24) & 0xFF, (smfc->hwver >> 16) & 0xFF,
