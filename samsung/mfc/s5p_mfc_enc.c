@@ -558,7 +558,14 @@ static int vidioc_qbuf(struct file *file, void *priv, struct v4l2_buffer *buf)
 	}
 
 	if (buf->type == V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE) {
-		for (i = 0; i < ctx->src_fmt->num_planes; i++) {
+		if (ctx->src_fmt->mem_planes != buf->length) {
+			mfc_err_ctx("number of memory container miss-match "
+					"between Src planes(%d) and buffer length(%d)\n",
+					ctx->src_fmt->mem_planes, buf->length);
+			return -EINVAL;
+		}
+
+		for (i = 0; i < ctx->src_fmt->mem_planes; i++) {
 			unsigned int plane_size = s5p_mfc_vq_plane_size(&ctx->vq_src, buf, i);
 
 			if (!buf->m.planes[i].bytesused) {
