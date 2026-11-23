@@ -1339,7 +1339,7 @@ static int ISPFWLld_SPI_ReadBurst_For_73c1(struct spi_device *spi, u16 addr, u8 
 
 	t_c.tx_buf = tx_buf;
 	t_c.len = 4;
-	t_c.cs_change = 1;
+	t_c.cs_change = 0;
 	t_c.bits_per_word = 32;
 	t_c.speed_hz = 12500000;
 

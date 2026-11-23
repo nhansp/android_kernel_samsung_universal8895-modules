@@ -87,7 +87,7 @@ int fimc_is_spi_read_status_bit(struct fimc_is_spi *spi, u8 *buf)
 
 	t_c.tx_buf = &req_data;
 	t_c.len = 1;
-	t_c.cs_change = 1;
+	t_c.cs_change = 0;
 	t_c.bits_per_word = 8;
 
 	t_r.rx_buf = buf;
@@ -160,7 +160,7 @@ int fimc_is_spi_read_module_id(struct fimc_is_spi *spi, void *buf, u16 addr, siz
 
 	t_c.tx_buf = req_data;
 	t_c.len = 4;
-	t_c.cs_change = 1;
+	t_c.cs_change = 0;
 	t_c.bits_per_word = 32;
 
 	t_r.rx_buf = buf;

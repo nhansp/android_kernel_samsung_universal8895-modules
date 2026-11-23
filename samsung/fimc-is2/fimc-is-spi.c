@@ -131,7 +131,8 @@ int fimc_is_spi_read(struct fimc_is_spi *spi, void *buf, u32 addr, size_t size)
 
 	t_c.tx_buf = req_data;
 	t_c.len = 4;
-	t_c.cs_change = 1;
+	/* CS stays asserted from the read command to the end of the data */
+	t_c.cs_change = 0;
 	t_c.bits_per_word = 32;
 
 	t_r.rx_buf = buf;
