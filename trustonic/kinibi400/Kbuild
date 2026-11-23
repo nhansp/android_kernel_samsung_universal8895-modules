@@ -1,0 +1,29 @@
+# SPDX-License-Identifier: GPL-2.0-only
+
+obj-m += mcDrvModule.o
+
+mcDrvModule-y := \
+	MobiCoreDriver/admin.o \
+	MobiCoreDriver/client.o \
+	MobiCoreDriver/clientlib.o \
+	MobiCoreDriver/fastcall.o \
+	MobiCoreDriver/iwp.o \
+	MobiCoreDriver/logging.o \
+	MobiCoreDriver/main.o \
+	MobiCoreDriver/mcp.o \
+	MobiCoreDriver/mmu.o \
+	MobiCoreDriver/nq.o \
+	MobiCoreDriver/scheduler.o \
+	MobiCoreDriver/session.o \
+	MobiCoreDriver/teeclientapi.o \
+	MobiCoreDriver/user.o \
+	sec-os-booster/sec_os_booster.o
+
+ccflags-y += -DCONFIG_TRUSTONIC_TEE_LPAE=1
+ccflags-y += -DCONFIG_SECURE_OS_BOOSTER_API=1
+
+ccflags-y += -DNDEBUG
+ccflags-y += -Wno-declaration-after-statement
+ccflags-$(CONFIG_TRUSTONIC_TEE_DEBUG) += -DDEBUG
+
+ccflags-y += -I$(src)/MobiCoreDriver

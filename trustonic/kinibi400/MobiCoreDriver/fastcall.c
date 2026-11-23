@@ -20,12 +20,11 @@
 #include <linux/debugfs.h>
 #include <linux/sched.h>	/* local_clock */
 #include <linux/version.h>
-#if KERNEL_VERSION(4, 11, 0) <= LINUX_VERSION_CODE
 #include <linux/sched/clock.h>	/* local_clock */
-#endif
 #include <linux/uaccess.h>
 #include <linux/irq.h>
 #include <linux/interrupt.h>
+#include <linux/arm-smccc.h>
 
 #include "public/mc_user.h"
 #include "public/mc_linux_api.h"
@@ -38,25 +37,25 @@
 #include "fastcall.h"
 
 /* ExySp: Lock for core switch processing */
+static struct mutex core_switch_lock;
+static u8 core_status = 0xFF;
 #ifdef CONFIG_SECURE_OS_BOOSTER_API
-struct mutex core_switch_lock;
-uint8_t core_status = 0xFF;
 static int disable_local_timer;
 int mc_timer(void);
 void mc_set_schedule_policy(int core);
+#endif
 int __mc_switch_core(int cpu);
-#endif
 
-#if KERNEL_VERSION(3, 15, 0) > LINUX_VERSION_CODE
-#define MIN_NICE	-20
-#endif
+/* The fastcall ABI of the Kinibi 400 secure world */
+static_assert(MC_FC_INIT == 0xFF000001);
+static_assert(MC_FC_INFO == 0xFF000002);
+static_assert(MC_FC_MEM_TRACE == 0xFF00000A);
+static_assert(MC_FC_SWAP_CPU == 0xFF000036);
+static_assert(MC_SMC_N_YIELD == 3);
+static_assert(MC_SMC_N_SIQ == 4);
 
 struct fastcall_work {
-#ifdef MC_FASTCALL_WORKER_THREAD
 	struct kthread_work work;
-#else
-	struct work_struct work;
-#endif
 	void *data;
 };
 
@@ -106,7 +105,6 @@ union mc_fc_info {
 	} as_out;
 };
 
-#ifdef TBASE_CORE_SWITCHER
 /* fast call switch Core parameters */
 union mc_fc_swich_core {
 	union mc_fc_generic as_generic;
@@ -122,12 +120,9 @@ union mc_fc_swich_core {
 		u32 ext_info;
 	} as_out;
 };
-#endif
 
-#ifdef MC_FASTCALL_WORKER_THREAD
-static struct task_struct *fastcall_thread;
-static DEFINE_KTHREAD_WORKER(fastcall_worker);
-#endif
+static struct kthread_worker *fastcall_worker;
+static int tee_cpuhp_state;
 
 /* Structure to log SMC calls */
 struct smc_log_entry {
@@ -155,76 +150,23 @@ static inline int _smc(union mc_fc_generic *mc_fc_generic)
 	if (++smc_log_index >= SMC_LOG_SIZE)
 		smc_log_index = 0;
 
-#ifdef MC_SMC_FASTCALL
-	return smc_fastcall(mc_fc_generic, sizeof(*mc_fc_generic));
-#else /* MC_SMC_FASTCALL */
 	{
-#ifdef CONFIG_ARM64
-		/* SMC expect values in x0-x3 */
-		register u64 reg0 __asm__("x0") = mc_fc_generic->as_in.cmd;
-		register u64 reg1 __asm__("x1") = mc_fc_generic->as_in.param[0];
-		register u64 reg2 __asm__("x2") = mc_fc_generic->as_in.param[1];
-		register u64 reg3 __asm__("x3") = mc_fc_generic->as_in.param[2];
+		struct arm_smccc_res res;
 
-		/*
-		 * According to AARCH64 SMC Calling Convention (ARM DEN 0028A),
-		 * section 3.1: registers x4-x17 are unpredictable/scratch
-		 * registers.  So we have to make sure that the compiler does
-		 * not allocate any of those registers by letting him know that
-		 * the asm code might clobber them.
-		 */
-		__asm__ volatile (
-			"smc #0\n"
-			: "+r"(reg0), "+r"(reg1), "+r"(reg2), "+r"(reg3)
-			:
-			: "x4", "x5", "x6", "x7", "x8", "x9", "x10", "x11",
-			  "x12", "x13", "x14", "x15", "x16", "x17"
-		);
-#else /* CONFIG_ARM64 */
-		/* SMC expect values in r0-r3 */
-		register u32 reg0 __asm__("r0") = mc_fc_generic->as_in.cmd;
-		register u32 reg1 __asm__("r1") = mc_fc_generic->as_in.param[0];
-		register u32 reg2 __asm__("r2") = mc_fc_generic->as_in.param[1];
-		register u32 reg3 __asm__("r3") = mc_fc_generic->as_in.param[2];
-
-		__asm__ volatile (
-#ifdef MC_ARCH_EXTENSION_SEC
-			/*
-			 * This pseudo op is supported and required from
-			 * binutils 2.21 on
-			 */
-			".arch_extension sec\n"
-#endif /* MC_ARCH_EXTENSION_SEC */
-			"smc #0\n"
-			: "+r"(reg0), "+r"(reg1), "+r"(reg2), "+r"(reg3)
-		);
-
-#ifdef __ARM_VE_A9X4_QEMU__
-		/*
-		 * Qemu does not return to the address following the SMC
-		 * instruction so we have to insert several nop instructions to
-		 * workaround this Qemu bug.
-		 */
-		__asm__ volatile (
-			"nop\n"
-			"nop\n"
-			"nop\n"
-			"nop"
-		);
-#endif /* __ARM_VE_A9X4_QEMU__ */
-#endif /* !CONFIG_ARM64 */
+		arm_smccc_smc(mc_fc_generic->as_in.cmd,
+			      mc_fc_generic->as_in.param[0],
+			      mc_fc_generic->as_in.param[1],
+			      mc_fc_generic->as_in.param[2], 0, 0, 0, 0, &res);
 
 		/* set response */
-		mc_fc_generic->as_out.resp     = reg0;
-		mc_fc_generic->as_out.ret      = reg1;
-		mc_fc_generic->as_out.param[0] = reg2;
-		mc_fc_generic->as_out.param[1] = reg3;
+		mc_fc_generic->as_out.resp     = res.a0;
+		mc_fc_generic->as_out.ret      = res.a1;
+		mc_fc_generic->as_out.param[0] = res.a2;
+		mc_fc_generic->as_out.param[1] = res.a3;
 	}
 	return 0;
-#endif /* !MC_SMC_FASTCALL */
 }
 
-#ifdef TBASE_CORE_SWITCHER
 static int active_cpu;
 
 #ifdef CONFIG_SECURE_OS_BOOSTER_API
@@ -238,10 +180,12 @@ void mc_set_schedule_policy(int core)
 
 	return;
 }
+#else
+static inline void mc_set_schedule_policy(int core)
+{
+}
 #endif
 
-#ifdef MC_FASTCALL_WORKER_THREAD
-#ifdef CONFIG_SECURE_OS_BOOSTER_API
 /* ExySp: for sos performance */
 static int mc_cpu_offline(int cpu)
 {
@@ -271,7 +215,8 @@ static int mc_cpu_offline(int cpu)
 	return 0;
 }
 
-void mc_cpu_online(int cpu)
+/* ExySp: for sos performance */
+static void mc_cpu_online(int cpu)
 {
 	mutex_lock(&core_switch_lock);
 	core_status |= (0x1 << cpu);
@@ -280,70 +225,18 @@ void mc_cpu_online(int cpu)
 		__mc_switch_core(NONBOOT_LITTLE_CORE);
 	mutex_unlock(&core_switch_lock);
 }
-#else
-static void mc_cpu_offline(int cpu)
+
+static int tee_cpu_online(unsigned int cpu)
 {
-	int i;
-
-	if (active_cpu != cpu) {
-		mc_dev_devel("not active CPU, no action taken\n");
-		return;
-	}
-
-	/* Chose the first online CPU and switch! */
-	for_each_online_cpu(i) {
-		if (cpu != i) {
-			mc_dev_devel("CPU %d is dying, switching to %d\n",
-				     cpu, i);
-			mc_switch_core(i);
-			break;
-		}
-
-		mc_dev_devel("Skipping CPU %d", cpu);
-	}
-}
-#endif
-
-#if KERNEL_VERSION(4, 10, 0) > LINUX_VERSION_CODE
-static int mobicore_cpu_callback(struct notifier_block *nfb,
-				 unsigned long action, void *hcpu)
-{
-	int cpu = (int)(uintptr_t)hcpu;
-
-	switch (action) {
-#ifdef CONFIG_SECURE_OS_BOOSTER_API
-/* ExySp: for sos performance */
-	case CPU_ONLINE:
-	case CPU_ONLINE_FROZEN:
-		mc_cpu_online(cpu);
-		break;
-#endif
-	case CPU_DOWN_PREPARE:
-	case CPU_DOWN_PREPARE_FROZEN:
-		/* ExySp */
-		mc_dev_devel("Cpu %d is going to hotplug out", cpu);
-		mc_cpu_offline(cpu);
-		break;
-	case CPU_DEAD:
-	case CPU_DEAD_FROZEN:
-		/* ExySp */
-		mc_dev_devel("Cpu %d is hotplug out", cpu);
-		break;
-	}
-	return NOTIFY_OK;
+	mc_cpu_online(cpu);
+	return 0;
 }
 
-static struct notifier_block mobicore_cpu_notifer = {
-	.notifier_call = mobicore_cpu_callback,
-};
-#else
 static int nq_cpu_down_prep(unsigned int cpu)
 {
 	mc_dev_info("CPU #%d is going to die", cpu);
 	return mc_cpu_offline(cpu);
 }
-#endif
-#endif /* MC_FASTCALL_WORKER_THREAD */
 
 static cpumask_t mc_exec_core_switch(union mc_fc_generic *mc_fc_generic)
 {
@@ -407,39 +300,12 @@ static const struct file_operations mc_debug_coreswitch_ops = {
 	.write = debug_coreswitch_write,
 	.read = debug_coreswitch_read,
 };
-#else /* TBASE_CORE_SWITCHER */
-static inline cpumask_t mc_exec_core_switch(union mc_fc_generic *mc_fc_generic)
-{
-	return CPU_MASK_CPU0;
-}
-#endif /* !TBASE_CORE_SWITCHER */
 
-#ifdef MC_SMC_FASTCALL
-static inline int nq_set_cpus_allowed(struct task_struct *p, cpumask_t new_mask)
-{
-	return 0;
-}
-#else /* MC_SMC_FASTCALL */
-static inline int nq_set_cpus_allowed(struct task_struct *p, cpumask_t new_mask)
-{
-	return set_cpus_allowed_ptr(p, &new_mask);
-}
-#endif /* ! MC_SMC_FASTCALL */
-
-#ifdef MC_FASTCALL_WORKER_THREAD
 static void fastcall_work_func(struct kthread_work *work)
-#else
-static void fastcall_work_func(struct work_struct *work)
-#endif
 {
 	struct fastcall_work *fc_work =
 		container_of(work, struct fastcall_work, work);
 	union mc_fc_generic *mc_fc_generic = fc_work->data;
-/* ExySp: for sos performance */
-#if defined(CONFIG_SECURE_OS_BOOSTER_API) && defined(CONFIG_SECURE_OS_SUPPORT_MCT_DISABLE)
-	int irq_check_cnt = 0;
-	struct irq_desc *desc = irq_to_desc(MC_INTR_LOCAL_TIMER);
-#endif
 
 	if (!mc_fc_generic)
 		return;
@@ -447,35 +313,21 @@ static void fastcall_work_func(struct work_struct *work)
 	mc_clock_enable();
 
 	if (mc_fc_generic->as_in.cmd == MC_FC_SWAP_CPU) {
-#ifdef MC_FASTCALL_WORKER_THREAD
 		cpumask_t new_msk = mc_exec_core_switch(mc_fc_generic);
 
-		/* ExySp */
-		//nq_set_cpus_allowed(fastcall_thread, new_msk);
-		set_cpus_allowed_ptr(fastcall_thread, &new_msk);
-#else
-		mc_exec_core_switch(mc_fc_generic);
-#endif
+		/*
+		 * ExySp: follow the SWd. Stay a per-cpu kthread, which may still
+		 * run on a core that is going offline.
+		 */
+		set_cpus_allowed_ptr(current, &new_msk);
+		kthread_set_per_cpu(current, cpumask_first(&new_msk));
 	} else {
 		/* ExySp: for sos performance */
 #ifdef CONFIG_SECURE_OS_BOOSTER_API
-		if (active_cpu == DEFAULT_BIG_CORE && disable_local_timer) {
-#ifdef CONFIG_SECURE_OS_SUPPORT_MCT_DISABLE
-			irq_check_cnt++;
-			disable_irq(MC_INTR_LOCAL_TIMER);
-#endif
+		if (active_cpu == DEFAULT_BIG_CORE && disable_local_timer)
 			mc_timer();
-		}
 #endif
 		_smc(mc_fc_generic);
-
-	/* ExySp: for sos performance */
-#if defined(CONFIG_SECURE_OS_BOOSTER_API) && defined(CONFIG_SECURE_OS_SUPPORT_MCT_DISABLE)
-		if (irq_check_cnt) {
-			if (desc->depth != 0)
-				enable_irq(MC_INTR_LOCAL_TIMER);
-		}
-#endif
 	}
 
 	mc_clock_disable();
@@ -483,36 +335,16 @@ static void fastcall_work_func(struct work_struct *work)
 
 static bool mc_fastcall(void *data)
 {
-#ifdef MC_FASTCALL_WORKER_THREAD
 	struct fastcall_work fc_work = {
 		KTHREAD_WORK_INIT(fc_work.work, fastcall_work_func),
 		.data = data,
 	};
 
-#if KERNEL_VERSION(4, 9, 0) <= LINUX_VERSION_CODE
-	if (!kthread_queue_work(&fastcall_worker, &fc_work.work))
+	if (!kthread_queue_work(fastcall_worker, &fc_work.work))
 		return false;
 
 	/* If work is queued or executing, wait for it to finish execution */
 	kthread_flush_work(&fc_work.work);
-#else
-	if (!queue_kthread_work(&fastcall_worker, &fc_work.work))
-		return false;
-
-	/* If work is queued or executing, wait for it to finish execution */
-	flush_kthread_work(&fc_work.work);
-#endif
-#else
-	struct fastcall_work fc_work = {
-		.data = data,
-	};
-	INIT_WORK_ONSTACK(&fc_work.work, fastcall_work_func);
-
-	if (!schedule_work_on(0, &fc_work.work))
-		return false;
-
-	flush_work(&fc_work.work);
-#endif
 	return true;
 }
 
@@ -523,64 +355,46 @@ int mc_fastcall_init(void)
 	if (ret)
 		return ret;
 
-#ifdef MC_FASTCALL_WORKER_THREAD
-	fastcall_thread = kthread_create(kthread_worker_fn, &fastcall_worker,
-					 "tee_fastcall");
-	if (IS_ERR(fastcall_thread)) {
-		ret = PTR_ERR(fastcall_thread);
-		fastcall_thread = NULL;
+	fastcall_worker = kthread_create_worker_on_cpu(0, 0, "tee_fastcall");
+	if (IS_ERR(fastcall_worker)) {
+		ret = PTR_ERR(fastcall_worker);
+		fastcall_worker = NULL;
 		mc_dev_err("cannot create fastcall wq: %d", ret);
 		return ret;
 	}
 
-	set_user_nice(fastcall_thread, MIN_NICE);
+	set_user_nice(fastcall_worker->task, MIN_NICE);
+	kthread_set_per_cpu(fastcall_worker->task, 0);
+	wake_up_process(fastcall_worker->task);
 
-	/* this thread MUST run on CPU 0 at startup */
-	nq_set_cpus_allowed(fastcall_thread, CPU_MASK_CPU0);
-
-	wake_up_process(fastcall_thread);
-#ifdef TBASE_CORE_SWITCHER
-#if KERNEL_VERSION(4, 10, 0) > LINUX_VERSION_CODE
-	ret = register_cpu_notifier(&mobicore_cpu_notifer);
-#else
 	ret = cpuhp_setup_state_nocalls(CPUHP_AP_ONLINE_DYN,
 					"tee/trustonic:online",
-					NULL, nq_cpu_down_prep);
-#endif
+					tee_cpu_online, nq_cpu_down_prep);
 	if (ret < 0) {
 		mc_dev_err("cpu online callback setup failed: %d", ret);
+		kthread_destroy_worker(fastcall_worker);
+		fastcall_worker = NULL;
 		return ret;
 	}
+	tee_cpuhp_state = ret;
 
 	/* Create debugfs structs entry */
 	debugfs_create_file("active_cpu", 0600, g_ctx.debug_dir, NULL,
 			    &mc_debug_coreswitch_ops);
-#endif
-#endif /* MC_FASTCALL_WORKER_THREAD */
 
 	/* ExySp: init lock for core switch processing */
-#ifdef CONFIG_SECURE_OS_BOOSTER_API
 	mutex_init(&core_switch_lock);
-#endif
 
 	return 0;
 }
 
 void mc_fastcall_exit(void)
 {
-#ifdef MC_FASTCALL_WORKER_THREAD
-	if (!IS_ERR_OR_NULL(fastcall_thread)) {
-#ifdef TBASE_CORE_SWITCHER
-#if KERNEL_VERSION(4, 10, 0) > LINUX_VERSION_CODE
-		unregister_cpu_notifier(&mobicore_cpu_notifer);
-#else
-		cpuhp_remove_state_nocalls(CPUHP_AP_ONLINE_DYN);
-#endif
-#endif
-		kthread_stop(fastcall_thread);
-		fastcall_thread = NULL;
+	if (fastcall_worker) {
+		cpuhp_remove_state_nocalls(tee_cpuhp_state);
+		kthread_destroy_worker(fastcall_worker);
+		fastcall_worker = NULL;
 	}
-#endif /* MC_FASTCALL_WORKER_THREAD */
 	mc_clock_exit();
 }
 
@@ -603,11 +417,7 @@ static int convert_fc_ret(u32 ret)
 
 int mc_fc_init(uintptr_t base_pa, ptrdiff_t off, size_t q_len, size_t buf_len)
 {
-#ifdef CONFIG_ARM64
 	u32 base_high = (u32)(base_pa >> 32);
-#else
-	u32 base_high = 0;
-#endif
 	union mc_fc_init fc_init;
 
 	/* Call the INIT fastcall to setup MobiCore initialization */
@@ -668,9 +478,7 @@ int mc_fc_mem_trace(phys_addr_t buffer, u32 size)
 	memset(&mc_fc_generic, 0, sizeof(mc_fc_generic));
 	mc_fc_generic.as_in.cmd = MC_FC_MEM_TRACE;
 	mc_fc_generic.as_in.param[0] = (u32)buffer;
-#ifdef CONFIG_ARM64
 	mc_fc_generic.as_in.param[1] = (u32)(buffer >> 32);
-#endif
 	mc_fc_generic.as_in.param[2] = size;
 	mc_fastcall(&mc_fc_generic);
 	return convert_fc_ret(mc_fc_generic.as_out.ret);
@@ -746,18 +554,13 @@ int mc_fastcall_debug_smclog(struct kasnprintf_buf *buf)
 	return ret;
 }
 
-#ifdef TBASE_CORE_SWITCHER
 int mc_active_core(void)
 {
 	return active_cpu;
 }
 
-/* ExySp: for sos performance */
-#ifdef CONFIG_SECURE_OS_BOOSTER_API
+/* ExySp: for sos performance; caller holds core_switch_lock */
 int __mc_switch_core(int cpu)
-#else
-int mc_switch_core(int cpu)
-#endif
 {
 	s32 ret = 0;
 	union mc_fc_swich_core fc_switch_core;
@@ -787,7 +590,6 @@ int mc_switch_core(int cpu)
 }
 
 /* ExySp: for sos performance */
-#ifdef CONFIG_SECURE_OS_BOOSTER_API
 int mc_switch_core(int cpu)
 {
        int ret;
@@ -801,5 +603,3 @@ int mc_switch_core(int cpu)
        mutex_unlock(&core_switch_lock);
        return ret;
 }
-#endif
-#endif

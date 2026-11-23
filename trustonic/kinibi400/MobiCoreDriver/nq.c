@@ -20,9 +20,8 @@
 #include <linux/kthread.h>
 #include <linux/of_irq.h>
 #include <linux/version.h>
-#if KERNEL_VERSION(4, 11, 0) <= LINUX_VERSION_CODE
 #include <linux/sched/clock.h>	/* local_clock */
-#endif
+#include <linux/timekeeping.h>
 
 #include "public/mc_user.h"
 
@@ -188,13 +187,13 @@ int nq_session_notify(struct nq_session *session, u32 id, u32 payload)
 
 void nq_update_time(void)
 {
-	struct timespec tm;
+	struct timespec64 tm;
 
-	getnstimeofday(&tm);
+	ktime_get_real_ts64(&tm);
 	l_ctx.time->wall_clock_seconds = tm.tv_sec;
 	l_ctx.time->wall_clock_nsec = tm.tv_nsec;
 	if (g_ctx.f_monotonic_time) {
-		getrawmonotonic(&tm);
+		ktime_get_raw_ts64(&tm);
 		l_ctx.time->monotonic_seconds = tm.tv_sec;
 		l_ctx.time->monotonic_nsec = tm.tv_nsec;
 	}
@@ -544,11 +543,8 @@ int nq_start(void)
 
 	/* Make sure we have an interrupt number before going on */
 #if defined(CONFIG_OF)
+	/* The S-SIQ interrupt comes from the device tree only */
 	l_ctx.irq = irq_of_parse_and_map(g_ctx.mcd->of_node, 0);
-#endif
-#if defined(MC_INTR_SSIQ)
-	if (l_ctx.irq <= 0)
-		l_ctx.irq = MC_INTR_SSIQ;
 #endif
 
 	if (l_ctx.irq <= 0) {

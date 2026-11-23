@@ -77,13 +77,7 @@ static struct logging_ctx {
 	u16	prev_source;		/* Previous Log source */
 	char	line[LOG_LINE_SIZE + 1];/* Log Line buffer */
 	u32	line_len;		/* Log Line buffer current length */
-#if KERNEL_VERSION(4, 4, 0) > LINUX_VERSION_CODE
-	/* ExySp */
-	//u32	enabled;		/* Log can be disabled via debugfs */
 	bool	enabled;		/* Log can be disabled via debugfs */
-#else
-	bool	enabled;		/* Log can be disabled via debugfs */
-#endif
 	bool	dead;
 } log_ctx;
 

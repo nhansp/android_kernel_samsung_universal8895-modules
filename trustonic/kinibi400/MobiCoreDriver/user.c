@@ -26,6 +26,30 @@
 #include "client.h"
 #include "mcp.h"	/* mcp_get_version */
 
+/* The ioctl ABI the userspace client library and daemon were built against */
+static_assert(MC_IO_OPEN_SESSION == 0xc0404d00);
+static_assert(MC_IO_OPEN_TRUSTLET == 0xc0284d01);
+static_assert(MC_IO_CLOSE_SESSION == 0x00004d02);
+static_assert(MC_IO_NOTIFY == 0x00004d03);
+static_assert(MC_IO_WAIT == 0x400c4d04);
+static_assert(MC_IO_MAP == 0xc0284d05);
+static_assert(MC_IO_UNMAP == 0x40284d06);
+static_assert(MC_IO_ERR == 0xc0084d07);
+static_assert(MC_IO_HAS_SESSIONS == 0x00004d08);
+static_assert(MC_IO_VERSION == 0x80604d09);
+static_assert(MC_IO_GP_INITIALIZE_CONTEXT == 0x40084d14);
+static_assert(MC_IO_GP_REGISTER_SHARED_MEM == 0xc0284d15);
+static_assert(MC_IO_GP_RELEASE_SHARED_MEM == 0x40184d17);
+static_assert(MC_IO_GP_OPEN_SESSION == 0xc0e04d18);
+static_assert(MC_IO_GP_CLOSE_SESSION == 0x40044d19);
+static_assert(MC_IO_GP_INVOKE_COMMAND == 0xc0c04d1a);
+static_assert(MC_IO_GP_REQUEST_CANCELLATION == 0x40a84d1b);
+static_assert(sizeof(struct mc_ioctl_open_session) == 0x40);
+static_assert(sizeof(struct mc_ioctl_gp_open_session) == 0xe0);
+static_assert(sizeof(struct mc_ioctl_gp_invoke_command) == 0xc0);
+static_assert(sizeof(struct mc_version_info) == 0x60);
+static_assert(MCDRVMODULEAPI_VERSION_MAJOR == 6 && MCDRVMODULEAPI_VERSION_MINOR == 3);
+
 /*
  * Get client object from file pointer
  */
@@ -89,9 +113,9 @@ static inline int ioctl_check_pointer(unsigned int cmd, int __user *uarg)
 	int err = 0;
 
 	if (_IOC_DIR(cmd) & _IOC_READ)
-		err = !access_ok(VERIFY_WRITE, uarg, _IOC_SIZE(cmd));
+		err = !access_ok(uarg, _IOC_SIZE(cmd));
 	else if (_IOC_DIR(cmd) & _IOC_WRITE)
-		err = !access_ok(VERIFY_READ, uarg, _IOC_SIZE(cmd));
+		err = !access_ok(uarg, _IOC_SIZE(cmd));
 
 	if (err)
 		return -EFAULT;

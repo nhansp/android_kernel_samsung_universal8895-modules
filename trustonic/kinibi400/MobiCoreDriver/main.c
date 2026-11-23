@@ -19,6 +19,11 @@
 #include <linux/delay.h>
 #include <linux/reboot.h>
 #include <linux/suspend.h>
+#include <linux/cpumask.h>
+#include <linux/mod_devicetable.h>
+#include <linux/dma-mapping.h>
+#include <asm/cputype.h>
+#include <asm/smp.h>
 
 #include "public/mc_user.h"
 #include "public/mc_admin.h"	/* MC_ADMIN_DEVNODE */
@@ -54,6 +59,9 @@ static struct device device = {
 struct mc_device_ctx g_ctx = {
 	.mcd = &device
 };
+
+/* The little cluster, for the vendor HMP slow cpu mask the scheduler used */
+struct cpumask tee_little_mask;
 
 static struct {
 	/* TEE start return code */
@@ -405,31 +413,31 @@ static int mobicore_start(void)
 	switch (version_info.version_mci) {
 	case MC_VERSION(1, 6):	/* 400 */
 		g_ctx.f_monotonic_time = true;
-		/* Fall through */
+		fallthrough;
 	case MC_VERSION(1, 5):	/* 400 */
 		g_ctx.f_iwp = true;
-		/* Fall through */
+		fallthrough;
 	case MC_VERSION(1, 4):	/* 310 */
 #ifdef CONFIG_TRUSTONIC_TEE_LPAE
 		dynamic_lpae = true;
 #endif
-		/* Fall through */
+		fallthrough;
 	case MC_VERSION(1, 3):
 		g_ctx.f_time = true;
-		/* Fall through */
+		fallthrough;
 	case MC_VERSION(1, 2):
 		g_ctx.f_client_login = true;
-		/* Fall through */
+		fallthrough;
 	case MC_VERSION(1, 1):
 		g_ctx.f_multimap = true;
-		/* Fall through */
+		fallthrough;
 	case MC_VERSION(1, 0):	/* 302 */
 		g_ctx.f_mem_ext = true;
 		g_ctx.f_ta_auth = true;
-		/* Fall through */
+		fallthrough;
 	case MC_VERSION(0, 7):
 		g_ctx.f_timeout = true;
-		/* Fall through */
+		fallthrough;
 	case MC_VERSION(0, 6):	/* 301 */
 		break;
 	}
@@ -561,7 +569,7 @@ static inline int device_admin_init(void)
 		return ret;
 	}
 
-	main_ctx.class = class_create(THIS_MODULE, "trustonic_tee");
+	main_ctx.class = class_create("trustonic_tee");
 	if (IS_ERR(main_ctx.class)) {
 		mc_dev_err("class_create failed");
 		ret = PTR_ERR(main_ctx.class);
@@ -623,10 +631,17 @@ static inline void device_admin_exit(void)
  */
 static int mobicore_probe(struct platform_device *pdev)
 {
+	static const u32 cpu_ids[] = CPU_IDS;
+	unsigned int cpu;
 	int err = 0;
 
-	if (pdev)
+	if (pdev) {
 		g_ctx.mcd->of_node = pdev->dev.of_node;
+		g_ctx.dev = &pdev->dev;
+		err = dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(64));
+		if (err)
+			return err;
+	}
 
 #ifdef MOBICORE_COMPONENT_BUILD_TAG
 	mc_dev_info("MobiCore %s", MOBICORE_COMPONENT_BUILD_TAG);
@@ -642,6 +657,20 @@ static int mobicore_probe(struct platform_device *pdev)
 		mc_dev_err("Running in secure MODE!");
 		return -ENODEV;
 	}
+
+	/* MC_FC_SWAP_CPU sends CPU_IDS[n] for logical cpu n */
+	for (cpu = 0; cpu < ARRAY_SIZE(cpu_ids); cpu++) {
+		if ((cpu_logical_map(cpu) & MPIDR_HWID_BITMASK) != cpu_ids[cpu]) {
+			mc_dev_err("CPU_IDS mismatch cpu%u mpidr 0x%llx", cpu,
+				   cpu_logical_map(cpu));
+			return -ENODEV;
+		}
+	}
+
+	cpumask_clear(&tee_little_mask);
+	for_each_possible_cpu(cpu)
+		if (MPIDR_AFFINITY_LEVEL(cpu_logical_map(cpu), 1) == 1)
+			cpumask_set_cpu(cpu, &tee_little_mask);
 
 	/* Make sure we can create debugfs entries */
 	g_ctx.debug_dir = debugfs_create_dir("trustonic_tee", NULL);
@@ -749,6 +778,7 @@ static const struct of_device_id of_match_table[] = {
 	{ .compatible = MC_DEVICE_PROPNAME },
 	{ }
 };
+MODULE_DEVICE_TABLE(of, of_match_table);
 
 static struct platform_driver mc_plat_driver = {
 	.probe = mobicore_probe,
@@ -756,6 +786,8 @@ static struct platform_driver mc_plat_driver = {
 		.name = "mcd",
 		.owner = THIS_MODULE,
 		.of_match_table = of_match_table,
+		/* The SWd keeps the buffers it was given at MC_FC_INIT */
+		.suppress_bind_attrs = true,
 	}
 };
 
@@ -763,6 +795,8 @@ static struct platform_driver mc_plat_driver = {
 
 static int __init mobicore_init(void)
 {
+	int err;
+
 	dev_set_name(g_ctx.mcd, "TEE");
 	/*
 	 * Do not remove or change the following trace.
@@ -772,29 +806,19 @@ static int __init mobicore_init(void)
 		    MCDRVMODULEAPI_VERSION_MAJOR,
 		    MCDRVMODULEAPI_VERSION_MINOR);
 #ifdef MC_DEVICE_PROPNAME
-	return platform_driver_register(&mc_plat_driver);
+	err = platform_driver_register(&mc_plat_driver);
 #else
-	return mobicore_probe(NULL);
+	err = mobicore_probe(NULL);
 #endif
+	if (err)
+		return err;
+
+	secos_booster_init();
+	return 0;
 }
 
-static void __exit mobicore_exit(void)
-{
-#ifdef MC_DEVICE_PROPNAME
-	platform_driver_unregister(&mc_plat_driver);
-#endif
-	device_admin_exit();
-	mc_scheduler_exit();
-	mc_logging_exit();
-	iwp_exit();
-	mcp_exit();
-	nq_exit();
-	mc_fastcall_exit();
-	debugfs_remove_recursive(g_ctx.debug_dir);
-}
-
+/* No module_exit: the SWd keeps the buffers it was given at MC_FC_INIT */
 module_init(mobicore_init);
-module_exit(mobicore_exit);
 
 MODULE_AUTHOR("Trustonic Limited");
 MODULE_LICENSE("GPL v2");

@@ -39,6 +39,15 @@
 #include "client.h"
 #include "admin.h"
 
+/* The admin ioctl ABI the userspace daemon was built against */
+static_assert(MC_ADMIN_IO_GET_DRIVER_REQUEST == 0x80204d00);
+static_assert(MC_ADMIN_IO_GET_INFO == 0x80084d01);
+static_assert(MC_ADMIN_IO_LOAD_DRIVER == 0x40184d02);
+static_assert(MC_ADMIN_IO_LOAD_TOKEN == 0x40184d03);
+static_assert(MC_ADMIN_IO_LOAD_CHECK == 0x40184d04);
+static_assert(sizeof(struct mc_admin_request) == 0x20);
+static_assert(sizeof(struct mc_admin_response) == 0x14);
+
 static struct {
 	struct mutex admin_tgid_mutex;  /* Lock for admin_tgid below */
 	pid_t admin_tgid;
@@ -75,17 +84,10 @@ static struct mc_admin_driver_request {
 	bool lock_channel_during_freeze;/* Is freezing ongoing ? */
 } g_request;
 
-#if KERNEL_VERSION(3, 13, 0) <= LINUX_VERSION_CODE
 static inline void reinit_completion_local(struct completion *x)
 {
 	reinit_completion(x);
 }
-#else
-static inline void reinit_completion_local(struct completion *x)
-{
-	INIT_COMPLETION(*x);
-}
-#endif
 
 /* The mutex around the channel communication has to be wrapped in order
  * to handle this use case :

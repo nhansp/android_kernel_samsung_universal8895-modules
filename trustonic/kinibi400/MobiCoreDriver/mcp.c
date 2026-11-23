@@ -28,9 +28,7 @@
 #include <asm/barrier.h>
 #include <linux/irq.h>
 #include <linux/version.h>
-#if KERNEL_VERSION(4, 11, 0) <= LINUX_VERSION_CODE
 #include <linux/sched/clock.h>	/* local_clock */
-#endif
 
 #include "public/mc_user.h"
 #include "public/mc_admin.h"
@@ -220,7 +218,7 @@ end:
 	mutex_unlock(&session->notif_wait_lock);
 	if (ret && ((ret != -ETIME) || !silent_expiry)) {
 #ifdef CONFIG_FREEZER
-		if (ret == -ERESTARTSYS && system_freezing_cnt.counter == 1)
+		if (ret == -ERESTARTSYS && freezing(current))
 			mc_dev_devel("freezing session %x", session->sid);
 		else
 #endif
