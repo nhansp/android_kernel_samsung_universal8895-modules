@@ -210,6 +210,9 @@ hardware_close:
 		}
 	}
 
+	if (rsccount == 0)
+		fimc_is_flush_ddk_thread();
+
 	return ret;
 }
 
@@ -254,10 +257,8 @@ int fimc_is_itf_close_wrap(struct fimc_is_device_ischain *device)
 #if !defined(DISABLE_SETFILE)
 	ret = fimc_is_hardware_delete_setfile(hardware, instance,
 			hardware->hw_map[instance]);
-	if (ret) {
+	if (ret)
 		merr("fimc_is_hardware_delete_setfile is fail(%d)", device, ret);
-			return ret;
-	}
 #endif
 
 	for (group_slot = GROUP_SLOT_3AA; group_slot < GROUP_SLOT_MAX; group_slot++) {
