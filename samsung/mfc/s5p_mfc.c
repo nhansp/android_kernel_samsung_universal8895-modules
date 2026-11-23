@@ -1199,6 +1199,7 @@ static int s5p_mfc_probe(struct platform_device *pdev)
 
 /* Deinit MFC if probe had failed */
 err_alloc_debug:
+	g_mfc_dev = NULL;
 	destroy_workqueue(dev->butler_wq);
 err_butler_wq:
 	destroy_workqueue(dev->watchdog_wq);
@@ -1215,6 +1216,7 @@ alloc_vdev_enc:
 	video_unregister_device(dev->vfd_dec);
 reg_vdev_dec:
 alloc_vdev_dec:
+	s5p_mfc_destroy_listable_wq_dev(dev);
 	v4l2_device_unregister(&dev->v4l2_dev);
 err_v4l2_dev:
 	mutex_destroy(&dev->mfc_mutex);
@@ -1243,17 +1245,20 @@ static void s5p_mfc_remove(struct platform_device *pdev)
 	destroy_workqueue(dev->watchdog_wq);
 	flush_workqueue(dev->butler_wq);
 	destroy_workqueue(dev->butler_wq);
+	g_mfc_dev = NULL;
+	video_unregister_device(dev->vfd_enc_drm);
+	video_unregister_device(dev->vfd_dec_drm);
 	video_unregister_device(dev->vfd_enc);
 	video_unregister_device(dev->vfd_dec);
-	v4l2_device_unregister(&dev->v4l2_dev);
 	s5p_mfc_destroy_listable_wq_dev(dev);
+	v4l2_device_unregister(&dev->v4l2_dev);
 	mfc_debug(2, "Will now deinit HW\n");
 	s5p_mfc_deinit_hw(dev);
 	free_irq(dev->irq, dev);
+	mutex_destroy(&dev->mfc_mutex);
 	iounmap(dev->regs_base);
 	release_mem_region(dev->mfc_mem->start, resource_size(dev->mfc_mem));
 	s5p_mfc_pm_final(dev);
-	kfree(dev);
 	dev_dbg(&pdev->dev, "%s--\n", __func__);
 }
 
