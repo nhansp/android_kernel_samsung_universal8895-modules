@@ -310,7 +310,7 @@ static int s2mpb02_pmic_dt_parse_pdata(struct s2mpb02_dev *iodev,
 		pdata->b1_rms_en = 0;
 	}
 
-	regulators_np = of_find_node_by_name(pmic_np, "regulators");
+	regulators_np = of_get_child_by_name(pmic_np, "regulators");
 	if (!regulators_np) {
 		dev_err(iodev->dev, "could not find regulators sub-node\n");
 		return -EINVAL;
@@ -327,6 +327,7 @@ static int s2mpb02_pmic_dt_parse_pdata(struct s2mpb02_dev *iodev,
 	if (!rdata) {
 		dev_err(iodev->dev,
 			"could not allocate memory for regulator data\n");
+		of_node_put(regulators_np);
 		return -ENOMEM;
 	}
 
