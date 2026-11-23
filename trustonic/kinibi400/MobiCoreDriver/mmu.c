@@ -446,16 +446,16 @@ struct tee_mmu *tee_mmu_create(struct mm_struct *mm,
 		/* Get pages */
 		if (mmu->dma_buf) {
 			/* Buffer is ION */
-			struct sg_mapping_iter miter;
+			struct sg_page_iter piter;
 
+			i = 0;
 			page_ptr = &pages[0];
-			sg_miter_start(&miter, mmu->sgt->sgl,
-				       mmu->sgt->nents,
-				       SG_MITER_FROM_SG);
-			while (sg_miter_next(&miter))
-				*page_ptr++ = miter.page;
-
-			sg_miter_stop(&miter);
+			for_each_sgtable_page(mmu->sgt, &piter,
+					      chunk * L2_ENTRIES_MAX) {
+				if (i++ == pages_nr)
+					break;
+				*page_ptr++ = sg_page_iter_page(&piter);
+			}
 		} else if (mm) {
 			long gup_ret;
 			/* ExySp: for page migration, was FOLL_CMA */
