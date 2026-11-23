@@ -4199,7 +4199,7 @@ wl_cfgvendor_nan_parse_args(struct wiphy *wiphy, const void *buf,
 				ret = -EINVAL;
 				goto exit;
 			}
-			cmd_data->nmi_rand_intvl = nla_get_u8(iter);
+			cmd_data->nmi_rand_intvl = nla_get_u32(iter);
 			if (cmd_data->nmi_rand_intvl > 0) {
 				cfg->nancfg.mac_rand = true;
 			} else {
