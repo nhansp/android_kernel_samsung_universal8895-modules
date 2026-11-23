@@ -1152,6 +1152,7 @@ static int s5p_mfc_probe(struct platform_device *pdev)
 		create_singlethread_workqueue("s5p_mfc/watchdog");
 	if (!dev->watchdog_wq) {
 		dev_err(&pdev->dev, "failed to create workqueue for watchdog\n");
+		ret = -ENOMEM;
 		goto err_wq_watchdog;
 	}
 	INIT_WORK(&dev->watchdog_work, s5p_mfc_watchdog_worker);
@@ -1168,6 +1169,7 @@ static int s5p_mfc_probe(struct platform_device *pdev)
 					| WQ_MEM_RECLAIM | WQ_HIGHPRI, 1);
 	if (dev->butler_wq == NULL) {
 		dev_err(&pdev->dev, "failed to create workqueue for butler\n");
+		ret = -ENOMEM;
 		goto err_butler_wq;
 	}
 	INIT_WORK(&dev->butler_work, s5p_mfc_butler_worker);
