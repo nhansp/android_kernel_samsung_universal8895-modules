@@ -70,6 +70,7 @@ struct sec_nfc_info {
 	struct wakeup_source *ws;
 	bool clk_ctl;
 	bool clk_state;
+	bool irq_wake;			/* the NFC IRQ is armed as a wake source */
 };
 
 static irqreturn_t sec_nfc_irq_thread_fn(int irq, void *dev_id)
@@ -361,6 +362,22 @@ static void sec_nfc_clk_ctl_disable(struct sec_nfc_info *info)
 	info->clk_ctl = false;
 }
 
+static void sec_nfc_irq_wake(struct sec_nfc_info *info, bool on)
+{
+	int irq = info->i2c_info.i2c_dev->irq;
+
+	if (info->irq_wake == on)
+		return;
+
+	if (on) {
+		if (!enable_irq_wake(irq))
+			info->irq_wake = true;
+	} else {
+		disable_irq_wake(irq);
+		info->irq_wake = false;
+	}
+}
+
 static void sec_nfc_set_mode(struct sec_nfc_info *info,
 					enum sec_nfc_mode mode)
 {
@@ -389,11 +406,11 @@ static void sec_nfc_set_mode(struct sec_nfc_info *info,
 		msleep(SEC_NFC_VEN_WAIT_TIME);
 		gpiod_set_value_cansleep(pdata->ven, SEC_NFC_PW_ON);
 		sec_nfc_clk_ctl_enable(info);
-		enable_irq_wake(info->i2c_info.i2c_dev->irq);
+		sec_nfc_irq_wake(info, true);
 		msleep(SEC_NFC_VEN_WAIT_TIME/2);
 	} else {
 		sec_nfc_clk_ctl_disable(info);
-		disable_irq_wake(info->i2c_info.i2c_dev->irq);
+		sec_nfc_irq_wake(info, false);
 	}
 
 	if (info->ws->active)
@@ -462,14 +479,14 @@ static long sec_nfc_ioctl(struct file *file, unsigned int cmd,
 			sec_nfc_clk_ctl_enable(info);
 			msleep(20);
 			gpiod_set_value_cansleep(pdata->firm, SEC_NFC_FW_ON);
-			enable_irq_wake(info->i2c_info.i2c_dev->irq);
+			sec_nfc_irq_wake(info, true);
 		} else if (new == SEC_NFC_NPT_CMD_OFF) {
 			NFC_LOG_INFO("NPT: NFC OFF mode NPT - Turn off VEN.\n");
 			info->mode = SEC_NFC_MODE_OFF;
 			gpiod_set_value_cansleep(pdata->firm, SEC_NFC_FW_OFF);
 			gpiod_set_value_cansleep(pdata->ven, SEC_NFC_PW_OFF);
 			sec_nfc_clk_ctl_disable(info);
-			disable_irq_wake(info->i2c_info.i2c_dev->irq);
+			sec_nfc_irq_wake(info, false);
 		}
 		break;
 // [END] NPT
