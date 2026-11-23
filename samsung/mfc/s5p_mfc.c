@@ -192,6 +192,8 @@ static int mfc_init_dec_ctx(struct s5p_mfc_ctx *ctx)
 	ctx->vq_src.drv_priv = ctx;
 	ctx->vq_src.buf_struct_size = sizeof(struct s5p_mfc_buf);
 	ctx->vq_src.io_modes = VB2_MMAP | VB2_USERPTR | VB2_DMABUF;
+	/* the decoder writes into the stream buffer as well */
+	ctx->vq_src.bidirectional = 1;
 	ctx->vq_src.ops = &s5p_mfc_dec_qops;
 	ctx->vq_src.mem_ops = s5p_mfc_mem_ops();
 	ctx->vq_src.timestamp_flags = V4L2_BUF_FLAG_TIMESTAMP_COPY;
