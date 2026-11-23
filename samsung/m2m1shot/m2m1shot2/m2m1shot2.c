@@ -1036,8 +1036,10 @@ static bool m2m1shot2_check_fence_wait(struct m2m1shot2_context *ctx,
 	int ret;
 
 	for (i = 0; i < fence_count; i++) {
-		if (ctx->source[i].img.fence == fence)
+		if (ctx->source[i].img.fence == fence) {
+			dma_fence_put(fence);
 			return false;
+		}
 	}
 
 	kref_get(&ctx->starter);
