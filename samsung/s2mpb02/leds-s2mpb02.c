@@ -672,6 +672,7 @@ static int s2mpb02_led_probe(struct platform_device *pdev)
 	s2mpb02_led_dev = device_create(camera_class, NULL, 3, NULL, "flash");
 	if (IS_ERR(s2mpb02_led_dev)) {
 		pr_err("<%s> Failed to create device(flash)!\n", __func__);
+		s2mpb02_led_dev = NULL;
 	} else {
 		if (device_create_file(s2mpb02_led_dev, &dev_attr_rear_flash) < 0) {
 			pr_err("<%s> failed to create device file, %s\n",
