@@ -102,7 +102,7 @@ static void s2mpb02_led_set(struct led_classdev *led_cdev,
 {
 }
 
-static void led_set(struct s2mpb02_led_data *led_data, int turn_way)
+static int led_set(struct s2mpb02_led_data *led_data, int turn_way)
 {
 	int ret;
 	struct s2mpb02_led *data = led_data->data;
@@ -181,12 +181,67 @@ static void led_set(struct s2mpb02_led_data *led_data, int turn_way)
 				goto error_set_bits;
 		}
 	}
-	return;
+	return 0;
 
 error_set_bits:
 	pr_err("%s: can't set led level %d\n", __func__, ret);
 
-	return;
+	return ret;
+}
+
+/* torch-sec1 brightness: the torch current register value, 20 mA per step */
+static int s2mpb02_torch_brightness_set(struct led_classdev *led_cdev,
+					enum led_brightness value)
+{
+	struct s2mpb02_led_data *led_data = container_of(led_cdev, struct s2mpb02_led_data, led);
+	struct s2mpb02_led *data = led_data->data;
+	int ret;
+
+	mutex_lock(&led_data->lock);
+	data->brightness = value;
+	ret = led_set(led_data, S2MPB02_LED_TURN_WAY_GPIO);
+	if (value == LED_OFF) {
+		data->brightness = data->brightness_cam;
+		ret = s2mpb02_set_bits(led_data->i2c, S2MPB02_REG_FLED_CUR1,
+				       leds_mask[data->id],
+				       data->brightness << leds_shift[data->id]) ?: ret;
+	}
+	mutex_unlock(&led_data->lock);
+
+	return ret;
+}
+
+static int s2mpb02_torch_max_brightness(const struct s2mpb02_led *data)
+{
+	int i, top = data->brightness;
+
+	if (data->torch_table_enable)
+		for (i = 0; i < TORCH_STEP; i++)
+			top = max(top, data->torch_table[i]);
+
+	return clamp(top, 1, S2MPB02_FLASH_TORCH_CURRENT_MAX);
+}
+
+static enum led_brightness s2mpb02_torch_brightness_get(struct led_classdev *led_cdev)
+{
+	struct s2mpb02_led_data *led_data = container_of(led_cdev, struct s2mpb02_led_data, led);
+	int id = led_data->data->id;
+	int lit, ret;
+	u8 cur;
+
+	if (!gpio_is_valid(torch1_gpio))
+		return -ENODEV;
+
+	mutex_lock(&led_data->lock);
+	lit = gpio_get_value(torch1_gpio);
+	ret = s2mpb02_read_reg(led_data->i2c, S2MPB02_REG_FLED_CUR1, &cur);
+	mutex_unlock(&led_data->lock);
+	if (lit < 0)
+		return lit;
+	if (ret < 0)
+		return ret;
+
+	return lit ? (cur & leds_mask[id]) >> leds_shift[id] : LED_OFF;
 }
 
 static void s2mpb02_led_work(struct work_struct *work)
@@ -265,6 +320,9 @@ static ssize_t s2mpb02_store(struct device *dev,
 		pr_err("<%s> global_led_datas[S2MPB02_TORCH_LED_1] is NULL\n", __func__);
 		return -1;
 	}
+
+	/* a torch-sec1 write still queued in the LED core must not land after this one */
+	flush_work(&global_led_datas[S2MPB02_TORCH_LED_1]->led.set_brightness_work);
 
 	pr_info("[LED]%s , value:%d\n", __func__, value);
 	mutex_lock(&global_led_datas[S2MPB02_TORCH_LED_1]->lock);
@@ -625,11 +683,17 @@ static int s2mpb02_led_probe(struct platform_device *pdev)
 		led_data->i2c = s2mpb02->i2c;
 		led_data->data = data;
 		led_data->led.name = data->name;
-		led_data->led.brightness_set = s2mpb02_led_set;
 		led_data->led.brightness = LED_OFF;
 		led_data->brightness = data->brightness;
 		led_data->led.flags = 0;
-		led_data->led.max_brightness = S2MPB02_FLASH_TORCH_CURRENT_MAX;
+		if (data->id == S2MPB02_TORCH_LED_1) {
+			led_data->led.brightness_set_blocking = s2mpb02_torch_brightness_set;
+			led_data->led.brightness_get = s2mpb02_torch_brightness_get;
+			led_data->led.max_brightness = s2mpb02_torch_max_brightness(data);
+		} else {
+			led_data->led.brightness_set = s2mpb02_led_set;
+			led_data->led.max_brightness = S2MPB02_FLASH_TORCH_CURRENT_MAX;
+		}
 
 		mutex_init(&led_data->lock);
 		spin_lock_init(&led_data->value_lock);
