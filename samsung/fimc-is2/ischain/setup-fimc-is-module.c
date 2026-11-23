@@ -19,6 +19,10 @@
 #include <linux/io.h>
 #include <linux/regulator/consumer.h>
 #include <linux/delay.h>
+#include <linux/slab.h>
+#include <linux/mutex.h>
+#include <linux/list.h>
+#include <linux/string.h>
 #include <linux/clk-provider.h>
 #include <linux/clkdev.h>
 #ifdef CONFIG_OF
@@ -41,6 +45,58 @@ static int release_shared_rsc(struct exynos_sensor_pin *pin_ctrls)
 		return atomic_dec_return(pin_ctrls->shared_rsc_count);
 
 	return 0;
+}
+
+/*
+ * One regulator handle per supply: enables are counted per handle, so a rail
+ * has to be disabled through the handle that enabled it.
+ */
+struct exynos_pin_regulator {
+	struct list_head	node;
+	struct device		*dev;
+	const char		*name;
+	struct regulator	*regulator;
+	unsigned int		enable_count;	/* enables made through @regulator */
+};
+
+static LIST_HEAD(exynos_pin_regulators);
+static DEFINE_MUTEX(exynos_pin_regulators_lock);
+
+static struct exynos_pin_regulator *exynos_pin_regulator_get(struct device *dev, const char *name)
+{
+	struct exynos_pin_regulator *pr;
+	struct regulator *regulator;
+
+	mutex_lock(&exynos_pin_regulators_lock);
+
+	list_for_each_entry(pr, &exynos_pin_regulators, node) {
+		if (pr->dev == dev && !strcmp(pr->name, name))
+			goto out;
+	}
+
+	regulator = regulator_get(dev, name);
+	if (IS_ERR_OR_NULL(regulator)) {
+		pr = ERR_PTR(regulator ? PTR_ERR(regulator) : -ENODEV);
+		goto out;
+	}
+
+	pr = kzalloc(sizeof(*pr), GFP_KERNEL);
+	if (pr)
+		pr->name = kstrdup(name, GFP_KERNEL);
+	if (!pr || !pr->name) {
+		kfree(pr);
+		regulator_put(regulator);
+		pr = ERR_PTR(-ENOMEM);
+		goto out;
+	}
+
+	pr->dev = dev;
+	pr->regulator = regulator;
+	list_add_tail(&pr->node, &exynos_pin_regulators);
+out:
+	mutex_unlock(&exynos_pin_regulators_lock);
+
+	return pr;
 }
 
 static int exynos_fimc_is_module_pin_control(struct device *dev,
@@ -123,18 +179,29 @@ static int exynos_fimc_is_module_pin_control(struct device *dev,
 		break;
 	case PIN_REGULATOR:
 		{
-			struct regulator *regulator = NULL;
+			struct exynos_pin_regulator *pr;
+			struct regulator *regulator;
 
-			regulator = regulator_get(dev, name);
-			if (IS_ERR_OR_NULL(regulator)) {
+			pr = exynos_pin_regulator_get(dev, name);
+			if (IS_ERR(pr)) {
 				pr_err("%s : regulator_get(%s) fail\n", __func__, name);
-				return PTR_ERR(regulator);
+				return PTR_ERR(pr);
 			}
+			regulator = pr->regulator;
 
 			if (value) {
-				if(voltage > 0) {
+				struct regulator *vreg = NULL;
+
+				if (voltage > 0) {
+					/* own handle: other sensors ask for other voltages */
+					vreg = regulator_get(dev, name);
+					if (IS_ERR(vreg))
+						vreg = NULL;
+				}
+
+				if (vreg) {
 					printk(KERN_DEBUG "[@] %s : regulator_set_voltage(%d)\n",__func__, voltage);
-					ret = regulator_set_voltage(regulator, voltage, voltage);
+					ret = regulator_set_voltage(vreg, voltage, voltage);
 					if(ret) {
 						pr_err("%s : regulator_set_voltage(%d) fail\n", __func__, ret);
 					}
@@ -144,28 +211,39 @@ static int exynos_fimc_is_module_pin_control(struct device *dev,
 					pr_warning("%s regulator is already enabled\n", name);
 
 				ret = regulator_enable(regulator);
+				if (vreg)
+					regulator_put(vreg);
 				if (ret) {
 					pr_err("%s : regulator_enable(%s) fail\n", __func__, name);
-					regulator_put(regulator);
 					return ret;
 				}
+				mutex_lock(&exynos_pin_regulators_lock);
+				pr->enable_count++;
+				mutex_unlock(&exynos_pin_regulators_lock);
 			} else {
-				if (!regulator_is_enabled(regulator)) {
+				bool ours;
+
+				mutex_lock(&exynos_pin_regulators_lock);
+				ours = pr->enable_count > 0;
+				mutex_unlock(&exynos_pin_regulators_lock);
+
+				/* leave an enable made by someone else alone */
+				if (!ours || !regulator_is_enabled(regulator)) {
 					pr_warning("%s regulator is already disabled\n", name);
-					regulator_put(regulator);
 					return 0;
 				}
 
 				ret = regulator_disable(regulator);
 				if (ret) {
 					pr_err("%s : regulator_disable(%s) fail\n", __func__, name);
-					regulator_put(regulator);
 					return ret;
 				}
+				mutex_lock(&exynos_pin_regulators_lock);
+				pr->enable_count--;
+				mutex_unlock(&exynos_pin_regulators_lock);
 			}
 
 			usleep_range(delay, delay);
-			regulator_put(regulator);
 		}
 		break;
 	default:
