@@ -13,7 +13,8 @@
 #ifndef __S5P_MFC_MEM_H
 #define __S5P_MFC_MEM_H __FILE__
 
-#include <media/videobuf2-ion.h>
+#include <linux/dma-mapping.h>
+#include <media/videobuf2-dma-contig.h>
 
 #include "s5p_mfc_common.h"
 
@@ -21,63 +22,38 @@
 *  while mmaping */
 #define DST_QUEUE_OFF_BASE      (TASK_SIZE / 2)
 
-static inline void *s5p_mfc_mem_alloc(void *alloc_ctx, size_t size)
-{
-	return vb2_ion_private_alloc(alloc_ctx, size);
-}
+struct s5p_mfc_mem_cookie {
+	struct device *dev;
+	size_t size;
+	void *vaddr;
+	dma_addr_t daddr;
+};
 
-static inline void s5p_mfc_mem_free(void *cookie)
-{
-	vb2_ion_private_free(cookie);
-}
-
-static inline phys_addr_t s5p_mfc_mem_get_paddr(void *cookie)
-{
-	phys_addr_t addr = 0;
-
-	BUG_ON(vb2_ion_phys_address(cookie, &addr) != 0);
-
-	return addr;
-}
+void *s5p_mfc_mem_alloc(struct device *dev, size_t size);
+void s5p_mfc_mem_free(void *cookie);
 
 static inline dma_addr_t s5p_mfc_mem_get_daddr(void *cookie)
 {
-	dma_addr_t addr = 0;
-
-	BUG_ON(vb2_ion_dma_address(cookie, &addr) != 0);
-
-	return addr;
+	return ((struct s5p_mfc_mem_cookie *)cookie)->daddr;
 }
 
 static inline dma_addr_t s5p_mfc_mem_get_daddr_vb(
 	struct vb2_buffer *v, unsigned int n)
 {
-	void *cookie = vb2_plane_cookie(v, n);
-	dma_addr_t addr = 0;
-
-	WARN_ON(vb2_ion_dma_address(cookie, &addr) != 0);
-
-	return addr;
+	return vb2_dma_contig_plane_dma_addr(v, n);
 }
 
 static inline void *s5p_mfc_mem_get_vaddr(void *cookie)
 {
-	return vb2_ion_private_vaddr(cookie);
+	return ((struct s5p_mfc_mem_cookie *)cookie)->vaddr;
 }
 
-static inline int s5p_mfc_mem_buf_prepare(struct vb2_buffer *vb)
-{
-	return vb2_ion_buf_prepare(vb);
-}
+int s5p_mfc_mem_buf_prepare(struct vb2_buffer *vb);
+void s5p_mfc_mem_buf_finish(struct vb2_buffer *vb);
 
-static inline void s5p_mfc_mem_buf_finish(struct vb2_buffer *vb)
-{
-	vb2_ion_buf_finish(vb);
-}
+const struct vb2_mem_ops *s5p_mfc_mem_ops(void);
 
-struct vb2_mem_ops *s5p_mfc_mem_ops(void);
-
-void s5p_mfc_mem_set_cacheable(void *alloc_ctx, bool cacheable);
+void s5p_mfc_mem_set_cacheable(struct device *dev, bool cacheable);
 void s5p_mfc_mem_clean(void *vb_priv, void *start, off_t offset,
 							size_t size);
 void s5p_mfc_mem_invalidate(void *vb_priv, void *start, off_t offset,

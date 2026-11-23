@@ -10,7 +10,6 @@
  * (at your option) any later version.
  */
 
-#include <linux/smc.h>
 #include <linux/firmware.h>
 #include <trace/events/mfc.h>
 
@@ -115,7 +114,7 @@ int s5p_mfc_alloc_instance_context(struct s5p_mfc_ctx *ctx)
 {
 	struct s5p_mfc_dev *dev;
 	struct s5p_mfc_buf_size_v6 *buf_size;
-	void *alloc_ctx;
+	struct device *alloc_ctx;
 
 	mfc_debug_enter();
 	if (!ctx) {
@@ -128,7 +127,7 @@ int s5p_mfc_alloc_instance_context(struct s5p_mfc_ctx *ctx)
 		return -EINVAL;
 	}
 	buf_size = dev->variant->buf_size->buf;
-	alloc_ctx = dev->alloc_ctx;
+	alloc_ctx = dev->device;
 
 	switch (ctx->codec_mode) {
 	case S5P_FIMV_CODEC_H264_DEC:
@@ -168,7 +167,7 @@ int s5p_mfc_alloc_instance_context(struct s5p_mfc_ctx *ctx)
 	}
 
 	if (ctx->is_drm)
-		alloc_ctx = dev->alloc_ctx_drm;
+		alloc_ctx = dev->device;
 
 	ctx->instance_ctx_buf.alloc = s5p_mfc_mem_alloc(alloc_ctx, ctx->instance_ctx_buf.size);
 	if (IS_ERR_OR_NULL(ctx->instance_ctx_buf.alloc)) {
@@ -231,7 +230,7 @@ int s5p_mfc_alloc_codec_buffers(struct s5p_mfc_ctx *ctx)
 	struct s5p_mfc_enc *enc;
 	unsigned int mb_width, mb_height;
 	unsigned int lcu_width = 0, lcu_height = 0;
-	void *alloc_ctx;
+	struct device *alloc_ctx;
 	int i;
 
 	mfc_debug_enter();
@@ -246,7 +245,7 @@ int s5p_mfc_alloc_codec_buffers(struct s5p_mfc_ctx *ctx)
 	}
 	dec = ctx->dec_priv;
 	enc = ctx->enc_priv;
-	alloc_ctx = dev->alloc_ctx;
+	alloc_ctx = dev->device;
 
 	mb_width = WIDTH_MB(ctx->img_width);
 	mb_height = HEIGHT_MB(ctx->img_height);
@@ -393,7 +392,7 @@ int s5p_mfc_alloc_codec_buffers(struct s5p_mfc_ctx *ctx)
 	}
 
 	if (ctx->is_drm)
-		alloc_ctx = dev->alloc_ctx_drm;
+		alloc_ctx = dev->device;
 
 	/* Allocate only if memory from bank 1 is necessary */
 	if (ctx->codec_buf.size > 0) {
@@ -455,11 +454,11 @@ void s5p_mfc_release_codec_buffers(struct s5p_mfc_ctx *ctx)
 int s5p_mfc_alloc_dbg_info_buffer(struct s5p_mfc_dev *dev)
 {
 	struct s5p_mfc_buf_size_v6 *buf_size = dev->variant->buf_size->buf;
-	void *alloc_ctx;
+	struct device *alloc_ctx;
 
 	mfc_debug(2, "Allocate a debug-info buffer.\n");
 
-	alloc_ctx = dev->alloc_ctx;
+	alloc_ctx = dev->device;
 	dev->dbg_info_buf.alloc = s5p_mfc_mem_alloc(alloc_ctx,
 			buf_size->dbg_info_buf);
 	if (IS_ERR_OR_NULL(dev->dbg_info_buf.alloc)) {
@@ -512,9 +511,9 @@ static int mfc_alloc_enc_roi_buffer(struct s5p_mfc_ctx *ctx, struct s5p_mfc_spec
 {
 	struct s5p_mfc_dev *dev = ctx->dev;
 	struct s5p_mfc_buf_size_v6 *buf_size = dev->variant->buf_size->buf;
-	void *alloc_ctx;
+	struct device *alloc_ctx;
 
-	alloc_ctx = dev->alloc_ctx;
+	alloc_ctx = dev->device;
 	roi_buf->alloc = s5p_mfc_mem_alloc(alloc_ctx,
 			buf_size->shared_buf);
 	if (IS_ERR_OR_NULL(roi_buf->alloc)) {
@@ -577,7 +576,7 @@ int s5p_mfc_alloc_firmware(struct s5p_mfc_dev *dev)
 {
 	unsigned int base_align;
 	size_t firmware_size;
-	void *alloc_ctx;
+	struct device *alloc_ctx;
 	struct s5p_mfc_buf_size_v6 *buf_size;
 
 	mfc_debug_enter();
@@ -598,7 +597,7 @@ int s5p_mfc_alloc_firmware(struct s5p_mfc_dev *dev)
 	mfc_debug(2, "Allocating memory for firmware.\n");
 	trace_mfc_loadfw_start(dev->fw.size, firmware_size);
 
-	alloc_ctx = dev->alloc_ctx_fw;
+	alloc_ctx = dev->device;
 	dev->fw_buf.alloc = s5p_mfc_mem_alloc(alloc_ctx, dev->fw.size);
 	if (IS_ERR_OR_NULL(dev->fw_buf.alloc)) {
 		dev->fw_buf.alloc = NULL;
@@ -632,7 +631,7 @@ int s5p_mfc_alloc_firmware(struct s5p_mfc_dev *dev)
 			dev->fw_buf.daddr, firmware_size);
 
 #ifdef CONFIG_EXYNOS_CONTENT_PATH_PROTECTION
-	alloc_ctx = dev->alloc_ctx_drm_fw;
+	alloc_ctx = dev->device;
 
 	dev->drm_fw_buf.alloc = s5p_mfc_mem_alloc(alloc_ctx, dev->fw.size);
 	if (IS_ERR_OR_NULL(dev->drm_fw_buf.alloc)) {

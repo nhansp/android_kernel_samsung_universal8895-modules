@@ -26,16 +26,15 @@
 #include "s5p_mfc_mem.h"
 
 static int s5p_mfc_dec_queue_setup(struct vb2_queue *vq,
-				const void *parg,
 				unsigned int *buf_count, unsigned int *plane_count,
-				unsigned int psize[], void *allocators[])
+				unsigned int psize[], struct device *alloc_devs[])
 {
 	struct s5p_mfc_ctx *ctx;
 	struct s5p_mfc_dev *dev;
 	struct s5p_mfc_dec *dec;
 	struct s5p_mfc_raw_info *raw;
-	void *alloc_ctx;
-	void *capture_ctx;
+	struct device *alloc_ctx;
+	struct device *capture_ctx;
 	int i;
 
 	mfc_debug_enter();
@@ -62,7 +61,7 @@ static int s5p_mfc_dec_queue_setup(struct vb2_queue *vq,
 	}
 
 	raw = &ctx->raw_buf;
-	alloc_ctx = ctx->dev->alloc_ctx;
+	alloc_ctx = ctx->dev->device;
 
 	/* Video output for decoding (source)
 	 * this can be set after getting an instance */
@@ -98,17 +97,17 @@ static int s5p_mfc_dec_queue_setup(struct vb2_queue *vq,
 	if (ctx->state == MFCINST_HEAD_PARSED &&
 	    vq->type == V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE) {
 		if (ctx->is_drm)
-			capture_ctx = ctx->dev->alloc_ctx_drm;
+			capture_ctx = ctx->dev->device;
 		else
 			capture_ctx = alloc_ctx;
 
 		if (ctx->dst_fmt->mem_planes == 1) {
 			psize[0] = raw->total_plane_size;
-			allocators[0] = capture_ctx;
+			alloc_devs[0] = capture_ctx;
 		} else {
 			for (i = 0; i < ctx->dst_fmt->num_planes; i++) {
 				psize[i] = raw->plane_size[i];
-				allocators[i] = capture_ctx;
+				alloc_devs[i] = capture_ctx;
 			}
 		}
 
@@ -117,9 +116,9 @@ static int s5p_mfc_dec_queue_setup(struct vb2_queue *vq,
 		psize[0] = dec->src_buf_size;
 
 		if (ctx->is_drm)
-			allocators[0] = ctx->dev->alloc_ctx_drm;
+			alloc_devs[0] = ctx->dev->device;
 		else
-			allocators[0] = alloc_ctx;
+			alloc_devs[0] = alloc_ctx;
 
 	} else {
 		mfc_err_ctx("Currently only decoding is supported. Decoding not initalised.\n");

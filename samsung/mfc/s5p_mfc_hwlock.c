@@ -598,6 +598,7 @@ static int mfc_nal_q_just_run(struct s5p_mfc_ctx *ctx, int need_cache_flush)
 	switch (nal_q_handle->nal_q_state) {
 	case NAL_Q_STATE_CREATED:
 		s5p_mfc_nal_q_init(dev, nal_q_handle);
+		fallthrough;
 	case NAL_Q_STATE_INITIALIZED:
 		if (s5p_mfc_nal_q_check_enable(dev) == 0) {
 			/* NAL START */

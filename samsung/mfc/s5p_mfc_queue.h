@@ -157,4 +157,11 @@ void s5p_mfc_store_dpb(struct s5p_mfc_ctx *ctx, struct vb2_buffer *vb);
 void s5p_mfc_cleanup_nal_queue(struct s5p_mfc_ctx *ctx);
 int s5p_mfc_is_last_frame(struct s5p_mfc_ctx *ctx);
 
+unsigned int s5p_mfc_vq_plane_size(struct vb2_queue *q, struct v4l2_buffer *b,
+				   unsigned int plane);
+int s5p_mfc_vb2_qbuf(struct s5p_mfc_ctx *ctx, struct vb2_queue *q,
+		     struct v4l2_buffer *b);
+int s5p_mfc_vb2_dqbuf(struct s5p_mfc_ctx *ctx, struct vb2_queue *q,
+		      struct v4l2_buffer *b, bool nonblocking);
+
 #endif /* __S5P_MFC_QUEUE_H */

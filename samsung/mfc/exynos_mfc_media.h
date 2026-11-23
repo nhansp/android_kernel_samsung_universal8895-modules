@@ -14,6 +14,7 @@
 #define __EXYNOS_MFC_MEDIA_H __FILE__
 
 #include <linux/videodev2_exynos_media.h>
+#include <uapi/linux/v4l2-controls.h>
 
 /* RGB formats */
 #define V4L2_PIX_FMT_RGB32X    v4l2_fourcc('R', 'G', 'B', 'X') /* 32  RGB-8-8-8-8   */
@@ -51,10 +52,7 @@ enum v4l2_mpeg_mfc51_video_frame_type {
 	V4L2_MPEG_MFC51_VIDEO_FRAME_TYPE_OTHERS		= 5,
 };
 
-enum v4l2_mpeg_video_hevc_hierarchical_coding_type {
-	V4L2_MPEG_VIDEO_HEVC_HIERARCHICAL_CODING_B	= 0,
-	V4L2_MPEG_VIDEO_HEVC_HIERARCHICAL_CODING_P	= 1,
-};
+#define v4l2_mpeg_video_hevc_hierarchical_coding_type v4l2_mpeg_video_hevc_hier_coding_type
 
 /* new entry for enum v4l2_mpeg_video_mpeg4_level */
 #define V4L2_MPEG_VIDEO_MPEG4_LEVEL_6			8
@@ -77,6 +75,15 @@ enum v4l2_mpeg_video_hevc_hierarchical_coding_type {
 #define V4L2_CID_MPEG_MFC51_VIDEO_FRAME_RATE_CH		\
 					V4L2_CID_MPEG_MFC51_VIDEO_H264_RC_FRAME_RATE
 
+
+#ifndef V4L2_CTRL_CLASS_MPEG
+#define V4L2_CTRL_CLASS_MPEG			V4L2_CTRL_CLASS_CODEC
+#endif
+
+#ifndef V4L2_MPEG_VIDEO_MULTI_SICE_MODE_MAX_MB
+#define V4L2_MPEG_VIDEO_MULTI_SICE_MODE_MAX_MB		V4L2_MPEG_VIDEO_MULTI_SLICE_MODE_MAX_MB
+#define V4L2_MPEG_VIDEO_MULTI_SICE_MODE_MAX_BYTES	V4L2_MPEG_VIDEO_MULTI_SLICE_MODE_MAX_BYTES
+#endif
 
 /* CID base for MFC controls (MPEG_CLASS) */
 #define V4L2_CID_MPEG_MFC_BASE		(V4L2_CTRL_CLASS_MPEG | 0x2000)
@@ -259,6 +266,15 @@ enum v4l2_mpeg_video_hevc_hierarchical_coding_type {
 					(V4L2_CID_MPEG_MFC_BASE + 108)
 
 /* CIDs for HEVC encoding. Number gaps are for compatibility */
+
+/* User space passes the vendor IDs, not the upstream ones of the same name */
+#undef V4L2_CID_MPEG_VIDEO_HEVC_MIN_QP
+#undef V4L2_CID_MPEG_VIDEO_HEVC_MAX_QP
+#undef V4L2_CID_MPEG_VIDEO_HEVC_I_FRAME_QP
+#undef V4L2_CID_MPEG_VIDEO_HEVC_P_FRAME_QP
+#undef V4L2_CID_MPEG_VIDEO_HEVC_B_FRAME_QP
+#undef V4L2_CID_MPEG_VIDEO_HEVC_PROFILE
+#undef V4L2_CID_MPEG_VIDEO_HEVC_LEVEL
 
 #define V4L2_CID_MPEG_VIDEO_HEVC_MIN_QP				\
 					(V4L2_CID_MPEG_MFC_BASE + 110)

@@ -27,7 +27,7 @@
 #include "s5p_mfc_buf.h"
 #include "s5p_mfc_mem.h"
 
-extern int dbg_enable;
+extern int mfc_dbg_enable;
 
 static void mfc_handle_black_bar_info(struct s5p_mfc_dev *dev, struct s5p_mfc_ctx *ctx)
 {
@@ -113,7 +113,7 @@ static void mfc_handle_frame_all_extracted(struct s5p_mfc_ctx *ctx)
 			vb2_set_plane_payload(&dst_mb->vb.vb2_buf, i, 0);
 
 		dst_mb->vb.sequence = (ctx->sequence++);
-		dst_mb->vb.reserved2 = 0;
+		dst_mb->reserved2 = 0;
 
 		if (is_interlace) {
 			interlace_type = s5p_mfc_get_interlace_type();
@@ -207,9 +207,7 @@ static void mfc_handle_frame_copy_timestamp(struct s5p_mfc_ctx *ctx)
 	ref_mb = s5p_mfc_find_buf_vb(&ctx->buf_queue_lock,
 			&ctx->ref_buf_queue, dec_y_addr);
 	if (ref_mb) {
-		memcpy(&ref_mb->vb.timestamp,
-				&src_mb->vb.timestamp,
-				sizeof(struct timeval));
+		ref_mb->vb.vb2_buf.timestamp = src_mb->vb.vb2_buf.timestamp;
 	}
 }
 
@@ -353,31 +351,31 @@ static void mfc_handle_frame_new(struct s5p_mfc_ctx *ctx, unsigned int err)
 				is_interlace, interlace_type);
 
 			/* Set reserved2 bits in order to inform SEI information */
-			ref_mb->vb.reserved2 = 0;
+			ref_mb->reserved2 = 0;
 
 			if (is_content_light) {
-				ref_mb->vb.reserved2 |= (1 << 0);
+				ref_mb->reserved2 |= (1 << 0);
 				mfc_debug(2, "content light level parsed\n");
 			}
 
 			if (is_display_colour) {
-				ref_mb->vb.reserved2 |= (1 << 1);
+				ref_mb->reserved2 |= (1 << 1);
 				mfc_debug(2, "mastering display colour parsed\n");
 			}
 
 			if (is_video_signal_type) {
-				ref_mb->vb.reserved2 |= (1 << 4);
+				ref_mb->reserved2 |= (1 << 4);
 				mfc_debug(2, "video signal type parsed\n");
 				if (is_colour_description) {
-					ref_mb->vb.reserved2 |= (1 << 2);
+					ref_mb->reserved2 |= (1 << 2);
 					mfc_debug(5, "matrix coefficients parsed\n");
-					ref_mb->vb.reserved2 |= (1 << 3);
+					ref_mb->reserved2 |= (1 << 3);
 					mfc_debug(2, "colour description parsed\n");
 				}
 			}
 
 			if (dec->black_bar_updated) {
-				ref_mb->vb.reserved2 |= (1 << 5);
+				ref_mb->reserved2 |= (1 << 5);
 				mfc_debug(3, "black bar detected\n");
 			}
 
@@ -1300,7 +1298,7 @@ irqreturn_t s5p_mfc_top_half_irq(int irq, void *priv)
 	err = s5p_mfc_get_int_err();
 
 	dev->last_int = reason;
-	dev->last_int_time = ktime_to_timeval(ktime_get());
+	dev->last_int_time = ktime_to_timespec64(ktime_get());
 
 	if ((reason == S5P_FIMV_R2H_CMD_SEQ_DONE_RET) ||
 		(reason == S5P_FIMV_R2H_CMD_INIT_BUFFERS_RET) ||
@@ -1418,7 +1416,7 @@ irqreturn_t s5p_mfc_irq(int irq, void *priv)
 
 	dev->preempt_ctx = MFC_NO_INSTANCE_SET;
 
-	if (dbg_enable && (reason != S5P_FIMV_R2H_CMD_QUEUE_DONE_RET))
+	if (mfc_dbg_enable && reason != S5P_FIMV_R2H_CMD_QUEUE_DONE_RET)
 		s5p_mfc_dbg_disable(dev);
 
 #ifdef NAL_Q_ENABLE

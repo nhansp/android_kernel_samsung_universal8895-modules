@@ -10,6 +10,8 @@
  * (at your option) any later version.
  */
 
+#include <linux/version.h>
+
 #include "s5p_mfc_enc.h"
 #include "s5p_mfc_enc_internal.h"
 
@@ -118,18 +120,10 @@ static inline int mfc_enc_h264_profile(struct s5p_mfc_ctx *ctx, int profile)
 static int vidioc_querycap(struct file *file, void *priv,
 			   struct v4l2_capability *cap)
 {
-	strncpy(cap->driver, "MFC", sizeof(cap->driver) - 1);
-	strncpy(cap->card, "encoder", sizeof(cap->card) - 1);
+	strscpy(cap->driver, "MFC", sizeof(cap->driver));
+	strscpy(cap->card, "encoder", sizeof(cap->card));
 	cap->bus_info[0] = 0;
 	cap->version = KERNEL_VERSION(1, 0, 0);
-	cap->device_caps = V4L2_CAP_VIDEO_CAPTURE
-			| V4L2_CAP_VIDEO_OUTPUT
-			| V4L2_CAP_VIDEO_CAPTURE_MPLANE
-			| V4L2_CAP_VIDEO_OUTPUT_MPLANE
-			| V4L2_CAP_STREAMING
-			| V4L2_CAP_DEVICE_CAPS;
-
-	cap->capabilities = cap->device_caps;
 
 	return 0;
 }
@@ -152,7 +146,7 @@ static int mfc_enc_enum_fmt(struct v4l2_fmtdesc *f, bool mplane, bool out)
 
 		if (j == f->index) {
 			fmt = &enc_formats[i];
-			strlcpy(f->description, fmt->name,
+			strscpy(f->description, fmt->name,
 				sizeof(f->description));
 			f->pixelformat = fmt->fourcc;
 
@@ -168,25 +162,13 @@ static int mfc_enc_enum_fmt(struct v4l2_fmtdesc *f, bool mplane, bool out)
 static int vidioc_enum_fmt_vid_cap(struct file *file, void *pirv,
 				   struct v4l2_fmtdesc *f)
 {
-	return mfc_enc_enum_fmt(f, false, false);
-}
-
-static int vidioc_enum_fmt_vid_cap_mplane(struct file *file, void *pirv,
-					  struct v4l2_fmtdesc *f)
-{
-	return mfc_enc_enum_fmt(f, true, false);
+	return mfc_enc_enum_fmt(f, V4L2_TYPE_IS_MULTIPLANAR(f->type), false);
 }
 
 static int vidioc_enum_fmt_vid_out(struct file *file, void *prov,
 				   struct v4l2_fmtdesc *f)
 {
-	return mfc_enc_enum_fmt(f, false, true);
-}
-
-static int vidioc_enum_fmt_vid_out_mplane(struct file *file, void *prov,
-					  struct v4l2_fmtdesc *f)
-{
-	return mfc_enc_enum_fmt(f, true, true);
+	return mfc_enc_enum_fmt(f, V4L2_TYPE_IS_MULTIPLANAR(f->type), true);
 }
 
 static int vidioc_g_fmt(struct file *file, void *priv, struct v4l2_format *f)
@@ -428,7 +410,7 @@ static int vidioc_reqbufs(struct file *file, void *priv,
 {
 	struct s5p_mfc_ctx *ctx = fh_to_mfc_ctx(file->private_data);
 	int ret = 0;
-	void *alloc_ctx;
+	struct device *alloc_ctx;
 
 	mfc_debug_enter();
 
@@ -448,9 +430,9 @@ static int vidioc_reqbufs(struct file *file, void *priv,
 		}
 
 		if (ctx->is_drm)
-			alloc_ctx = ctx->dev->alloc_ctx_drm;
+			alloc_ctx = ctx->dev->device;
 		else
-			alloc_ctx = ctx->dev->alloc_ctx;
+			alloc_ctx = ctx->dev->device;
 
 		if (ctx->capture_state != QUEUE_FREE) {
 			mfc_err_ctx("invalid capture state: %d\n", ctx->capture_state);
@@ -478,9 +460,9 @@ static int vidioc_reqbufs(struct file *file, void *priv,
 		}
 
 		if (ctx->is_drm) {
-			alloc_ctx = ctx->dev->alloc_ctx_drm;
+			alloc_ctx = ctx->dev->device;
 		} else {
-			alloc_ctx = ctx->dev->alloc_ctx;
+			alloc_ctx = ctx->dev->device;
 		}
 
 		if (ctx->output_state != QUEUE_FREE) {
@@ -577,19 +559,21 @@ static int vidioc_qbuf(struct file *file, void *priv, struct v4l2_buffer *buf)
 
 	if (buf->type == V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE) {
 		for (i = 0; i < ctx->src_fmt->num_planes; i++) {
+			unsigned int plane_size = s5p_mfc_vq_plane_size(&ctx->vq_src, buf, i);
+
 			if (!buf->m.planes[i].bytesused) {
 				mfc_debug(2, "Src input[%d] size zero, "
 						"changed to buf size %d\n",
-						i, ctx->vq_src.plane_sizes[i]);
-				buf->m.planes[i].bytesused = ctx->vq_src.plane_sizes[i];
+						i, plane_size);
+				buf->m.planes[i].bytesused = plane_size;
 			} else {
 				mfc_debug(2, "Src input[%d] size %d\n",
 						i, buf->m.planes[i].bytesused);
 			}
 		}
-		ret = vb2_qbuf(&ctx->vq_src, buf);
+		ret = s5p_mfc_vb2_qbuf(ctx, &ctx->vq_src, buf);
 	} else {
-		ret = vb2_qbuf(&ctx->vq_dst, buf);
+		ret = s5p_mfc_vb2_qbuf(ctx, &ctx->vq_dst, buf);
 	}
 
 	mfc_debug_leave();
@@ -610,9 +594,9 @@ static int vidioc_dqbuf(struct file *file, void *priv, struct v4l2_buffer *buf)
 		return -EIO;
 	}
 	if (buf->type == V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE)
-		ret = vb2_dqbuf(&ctx->vq_src, buf, file->f_flags & O_NONBLOCK);
+		ret = s5p_mfc_vb2_dqbuf(ctx, &ctx->vq_src, buf, file->f_flags & O_NONBLOCK);
 	else
-		ret = vb2_dqbuf(&ctx->vq_dst, buf, file->f_flags & O_NONBLOCK);
+		ret = s5p_mfc_vb2_dqbuf(ctx, &ctx->vq_dst, buf, file->f_flags & O_NONBLOCK);
 	mfc_debug_leave();
 	return ret;
 }
@@ -671,19 +655,6 @@ static int vidioc_streamoff(struct file *file, void *priv,
 	mfc_debug_leave();
 
 	return ret;
-}
-
-/* Query a ctrl */
-static int vidioc_queryctrl(struct file *file, void *priv,
-			    struct v4l2_queryctrl *qc)
-{
-	struct v4l2_queryctrl *c;
-
-	c = mfc_enc_get_ctrl(qc->id);
-	if (!c)
-		return -EINVAL;
-	*qc = *c;
-	return 0;
 }
 
 static int mfc_enc_ext_info(struct s5p_mfc_ctx *ctx)
@@ -790,8 +761,7 @@ static int mfc_enc_get_ctrl_val(struct s5p_mfc_ctx *ctx, struct v4l2_control *ct
 	return ret;
 }
 
-static int vidioc_g_ctrl(struct file *file, void *priv,
-			 struct v4l2_control *ctrl)
+int s5p_mfc_enc_g_ctrl(struct file *file, struct v4l2_control *ctrl)
 {
 	struct s5p_mfc_ctx *ctx = fh_to_mfc_ctx(file->private_data);
 	int ret = 0;
@@ -1663,8 +1633,7 @@ static int mfc_enc_set_ctrl_val(struct s5p_mfc_ctx *ctx, struct v4l2_control *ct
 	return ret;
 }
 
-static int vidioc_s_ctrl(struct file *file, void *priv,
-			 struct v4l2_control *ctrl)
+int s5p_mfc_enc_s_ctrl(struct file *file, struct v4l2_control *ctrl)
 {
 	struct s5p_mfc_ctx *ctx = fh_to_mfc_ctx(file->private_data);
 	int ret = 0;
@@ -1691,7 +1660,7 @@ static int vidioc_g_ext_ctrls(struct file *file, void *priv,
 	int i;
 	int ret = 0;
 
-	if (f->ctrl_class != V4L2_CTRL_CLASS_MPEG)
+	if (f->which != V4L2_CTRL_CLASS_MPEG && f->which != 0)
 		return -EINVAL;
 
 	for (i = 0; i < f->count; i++) {
@@ -1722,7 +1691,7 @@ static int vidioc_s_ext_ctrls(struct file *file, void *priv,
 	int i;
 	int ret = 0;
 
-	if (f->ctrl_class != V4L2_CTRL_CLASS_MPEG)
+	if (f->which != V4L2_CTRL_CLASS_MPEG && f->which != 0)
 		return -EINVAL;
 
 	for (i = 0; i < f->count; i++) {
@@ -1758,7 +1727,7 @@ static int vidioc_try_ext_ctrls(struct file *file, void *priv,
 	int i;
 	int ret = 0;
 
-	if (f->ctrl_class != V4L2_CTRL_CLASS_MPEG)
+	if (f->which != V4L2_CTRL_CLASS_MPEG && f->which != 0)
 		return -EINVAL;
 
 	for (i = 0; i < f->count; i++) {
@@ -1782,9 +1751,7 @@ static int vidioc_try_ext_ctrls(struct file *file, void *priv,
 static const struct v4l2_ioctl_ops s5p_mfc_enc_ioctl_ops = {
 	.vidioc_querycap		= vidioc_querycap,
 	.vidioc_enum_fmt_vid_cap	= vidioc_enum_fmt_vid_cap,
-	.vidioc_enum_fmt_vid_cap_mplane	= vidioc_enum_fmt_vid_cap_mplane,
 	.vidioc_enum_fmt_vid_out	= vidioc_enum_fmt_vid_out,
-	.vidioc_enum_fmt_vid_out_mplane	= vidioc_enum_fmt_vid_out_mplane,
 	.vidioc_g_fmt_vid_cap_mplane	= vidioc_g_fmt,
 	.vidioc_g_fmt_vid_out_mplane	= vidioc_g_fmt,
 	.vidioc_try_fmt_vid_cap_mplane	= vidioc_try_fmt,
@@ -1797,9 +1764,6 @@ static const struct v4l2_ioctl_ops s5p_mfc_enc_ioctl_ops = {
 	.vidioc_dqbuf			= vidioc_dqbuf,
 	.vidioc_streamon		= vidioc_streamon,
 	.vidioc_streamoff		= vidioc_streamoff,
-	.vidioc_queryctrl		= vidioc_queryctrl,
-	.vidioc_g_ctrl			= vidioc_g_ctrl,
-	.vidioc_s_ctrl			= vidioc_s_ctrl,
 	.vidioc_g_ext_ctrls		= vidioc_g_ext_ctrls,
 	.vidioc_s_ext_ctrls		= vidioc_s_ext_ctrls,
 	.vidioc_try_ext_ctrls		= vidioc_try_ext_ctrls,

@@ -18,7 +18,7 @@
 
 #include "s5p_mfc_utils.h"
 
-extern int nal_q_parallel_enable;
+extern int mfc_nal_q_parallel_enable;
 void s5p_mfc_open_inst(struct s5p_mfc_ctx *ctx)
 {
 	/* Preparing decoding - getting instance number */
@@ -121,7 +121,7 @@ int s5p_mfc_init_decode(struct s5p_mfc_ctx *ctx)
 
 	/* Disable parallel processing in FW when using NAL-Q
 	   It has to be enabled 11.0 */
-	if (!nal_q_parallel_enable)
+	if (!mfc_nal_q_parallel_enable)
 		reg |= (0x2 << S5P_FIMV_D_DEC_OPT_PARALLEL_PROCESSING_SHIFT);
 
 	/* Realloc buffer for resolution decrease case in NAL QUEUE mode */

@@ -9,10 +9,6 @@
  * the Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
  */
-#ifdef CONFIG_SEC_DEBUG_EXTRA_INFO
-#include <linux/sec_debug.h>
-#endif
-
 #include "s5p_mfc_watchdog.h"
 
 #include "s5p_mfc_sync.h"
@@ -24,7 +20,7 @@
 #include "s5p_mfc_queue.h"
 #include "s5p_mfc_utils.h"
 
-extern int dbg_enable;
+extern int mfc_dbg_enable;
 
 #define MFC_SFR_AREA_COUNT	20
 static void mfc_dump_regs(struct s5p_mfc_dev *dev)
@@ -66,7 +62,7 @@ static void mfc_dump_regs(struct s5p_mfc_dev *dev)
 		printk("...\n");
 	}
 
-	if (dbg_enable) {
+	if (mfc_dbg_enable) {
 		buf_size = dev->variant->buf_size->buf;
 		printk("[DBG INFO dump]\n");
 		print_hex_dump(KERN_ERR, "", DUMP_PREFIX_ADDRESS, 32, 4, dev->dbg_info_buf.vaddr,
@@ -98,7 +94,7 @@ const u32 s5p_mfc_logging_sfr_set2[MFC_SFR_LOGGING_COUNT_SET2] = {
 
 };
 
-int mfc_change_hex_to_ascii(u32 hex, u32 byte, char *ascii, int idx)
+static int mfc_change_hex_to_ascii(u32 hex, u32 byte, char *ascii, int idx)
 {
 	int i;
 	char tmp;
@@ -148,32 +144,6 @@ static void mfc_merge_errorinfo_data(struct s5p_mfc_dev *dev, bool px_fault)
 			idx = mfc_change_hex_to_ascii(dev->logging_data->SFRs_set1[i], 8, errorinfo, idx);
 	}
 
-	/* SYSMMU info */
-	if (dev->logging_data->mmu_fi) {
-		ret = snprintf(errorinfo + idx, 3, "/");
-		idx += ret;
-		idx = mfc_change_hex_to_ascii(dev->logging_data->mmu_fi->is_secure, 1, errorinfo, idx);
-		idx = mfc_change_hex_to_ascii(dev->logging_data->mmu_fi->has_lv2, 1, errorinfo, idx);
-		idx = mfc_change_hex_to_ascii(dev->logging_data->mmu_fi->fault_addr, 8, errorinfo, idx);
-		idx = mfc_change_hex_to_ascii(dev->logging_data->mmu_fi->lv1_entry, 8, errorinfo, idx);
-		idx = mfc_change_hex_to_ascii(dev->logging_data->mmu_fi->lv2_entry, 8, errorinfo, idx);
-		idx = mfc_change_hex_to_ascii(dev->logging_data->mmu_fi->tlb_ppn, 8, errorinfo, idx);
-		idx = mfc_change_hex_to_ascii(dev->logging_data->mmu_fi->tlb_attr, 8, errorinfo, idx);
-		idx = mfc_change_hex_to_ascii(dev->logging_data->mmu_fi->sbb_link, 8, errorinfo, idx);
-		idx = mfc_change_hex_to_ascii(dev->logging_data->mmu_fi->sbb_attr, 8, errorinfo, idx);
-		idx = mfc_change_hex_to_ascii(dev->logging_data->mmu_fi->flags, 8, errorinfo, idx);
-		idx = mfc_change_hex_to_ascii(dev->logging_data->mmu_fi->map_start, 8, errorinfo, idx);
-		idx = mfc_change_hex_to_ascii(dev->logging_data->mmu_fi->map_end, 8, errorinfo, idx);
-		idx = mfc_change_hex_to_ascii(dev->logging_data->mmu_fi->unmap_start, 8, errorinfo, idx);
-		idx = mfc_change_hex_to_ascii(dev->logging_data->mmu_fi->unmap_end, 8, errorinfo, idx);
-		idx = mfc_change_hex_to_ascii(dev->logging_data->mmu_fi->fault_time.tv_sec, 8, errorinfo, idx);
-		idx = mfc_change_hex_to_ascii(dev->logging_data->mmu_fi->fault_time.tv_usec, 8, errorinfo, idx);
-		idx = mfc_change_hex_to_ascii(dev->logging_data->mmu_fi->map_time.tv_sec, 8, errorinfo, idx);
-		idx = mfc_change_hex_to_ascii(dev->logging_data->mmu_fi->map_time.tv_usec, 8, errorinfo, idx);
-		idx = mfc_change_hex_to_ascii(dev->logging_data->mmu_fi->unmap_time.tv_sec, 8, errorinfo, idx);
-		idx = mfc_change_hex_to_ascii(dev->logging_data->mmu_fi->unmap_time.tv_usec, 8, errorinfo, idx);
-	}
-
 	/* driver info */
 	ret = snprintf(errorinfo + idx, 3, "/");
 	idx += ret;
@@ -216,10 +186,6 @@ static void mfc_merge_errorinfo_data(struct s5p_mfc_dev *dev, bool px_fault)
 	}
 
 	pr_err("%s\n", errorinfo);
-
-#ifdef CONFIG_SEC_DEBUG_EXTRA_INFO
-	sec_debug_set_extra_info_mfc_error(errorinfo);
-#endif
 }
 
 static void mfc_save_logging_sfr(struct s5p_mfc_dev *dev)
@@ -279,10 +245,10 @@ static void mfc_save_logging_sfr(struct s5p_mfc_dev *dev)
 	dev->logging_data->curr_ctx = dev->curr_ctx;
 	dev->logging_data->last_cmd = dev->last_cmd;
 	dev->logging_data->last_cmd_sec = dev->last_cmd_time.tv_sec;
-	dev->logging_data->last_cmd_usec = dev->last_cmd_time.tv_usec;
+	dev->logging_data->last_cmd_usec = dev->last_cmd_time.tv_nsec / NSEC_PER_USEC;
 	dev->logging_data->last_int = dev->last_int;
 	dev->logging_data->last_int_sec = dev->last_int_time.tv_sec;
-	dev->logging_data->last_int_usec = dev->last_int_time.tv_usec;
+	dev->logging_data->last_int_usec = dev->last_int_time.tv_nsec / NSEC_PER_USEC;
 	dev->logging_data->hwlock_dev = dev->hwlock.dev;
 	dev->logging_data->hwlock_ctx = dev->hwlock.bits;
 	dev->logging_data->num_inst = dev->num_inst;
@@ -460,7 +426,6 @@ void s5p_mfc_dump_info_and_stop_hw(struct s5p_mfc_dev *dev)
 	mfc_print_trace(dev);
 	mfc_save_logging_sfr(dev);
 	mfc_dump_regs(dev);
-	exynos_sysmmu_show_status(dev->device);
 	BUG();
 }
 

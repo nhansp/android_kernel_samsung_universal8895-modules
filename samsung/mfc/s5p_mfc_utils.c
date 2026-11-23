@@ -10,7 +10,6 @@
  * (at your option) any later version.
  */
 
-#include <linux/smc.h>
 
 #include "s5p_mfc_utils.h"
 
@@ -467,9 +466,9 @@ void s5p_mfc_protect_dpb(struct s5p_mfc_ctx *ctx, struct s5p_mfc_buf *dst_mb)
 	}
 }
 
-void s5p_mfc_watchdog_tick(unsigned long arg)
+void s5p_mfc_watchdog_tick(struct timer_list *t)
 {
-	struct s5p_mfc_dev *dev = (struct s5p_mfc_dev *)arg;
+	struct s5p_mfc_dev *dev = timer_container_of(dev, t, watchdog_timer);
 
 	if (!dev) {
 		mfc_err_dev("no mfc device to run\n");

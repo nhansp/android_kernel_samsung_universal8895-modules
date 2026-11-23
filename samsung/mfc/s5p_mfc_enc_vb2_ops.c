@@ -26,16 +26,15 @@
 #include "s5p_mfc_mem.h"
 
 static int s5p_mfc_enc_queue_setup(struct vb2_queue *vq,
-				const void *parg,
 				unsigned int *buf_count, unsigned int *plane_count,
-				unsigned int psize[], void *allocators[])
+				unsigned int psize[], struct device *alloc_devs[])
 {
 	struct s5p_mfc_ctx *ctx = vq->drv_priv;
 	struct s5p_mfc_enc *enc = ctx->enc_priv;
 	struct s5p_mfc_raw_info *raw;
 	int i;
-	void *alloc_ctx = ctx->dev->alloc_ctx;
-	void *output_ctx;
+	struct device *alloc_ctx = ctx->dev->device;
+	struct device *output_ctx;
 
 	mfc_debug_enter();
 
@@ -63,9 +62,9 @@ static int s5p_mfc_enc_queue_setup(struct vb2_queue *vq,
 
 		psize[0] = enc->dst_buf_size;
 		if (ctx->is_drm)
-			allocators[0] = ctx->dev->alloc_ctx_drm;
+			alloc_devs[0] = ctx->dev->device;
 		else
-			allocators[0] = alloc_ctx;
+			alloc_devs[0] = alloc_ctx;
 	} else if (vq->type == V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE) {
 		raw = &ctx->raw_buf;
 
@@ -80,18 +79,18 @@ static int s5p_mfc_enc_queue_setup(struct vb2_queue *vq,
 			*buf_count = MFC_MAX_BUFFERS;
 
 		if (ctx->is_drm) {
-			output_ctx = ctx->dev->alloc_ctx_drm;
+			output_ctx = ctx->dev->device;
 		} else {
 			output_ctx = alloc_ctx;
 		}
 
 		if (*plane_count == 1) {
 			psize[0] = raw->total_plane_size;
-			allocators[0] = output_ctx;
+			alloc_devs[0] = output_ctx;
 		} else {
 			for (i = 0; i < *plane_count; i++) {
 				psize[i] = raw->plane_size[i];
-				allocators[i] = output_ctx;
+				alloc_devs[i] = output_ctx;
 			}
 		}
 	} else {
@@ -393,9 +392,7 @@ static void s5p_mfc_enc_buf_queue(struct vb2_buffer *vb)
 		mfc_err_ctx("unsupported buffer type (%d)\n", vq->type);
 	}
 
-	mfc_debug(7, "timestamp: %ld %ld\n",
-			buf->vb.timestamp.tv_sec,
-			buf->vb.timestamp.tv_usec);
+	mfc_debug(7, "timestamp: %llu ns\n", buf->vb.vb2_buf.timestamp);
 	mfc_debug(7, "qos ratio: %d\n", ctx->qos_ratio);
 
 	s5p_mfc_qos_update_last_framerate(ctx, &buf->vb);

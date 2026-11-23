@@ -13,14 +13,16 @@
 #ifndef __S5P_MFC_DEBUG_H
 #define __S5P_MFC_DEBUG_H __FILE__
 
+#include <linux/sched/clock.h>
+
 #define DEBUG
 
 #ifdef DEBUG
-extern int debug;
+extern int mfc_debug_level;
 
 #define mfc_debug(level, fmt, args...)				\
 	do {							\
-		if (debug >= level)				\
+		if (mfc_debug_level >= level)				\
 			printk(KERN_DEBUG "%s:%d: " fmt,	\
 				__func__, __LINE__, ##args);	\
 	} while (0)

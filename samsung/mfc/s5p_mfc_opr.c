@@ -123,7 +123,7 @@ int s5p_mfc_run_dec_frame(struct s5p_mfc_ctx *ctx)
 		}
 	}
 
-	if (src_mb->vb.reserved2 & FLAG_EMPTY_DATA)
+	if (src_mb->reserved2 & FLAG_EMPTY_DATA)
 		src_mb->vb.vb2_buf.planes[0].bytesused = 0;
 
 	if (dec->consumed)
@@ -146,7 +146,7 @@ int s5p_mfc_run_dec_frame(struct s5p_mfc_ctx *ctx)
 
 	s5p_mfc_clean_ctx_int_flags(ctx);
 
-	if (src_mb->vb.reserved2 & FLAG_LAST_FRAME) {
+	if (src_mb->reserved2 & FLAG_LAST_FRAME) {
 		last_frame = 1;
 		mfc_debug(2, "Setting ctx->state to FINISHING\n");
 		s5p_mfc_change_state(ctx, MFCINST_FINISHING);
@@ -281,7 +281,7 @@ int s5p_mfc_run_enc_frame(struct s5p_mfc_ctx *ctx)
 		return -EAGAIN;
 	}
 
-	if (src_mb->vb.reserved2 & FLAG_LAST_FRAME) {
+	if (src_mb->reserved2 & FLAG_LAST_FRAME) {
 		last_frame = 1;
 		mfc_debug(2, "Setting ctx->state to FINISHING\n");
 		s5p_mfc_change_state(ctx, MFCINST_FINISHING);

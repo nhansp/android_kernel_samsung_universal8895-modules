@@ -138,7 +138,7 @@ void s5p_mfc_protect_dpb(struct s5p_mfc_ctx *ctx, struct s5p_mfc_buf *dst_mb);
 /* After how many executions watchdog should assume lock up */
 #define WATCHDOG_TICK_CNT_TO_START_WATCHDOG        5
 
-void s5p_mfc_watchdog_tick(unsigned long arg);
+void s5p_mfc_watchdog_tick(struct timer_list *t);
 void s5p_mfc_watchdog_start_tick(struct s5p_mfc_dev *dev);
 void s5p_mfc_watchdog_stop_tick(struct s5p_mfc_dev *dev);
 void s5p_mfc_watchdog_reset_tick(struct s5p_mfc_dev *dev);

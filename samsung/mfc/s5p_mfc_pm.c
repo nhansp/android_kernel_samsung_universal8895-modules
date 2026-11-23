@@ -12,7 +12,6 @@
 
 #include <linux/pm_runtime.h>
 #include <linux/clk.h>
-#include <linux/smc.h>
 
 #include "s5p_mfc_pm.h"
 
@@ -39,7 +38,6 @@ int s5p_mfc_pm_clock_on(struct s5p_mfc_dev *dev)
 {
 	int ret = 0;
 	int state;
-	unsigned long flags;
 
 	dev->pm.clock_on_steps = 1;
 	state = atomic_read(&dev->clk_ref);
@@ -55,21 +53,6 @@ int s5p_mfc_pm_clock_on(struct s5p_mfc_dev *dev)
 		s5p_mfc_set_risc_base_addr(dev, dev->pm.base_type);
 
 	dev->pm.clock_on_steps |= 0x1 << 2;
-	if (dev->curr_ctx_is_drm) {
-		spin_lock_irqsave(&dev->pm.clklock, flags);
-		mfc_debug(3, "Begin: enable protection\n");
-		ret = exynos_smc(SMC_PROTECTION_SET, 0,
-					dev->id, SMC_PROTECTION_ENABLE);
-		dev->pm.clock_on_steps |= 0x1 << 3;
-		if (ret != DRMDRV_OK) {
-			mfc_err_dev("Protection Enable failed! ret(%u)\n", ret);
-			spin_unlock_irqrestore(&dev->pm.clklock, flags);
-			clk_disable(dev->pm.clock);
-			return -EACCES;
-		}
-		mfc_debug(3, "End: enable protection\n");
-		spin_unlock_irqrestore(&dev->pm.clklock, flags);
-	}
 
 	dev->pm.clock_on_steps |= 0x1 << 4;
 	atomic_inc_return(&dev->clk_ref);
@@ -98,8 +81,6 @@ int s5p_mfc_pm_clock_on_with_base(struct s5p_mfc_dev *dev,
 void s5p_mfc_pm_clock_off(struct s5p_mfc_dev *dev)
 {
 	int state;
-	unsigned long flags;
-	int ret = 0;
 
 	dev->pm.clock_off_steps = 1;
 	state = atomic_read(&dev->clk_ref);
@@ -114,22 +95,6 @@ void s5p_mfc_pm_clock_off(struct s5p_mfc_dev *dev)
 		atomic_set(&dev->clk_ref, 0);
 		dev->pm.clock_off_steps |= 0x1 << 3;
 	} else {
-		if (dev->curr_ctx_is_drm) {
-			mfc_debug(3, "Begin: disable protection\n");
-			spin_lock_irqsave(&dev->pm.clklock, flags);
-			dev->pm.clock_off_steps |= 0x1 << 4;
-			ret = exynos_smc(SMC_PROTECTION_SET, 0,
-					dev->id, SMC_PROTECTION_DISABLE);
-			if (ret != DRMDRV_OK) {
-				mfc_err_dev("Protection Disable failed! ret(%u)\n", ret);
-				spin_unlock_irqrestore(&dev->pm.clklock, flags);
-				clk_disable(dev->pm.clock);
-				return;
-			}
-			mfc_debug(3, "End: disable protection\n");
-			dev->pm.clock_off_steps |= 0x1 << 5;
-			spin_unlock_irqrestore(&dev->pm.clklock, flags);
-		}
 		dev->pm.clock_off_steps |= 0x1 << 6;
 		clk_disable(dev->pm.clock);
 	}

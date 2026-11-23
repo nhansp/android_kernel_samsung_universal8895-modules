@@ -53,7 +53,7 @@ int s5p_mfc_peek_buf_csd(spinlock_t *plock, struct s5p_mfc_buf_queue *queue)
 
 	mfc_buf = list_entry(queue->head.next, struct s5p_mfc_buf, list);
 
-	csd = mfc_buf->vb.reserved2 & FLAG_CSD ? 1 : 0;
+	csd = mfc_buf->reserved2 & FLAG_CSD ? 1 : 0;
 
 	mfc_debug(2, "mfc_buf: %p\n", mfc_buf);
 	mfc_debug(2, "First plane address: 0x%08llx\n",
@@ -526,8 +526,9 @@ void s5p_mfc_cleanup_queue(spinlock_t *plock, struct s5p_mfc_buf_queue *queue)
 	spin_unlock_irqrestore(plock, flags);
 }
 
-struct s5p_mfc_buf *mfc_find_buf_index(spinlock_t *plock, struct s5p_mfc_buf_queue *queue,
-		int index)
+static struct s5p_mfc_buf *mfc_find_buf_index(spinlock_t *plock,
+					      struct s5p_mfc_buf_queue *queue,
+					      int index)
 {
 	unsigned long flags;
 	struct s5p_mfc_buf *mfc_buf = NULL;
@@ -779,7 +780,7 @@ void s5p_mfc_cleanup_enc_dst_queue(struct s5p_mfc_ctx *ctx)
 }
 
 /* Check all buffers are referenced or not */
-struct s5p_mfc_buf *mfc_check_full_refered_dpb(struct s5p_mfc_ctx *ctx)
+static struct s5p_mfc_buf *mfc_check_full_refered_dpb(struct s5p_mfc_ctx *ctx)
 {
 	struct s5p_mfc_dec *dec = NULL;
 	struct s5p_mfc_buf *mfc_buf = NULL;
@@ -1002,7 +1003,7 @@ int s5p_mfc_is_last_frame(struct s5p_mfc_ctx *ctx)
 	mfc_debug(2, "First plane address: 0x%08llx\n",
 		s5p_mfc_mem_get_daddr_vb(&src_mb->vb.vb2_buf, 0));
 
-	if (src_mb->vb.reserved2 & FLAG_LAST_FRAME) {
+	if (src_mb->reserved2 & FLAG_LAST_FRAME) {
 		mfc_debug(2, "last frame!\n");
 		spin_unlock_irqrestore(&ctx->buf_queue_lock, flags);
 		return 1;
@@ -1012,6 +1013,54 @@ int s5p_mfc_is_last_frame(struct s5p_mfc_ctx *ctx)
 	spin_unlock_irqrestore(&ctx->buf_queue_lock, flags);
 
 	mfc_debug_leave();
+
+	return 0;
+}
+
+/* The plane size queue_setup asked for, 0 for an unknown buffer */
+unsigned int s5p_mfc_vq_plane_size(struct vb2_queue *q, struct v4l2_buffer *b,
+				   unsigned int plane)
+{
+	struct vb2_buffer *vb = vb2_get_buffer(q, b->index);
+
+	if (!vb || plane >= vb->num_planes)
+		return 0;
+
+	return vb->planes[plane].min_length;
+}
+
+/*
+ * vb2 drops v4l2_buffer.reserved2, which carries the OMX codec flags in and the
+ * SEI flags out. Take it only from a buffer user space owns.
+ */
+int s5p_mfc_vb2_qbuf(struct s5p_mfc_ctx *ctx, struct vb2_queue *q,
+		     struct v4l2_buffer *b)
+{
+	struct vb2_buffer *vb = vb2_get_buffer(q, b->index);
+
+	if (!vb)
+		return -EINVAL;
+
+	if (vb->state == VB2_BUF_STATE_DEQUEUED ||
+	    vb->state == VB2_BUF_STATE_IN_REQUEST)
+		vb_to_mfc_buf(vb)->reserved2 = b->reserved2;
+
+	return vb2_qbuf(q, NULL, b);
+}
+
+int s5p_mfc_vb2_dqbuf(struct s5p_mfc_ctx *ctx, struct vb2_queue *q,
+		      struct v4l2_buffer *b, bool nonblocking)
+{
+	struct vb2_buffer *vb;
+	int ret;
+
+	ret = vb2_dqbuf(q, b, nonblocking);
+	if (ret)
+		return ret;
+
+	vb = vb2_get_buffer(q, b->index);
+	if (vb)
+		b->reserved2 = vb_to_mfc_buf(vb)->reserved2;
 
 	return 0;
 }

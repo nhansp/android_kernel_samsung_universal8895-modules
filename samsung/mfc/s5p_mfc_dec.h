@@ -16,5 +16,7 @@
 #include "s5p_mfc_common.h"
 
 const struct v4l2_ioctl_ops *s5p_mfc_get_dec_v4l2_ioctl_ops(void);
+int s5p_mfc_dec_g_ctrl(struct file *file, struct v4l2_control *ctrl);
+int s5p_mfc_dec_s_ctrl(struct file *file, struct v4l2_control *ctrl);
 
 #endif /* __S5P_MFC_DEC_H */

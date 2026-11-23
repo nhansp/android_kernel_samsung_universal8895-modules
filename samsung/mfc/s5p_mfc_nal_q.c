@@ -28,8 +28,8 @@
 
 #ifdef NAL_Q_ENABLE
 
-extern int nal_q_disable;
-extern int nal_q_dump;
+extern int mfc_nal_q_disable;
+extern int mfc_nal_q_dump;
 
 int s5p_mfc_nal_q_check_enable(struct s5p_mfc_dev *dev)
 {
@@ -40,7 +40,7 @@ int s5p_mfc_nal_q_check_enable(struct s5p_mfc_dev *dev)
 
 	mfc_debug_enter();
 
-	if (nal_q_disable)
+	if (mfc_nal_q_disable)
 		return 0;
 
 	for (i = 0; i < MFC_NUM_CONTEXTS; i++) {
@@ -144,8 +144,9 @@ static nal_queue_in_handle* mfc_nal_q_create_in_q(struct s5p_mfc_dev *dev,
 	}
 
 	nal_q_in_handle->nal_q_handle = nal_q_handle;
-	nal_q_in_handle->in_alloc = s5p_mfc_mem_alloc(dev->alloc_ctx,
-			NAL_Q_IN_ENTRY_SIZE * (NAL_Q_IN_QUEUE_SIZE + 2));
+	nal_q_in_handle->in_alloc =
+		s5p_mfc_mem_alloc(dev->device,
+				  NAL_Q_IN_ENTRY_SIZE * (NAL_Q_IN_QUEUE_SIZE + 2));
 
 	if (IS_ERR(nal_q_in_handle->in_alloc)) {
 		mfc_err_dev("NAL Q: failed to get memory\n");
@@ -186,8 +187,9 @@ static nal_queue_out_handle* mfc_nal_q_create_out_q(struct s5p_mfc_dev *dev,
 	}
 
 	nal_q_out_handle->nal_q_handle = nal_q_handle;
-	nal_q_out_handle->out_alloc = s5p_mfc_mem_alloc(dev->alloc_ctx,
-			NAL_Q_OUT_ENTRY_SIZE * (NAL_Q_OUT_QUEUE_SIZE + 2));
+	nal_q_out_handle->out_alloc =
+		s5p_mfc_mem_alloc(dev->device,
+				  NAL_Q_OUT_ENTRY_SIZE * (NAL_Q_OUT_QUEUE_SIZE + 2));
 
 	if (IS_ERR(nal_q_out_handle->out_alloc)) {
 		mfc_err_dev("NAL Q: failed to get memory\n");
@@ -976,9 +978,7 @@ static void mfc_nal_q_handle_frame_copy_timestamp(struct s5p_mfc_ctx *ctx, Decod
 	ref_mb = s5p_mfc_find_buf_vb(&ctx->buf_queue_lock,
 			&ctx->ref_buf_queue, dec_y_addr);
 	if (ref_mb) {
-		memcpy(&ref_mb->vb.timestamp,
-				&src_mb->vb.timestamp,
-				sizeof(struct timeval));
+		ref_mb->vb.vb2_buf.timestamp = src_mb->vb.vb2_buf.timestamp;
 	}
 
 	mfc_debug_leave();
@@ -1102,23 +1102,23 @@ static void mfc_nal_q_handle_frame_new(struct s5p_mfc_ctx *ctx, unsigned int err
 			ref_mb->vb.sequence = ctx->sequence;
 
 			/* Set reserved2 bits in order to inform SEI information */
-			ref_mb->vb.reserved2 = 0;
+			ref_mb->reserved2 = 0;
 
 			if (is_content_light) {
-				ref_mb->vb.reserved2 |= (1 << 0);
+				ref_mb->reserved2 |= (1 << 0);
 				mfc_debug(2, "NAL Q: content light level parsed\n");
 			}
 			if (is_display_colour) {
-				ref_mb->vb.reserved2 |= (1 << 1);
+				ref_mb->reserved2 |= (1 << 1);
 				mfc_debug(2, "NAL Q: mastering display colour parsed\n");
 			}
 			if (is_video_signal_type) {
-				ref_mb->vb.reserved2 |= (1 << 4);
+				ref_mb->reserved2 |= (1 << 4);
 				mfc_debug(2, "NAL Q: video signal type parsed\n");
 				if (is_colour_description) {
-					ref_mb->vb.reserved2 |= (1 << 2);
+					ref_mb->reserved2 |= (1 << 2);
 					mfc_debug(2, "NAL Q: matrix coefficients parsed\n");
-					ref_mb->vb.reserved2 |= (1 << 3);
+					ref_mb->reserved2 |= (1 << 3);
 					mfc_debug(2, "NAL Q: colour description parsed\n");
 				}
 			}
@@ -1192,7 +1192,7 @@ static void mfc_nal_q_handle_frame_new(struct s5p_mfc_ctx *ctx, unsigned int err
 	mfc_debug_leave();
 }
 
-void mfc_nal_q_handle_frame(struct s5p_mfc_ctx *ctx, DecoderOutputStr *pOutStr)
+static void mfc_nal_q_handle_frame(struct s5p_mfc_ctx *ctx, DecoderOutputStr *pOutStr)
 {
 	struct s5p_mfc_dev *dev;
 	struct s5p_mfc_dec *dec;
@@ -1369,7 +1369,7 @@ leave_handle_frame:
 	mfc_debug_leave();
 }
 
-void mfc_nal_q_handle_error(struct s5p_mfc_ctx *ctx, EncoderOutputStr *pOutStr)
+static void mfc_nal_q_handle_error(struct s5p_mfc_ctx *ctx, EncoderOutputStr *pOutStr)
 {
 	struct s5p_mfc_dev *dev;
 	struct s5p_mfc_dec *dec;
@@ -1537,7 +1537,7 @@ int s5p_mfc_nal_q_enqueue_in_buf(struct s5p_mfc_dev *dev, struct s5p_mfc_ctx *ct
 		return ret;
 	}
 
-	if (nal_q_dump == 1) {
+	if (mfc_nal_q_dump == 1) {
 		mfc_err_dev("[NAL-Q][DUMP][%s INPUT][c: %d] diff: %d, count: %d, exe: %d\n",
 				ctx->type == MFCINST_ENCODER ? "ENC" : "DEC", dev->curr_ctx,
 				input_diff, input_count, input_exe_count);
@@ -1620,7 +1620,7 @@ EncoderOutputStr *s5p_mfc_nal_q_dequeue_out_buf(struct s5p_mfc_dev *dev,
 	}
 
 	ctx = dev->ctx[nal_q_out_handle->nal_q_ctx];
-	if (nal_q_dump == 1) {
+	if (mfc_nal_q_dump == 1) {
 		mfc_err_dev("[NAL-Q][DUMP][%s OUTPUT][c: %d] diff: %d, count: %d, exe: %d\n",
 				ctx->type == MFCINST_ENCODER ? "ENC" : "DEC",
 				nal_q_out_handle->nal_q_ctx,

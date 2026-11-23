@@ -11,6 +11,7 @@
  */
 
 #include <linux/err.h>
+#include <linux/math64.h>
 #include <soc/samsung/bts.h>
 
 #include "s5p_mfc_qos.h"
@@ -34,20 +35,16 @@ static void mfc_qos_operate(struct s5p_mfc_ctx *ctx, int opr_type, int idx)
 		MFC_TRACE_CTX("++ QOS add[%d] (int:%d, mif:%d)\n",
 			idx, qos_table[idx].freq_int, qos_table[idx].freq_mif);
 
-		pm_qos_add_request(&dev->qos_req_int,
-				PM_QOS_DEVICE_THROUGHPUT,
-				qos_table[idx].freq_int);
-		pm_qos_add_request(&dev->qos_req_mif,
-				PM_QOS_BUS_THROUGHPUT,
-				qos_table[idx].freq_mif);
+		mm_qos_add_request(&dev->qos_req_int, MM_QOS_INT,
+				   qos_table[idx].freq_int);
+		mm_qos_add_request(&dev->qos_req_mif, MM_QOS_MIF,
+				   qos_table[idx].freq_mif);
 
 #ifdef CONFIG_ARM_EXYNOS_MP_CPUFREQ
-		pm_qos_add_request(&dev->qos_req_cluster1,
-				PM_QOS_CLUSTER1_FREQ_MIN,
-				qos_table[idx].freq_cpu);
-		pm_qos_add_request(&dev->qos_req_cluster0,
-				PM_QOS_CLUSTER0_FREQ_MIN,
-				qos_table[idx].freq_kfc);
+		mm_qos_add_request(&dev->qos_req_cluster1, MM_QOS_CL1_MIN,
+				   qos_table[idx].freq_cpu);
+		mm_qos_add_request(&dev->qos_req_cluster0, MM_QOS_CL0_MIN,
+				   qos_table[idx].freq_kfc);
 #endif
 
 		if (ctx->type == MFCINST_DECODER)
@@ -66,16 +63,16 @@ static void mfc_qos_operate(struct s5p_mfc_ctx *ctx, int opr_type, int idx)
 		MFC_TRACE_CTX("++ QOS update[%d] (int:%d, mif:%d)\n",
 				idx, qos_table[idx].freq_int, qos_table[idx].freq_mif);
 
-		pm_qos_update_request(&dev->qos_req_int,
-				qos_table[idx].freq_int);
-		pm_qos_update_request(&dev->qos_req_mif,
-				qos_table[idx].freq_mif);
+		mm_qos_update_request(&dev->qos_req_int,
+				      qos_table[idx].freq_int);
+		mm_qos_update_request(&dev->qos_req_mif,
+				      qos_table[idx].freq_mif);
 
 #ifdef CONFIG_ARM_EXYNOS_MP_CPUFREQ
-		pm_qos_update_request(&dev->qos_req_cluster1,
-				qos_table[idx].freq_cpu);
-		pm_qos_update_request(&dev->qos_req_cluster0,
-				qos_table[idx].freq_kfc);
+		mm_qos_update_request(&dev->qos_req_cluster1,
+				      qos_table[idx].freq_cpu);
+		mm_qos_update_request(&dev->qos_req_cluster0,
+				      qos_table[idx].freq_kfc);
 #endif
 		if (ctx->type == MFCINST_DECODER)
 			bts_update_scen(BS_MFC_UHD_10BIT, qos_table[idx].mo_10bit_value);
@@ -92,12 +89,12 @@ static void mfc_qos_operate(struct s5p_mfc_ctx *ctx, int opr_type, int idx)
 	case MFC_QOS_REMOVE:
 		MFC_TRACE_CTX("++ QOS remove\n");
 
-		pm_qos_remove_request(&dev->qos_req_int);
-		pm_qos_remove_request(&dev->qos_req_mif);
+		mm_qos_remove_request(&dev->qos_req_int);
+		mm_qos_remove_request(&dev->qos_req_mif);
 
 #ifdef CONFIG_ARM_EXYNOS_MP_CPUFREQ
-		pm_qos_remove_request(&dev->qos_req_cluster1);
-		pm_qos_remove_request(&dev->qos_req_cluster0);
+		mm_qos_remove_request(&dev->qos_req_cluster1);
+		mm_qos_remove_request(&dev->qos_req_cluster0);
 #endif
 
 		if (ctx->type == MFCINST_DECODER)
@@ -107,7 +104,6 @@ static void mfc_qos_operate(struct s5p_mfc_ctx *ctx, int opr_type, int idx)
 		dev->mfc_bw.peak = 0;
 		dev->mfc_bw.read = 0;
 		dev->mfc_bw.write = 0;
-		bts_update_bw(BTS_BW_MFC, dev->mfc_bw);
 
 		atomic_set(&dev->qos_req_cur, 0);
 		MFC_TRACE_CTX("-- QOS remove\n");
@@ -116,8 +112,6 @@ static void mfc_qos_operate(struct s5p_mfc_ctx *ctx, int opr_type, int idx)
 	case MFC_QOS_BW:
 		MFC_TRACE_CTX("++ QOS BW (peak: %d, read: %d, write: %d)\n",
 				dev->mfc_bw.peak, dev->mfc_bw.read, dev->mfc_bw.write);
-
-		bts_update_bw(BTS_BW_MFC, dev->mfc_bw);
 
 		MFC_TRACE_CTX("-- QOS BW (peak: %d, read: %d, write: %d)\n",
 				dev->mfc_bw.peak, dev->mfc_bw.read, dev->mfc_bw.write);
@@ -492,11 +486,10 @@ static unsigned long framerate_table[][2] = {
 	{ 480000,     0 },
 };
 
-static inline unsigned long mfc_qos_timeval_diff(struct timeval *to,
-					struct timeval *from)
+static inline unsigned long mfc_qos_timeval_diff(u64 *to, u64 *from)
 {
-	return (to->tv_sec * USEC_PER_SEC + to->tv_usec)
-		- (from->tv_sec * USEC_PER_SEC + from->tv_usec);
+	return (unsigned long)div_u64(*to, NSEC_PER_USEC) -
+		(unsigned long)div_u64(*from, NSEC_PER_USEC);
 }
 
 static int mfc_qos_get_framerate_by_interval(int interval)
@@ -550,7 +543,7 @@ static int mfc_qos_dec_add_timestamp(struct s5p_mfc_ctx *ctx,
 			list_del(&curr_ts->list);
 	}
 
-	memcpy(&curr_ts->timestamp, &buf->timestamp, sizeof(struct timeval));
+	curr_ts->timestamp = buf->vb2_buf.timestamp;
 	if (!replace_entry)
 		list_add(&curr_ts->list, head);
 	curr_ts->interval =
@@ -566,9 +559,9 @@ static int mfc_qos_dec_add_timestamp(struct s5p_mfc_ctx *ctx,
 	return 0;
 }
 
-extern int debug_ts;
+extern int mfc_debug_ts;
 
-int mfc_qos_get_fps_by_timestamp(struct s5p_mfc_ctx *ctx, struct vb2_v4l2_buffer *buf)
+static int mfc_qos_get_fps_by_timestamp(struct s5p_mfc_ctx *ctx, struct vb2_v4l2_buffer *buf)
 {
 	struct mfc_timestamp *temp_ts;
 	int found;
@@ -577,11 +570,11 @@ int mfc_qos_get_fps_by_timestamp(struct s5p_mfc_ctx *ctx, struct vb2_v4l2_buffer
 	int max_framerate;
 	int time_diff;
 
-	if (debug_ts == 1) {
+	if (mfc_debug_ts == 1) {
 		/* Debug info */
 		mfc_info_ctx("======================================\n");
-		mfc_info_ctx("New timestamp = %ld.%06ld, count = %d \n",
-			buf->timestamp.tv_sec, buf->timestamp.tv_usec, ctx->ts_count);
+		mfc_info_ctx("New timestamp = %llu ns, count = %d\n",
+			     buf->vb2_buf.timestamp, ctx->ts_count);
 	}
 
 	if (list_empty(&ctx->ts_list)) {
@@ -590,7 +583,8 @@ int mfc_qos_get_fps_by_timestamp(struct s5p_mfc_ctx *ctx, struct vb2_v4l2_buffer
 	} else {
 		found = 0;
 		list_for_each_entry_reverse(temp_ts, &ctx->ts_list, list) {
-			time_diff = timeval_compare(&buf->timestamp, &temp_ts->timestamp);
+			time_diff = buf->vb2_buf.timestamp < temp_ts->timestamp ? -1 :
+				    buf->vb2_buf.timestamp > temp_ts->timestamp;
 			if (time_diff == 0) {
 				/* Do not add if same timestamp already exists */
 				found = 1;
@@ -614,25 +608,23 @@ int mfc_qos_get_fps_by_timestamp(struct s5p_mfc_ctx *ctx, struct vb2_v4l2_buffer
 
 	max_framerate = mfc_qos_get_framerate_by_interval(min_interval);
 
-	if (debug_ts == 1) {
+	if (mfc_debug_ts == 1) {
 		/* Debug info */
 		index = 0;
 		list_for_each_entry(temp_ts, &ctx->ts_list, list) {
-			mfc_info_ctx("[%d] timestamp [i:%d]: %ld.%06ld\n",
-					index, temp_ts->index,
-					temp_ts->timestamp.tv_sec,
-					temp_ts->timestamp.tv_usec);
+			mfc_info_ctx("[%d] timestamp [i:%d]: %llu ns\n",
+				     index, temp_ts->index, temp_ts->timestamp);
 			index++;
 		}
 		mfc_info_ctx("Min interval = %d, It is %d fps\n",
 				min_interval, max_framerate);
-	} else if (debug_ts == 2) {
+	} else if (mfc_debug_ts == 2) {
 		mfc_info_ctx("Min interval = %d, It is %d fps\n",
 				min_interval, max_framerate);
 	}
 
 	if (!ctx->ts_is_full) {
-		if (debug_ts == 1)
+		if (mfc_debug_ts == 1)
 			mfc_info_ctx("ts doesn't full, keep %d fps\n", ctx->framerate);
 		return ctx->framerate;
 	}

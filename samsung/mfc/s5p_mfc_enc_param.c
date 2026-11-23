@@ -19,7 +19,7 @@
 #define CBR_FIX_MAX			10
 #define CBR_I_LIMIT_MAX			5
 
-extern int nal_q_parallel_enable;
+extern int mfc_nal_q_parallel_enable;
 int s5p_mfc_set_slice_mode(struct s5p_mfc_ctx *ctx)
 {
 	struct s5p_mfc_dev *dev = ctx->dev;
@@ -221,7 +221,7 @@ static int mfc_set_enc_params(struct s5p_mfc_ctx *ctx)
 	reg &= ~(0x1 << S5P_FIMV_E_ENC_OPT_NON_REFERENCE_EN_SHIFT);
 	/* Disable parallel processing in FW when using NAL-Q
 	   It has to be enabled 11.x */
-	if (!nal_q_parallel_enable)
+	if (!mfc_nal_q_parallel_enable)
 		reg |= 0x1 << S5P_FIMV_E_ENC_OPT_PARALLEL_DIS_SHIFT;
 	MFC_WRITEL(reg, S5P_FIMV_E_ENC_OPTIONS);
 
