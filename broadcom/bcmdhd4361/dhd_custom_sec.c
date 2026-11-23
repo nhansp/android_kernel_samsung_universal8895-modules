@@ -811,7 +811,8 @@ uint32 sec_save_wlinfo(char *firm_ver, char *dhd_ver, char *nvram_p, char *clm_v
 			DHD_ERROR(("[WIFI_SEC] %s: Nvarm File open failed.\n", __FUNCTION__));
 			return -1;
 		} else {
-			ret = dhd_kernel_read_compat(nvfp, nvfp->f_pos, temp_buf, sizeof(temp_buf));
+			ret = dhd_kernel_read_compat(nvfp, nvfp->f_pos, temp_buf,
+				sizeof(temp_buf) - 1);
 			filp_close(nvfp, NULL);
 		}
 
