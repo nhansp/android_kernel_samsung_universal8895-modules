@@ -1139,6 +1139,7 @@ int bbd_init(struct device *dev)
 		if (IS_ERR_OR_NULL(dev)) {
 			pr_err("BBD:%s() failed to device_create() \"%s\", ret=%d", __func__, name, ret);
 			cdev_del(&bbd.priv[minor].dev);
+			ret = -ENODEV;
 			goto free_class;
 		}
 
@@ -1150,7 +1151,10 @@ int bbd_init(struct device *dev)
 
 	/* Register sysfs entry */
 	bbd.kobj = kobject_create_and_add("bbd", NULL);
-	BUG_ON(!bbd.kobj);
+	if (!bbd.kobj) {
+		ret = -ENOMEM;
+		goto free_class;
+	}
 	ret = sysfs_create_group(bbd.kobj, &bbd_group);
 	if (ret < 0) {
 		pr_err("%s failed to sysfs_create_group \"bbd\", ret = %d",
@@ -1161,11 +1165,17 @@ int bbd_init(struct device *dev)
 
 	/* Register PM */
 	ret = register_pm_notifier(&bbd_notifier_block);
-	BUG_ON(ret);
+	if (ret)
+		goto free_kobj;
 
 #ifdef CONFIG_SENSORS_SSP
 	/* Now, we can initialize SSP */
-	BUG_ON(device_register(&dummy_spi.dev));
+	ret = device_register(&dummy_spi.dev);
+	if (ret) {
+		put_device(&dummy_spi.dev);
+		unregister_pm_notifier(&bbd_notifier_block);
+		goto free_kobj;
+	}
 	{
 		struct spi_device *spi = to_spi_device(dev);
 		void *org_priv, *new_priv;

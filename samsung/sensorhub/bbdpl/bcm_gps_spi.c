@@ -887,7 +887,13 @@ static int bcm_spi_probe(struct spi_device *spi)
 
 	g_bcm_gps = priv;
 	/* Init BBD & SSP */
-	bbd_init(&spi->dev);
+	ret = bbd_init(&spi->dev);
+	if (ret) {
+		pr_err("[SSPBBD]: bbd_init failed %d\n", ret);
+		g_bcm_gps = NULL;
+		misc_deregister(&priv->misc);
+		goto free_irq;
+	}
 
 	return 0;
 
