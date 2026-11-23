@@ -4,3 +4,4 @@ subdir-ccflags-y += -I$(src)/include
 subdir-ccflags-y += -DCONFIG_MEDIA_M2M1SHOT2=1
 
 obj-m += m2m1shot2/
+obj-m += g2d1shot/

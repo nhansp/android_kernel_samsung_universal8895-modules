@@ -1,14 +1,10 @@
-/* linux/drivers/media/platform/exynos/fimg2d_v5/g2d1shot_hw5x.c
- *
+// SPDX-License-Identifier: GPL-2.0-only
+/*
  * Copyright (c) 2015 Samsung Electronics Co., Ltd.
  *	http://www.samsung.com/
  *
  * Samsung Graphics 2D driver
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
-*/
+ */
 
 #include <linux/io.h>
 #include <linux/sched.h>
@@ -126,7 +122,7 @@ static struct g2d_blend_coeff const ga_coeff_table[MAX_G2D_BLIT_OP] = {
 	{ 0, 0,	0, 0 },					/* LIGHTEN (use W/A) */
 };
 
-void g2d_hw_set_alpha_composite(struct g2d1shot_dev *g2d_dev,
+static void g2d_hw_set_alpha_composite(struct g2d1shot_dev *g2d_dev,
 		int n, u16 composit_mode, unsigned char galpha)
 {
 	int alphamode;

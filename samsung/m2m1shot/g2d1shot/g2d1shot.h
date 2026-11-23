@@ -1,21 +1,15 @@
-/* linux/drivers/media/platform/exynos/fimg2d_v5/g2d1shot.h
- *
+/* SPDX-License-Identifier: GPL-2.0-only */
+/*
  * Copyright (c) 2015 Samsung Electronics Co., Ltd.
  *	http://www.samsung.com/
  *
  * Samsung Graphics 2D driver
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
-*/
+ */
 
 #ifndef __EXYNOS_G2D1SHOT_H_
 #define __EXYNOS_G2D1SHOT_H_
 
 #include <linux/videodev2.h>
-#include <linux/videodev2_exynos_media.h>
-#include <linux/pm_qos.h>
 #include <media/m2m1shot2.h>
 
 #include "g2d1shot_regs.h"
@@ -32,7 +26,6 @@
 
 #define G2D_DEBUG_MAX_NUM SZ_128
 #define G2D_DEBUG_LOG_LENGTH SZ_128
-#define G2D_QCH_SIZE (SZ_4 * 21)
 
 #define G2D_UORDER_ALIGN		16
 
@@ -48,6 +41,22 @@
 #define G2D_YUV420_ALIGN_HEIGHT	2
 
 #define G2D_COMP_DEBUG_DATA_COUNT 16
+
+#ifndef V4L2_PIX_FMT_NV12N
+#define V4L2_PIX_FMT_NV12N		v4l2_fourcc('N', 'N', '1', '2')
+#endif
+#ifndef V4L2_PIX_FMT_NV12N_10B
+#define V4L2_PIX_FMT_NV12N_10B		v4l2_fourcc('B', 'N', '1', '2')
+#endif
+
+/* from the vendor videodev2_exynos_media.h */
+#ifndef NV12N_CBCR_BASE
+#define NV12N_Y_SIZE(w, h)		(ALIGN((w), 16) * ALIGN((h), 16) + 256)
+#define NV12N_CBCR_BASE(base, w, h)	((base) + NV12N_Y_SIZE((w), (h)))
+#define NV12N_10B_Y_2B_SIZE(w, h)	(ALIGN((w) / 4, 16) * ALIGN((h), 16) + 64)
+#define NV12N_10B_CBCR_BASE(base, w, h)	\
+	((base) + NV12N_Y_SIZE((w), (h)) + NV12N_10B_Y_2B_SIZE((w), (h)))
+#endif
 
 /* flags for G2D supported format */
 #define G2D_FMT_FLAG_SUPPORT_COMP	(1 << 0)
@@ -129,19 +138,11 @@ struct skia_qos_data {
 	unsigned int size;
 };
 
-struct g2d_qos_reqs {
-	struct pm_qos_request mif_req;
-	struct pm_qos_request int_req;
-	struct pm_qos_request cluster1_req;
-	struct pm_qos_request cluster0_req;
-};
-
 struct g2d1shot_dev {
 	struct m2m1shot2_device *oneshot2_dev;
 	struct device *dev;
 	struct clk *clock;
 	void __iomem *reg;
-	void __iomem *q_reg;
 	void *priv; /* for skia library */
 
 	u32 version;
@@ -184,8 +185,6 @@ struct g2d1shot_ctx {
 	struct list_head qos_node;
 	u64	r_bw;
 	u64	w_bw;
-
-	struct g2d_qos_reqs pm_qos_reqs;
 };
 
 /**

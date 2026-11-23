@@ -1,14 +1,10 @@
-/* linux/drivers/media/platform/exynos/fimg2d_v5/g2d1shot_regs.h
- *
+/* SPDX-License-Identifier: GPL-2.0-only */
+/*
  * Copyright (c) 2015 Samsung Electronics Co., Ltd.
  *	http://www.samsung.com/
  *
  * Register Definitions for Samsung Graphics 2D Hardware
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
-*/
+ */
 
 #ifndef __G2D1SHOT_REGS_H
 #define __G2D1SHOT_REGS_H __FILE__

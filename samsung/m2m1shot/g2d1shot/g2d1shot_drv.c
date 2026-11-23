@@ -1,14 +1,10 @@
-/* linux/drivers/media/platform/exynos/fimg2d_v5/g2d1shot_drv.c
- *
+// SPDX-License-Identifier: GPL-2.0-only
+/*
  * Copyright (c) 2015 Samsung Electronics Co., Ltd.
  *	http://www.samsung.com/
  *
  * Samsung Graphics 2D driver
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
-*/
+ */
 
 #include <linux/module.h>
 #include <linux/delay.h>
@@ -21,232 +17,17 @@
 #include <linux/suspend.h>
 #include <linux/slab.h>
 #include <linux/mutex.h>
-#include <linux/exynos_iovmm.h>
-#include <linux/smc.h>
-#include <linux/ion.h>
-#include <linux/exynos_ion.h>
-#include <soc/samsung/bts.h>
+#include <linux/dma-mapping.h>
+#include <linux/sched/clock.h>
 
 #include "g2d1shot.h"
 #include "g2d1shot_helper.h"
 
 int g2d_debug = DBG_INFO;
-module_param(g2d_debug, int, S_IRUGO | S_IWUSR);
+module_param(g2d_debug, int, 0644);
 
 int g2d_dump;
-module_param(g2d_dump, int, S_IRUGO | S_IWUSR);
-
-static void g2d_pm_qos_update_cpufreq(struct g2d_qos_reqs *reqs,
-				u32 freq_c1, u32 freq_c0)
-{
-	if (!pm_qos_request_active(&reqs->cluster0_req))
-		pm_qos_add_request(&reqs->cluster0_req,
-						PM_QOS_CLUSTER0_FREQ_MIN, 0);
-
-	pm_qos_update_request(&reqs->cluster0_req, freq_c0);
-
-	if (!pm_qos_request_active(&reqs->cluster1_req))
-		pm_qos_add_request(&reqs->cluster1_req,
-						PM_QOS_CLUSTER1_FREQ_MIN, 0);
-
-	pm_qos_update_request(&reqs->cluster1_req, freq_c1);
-}
-static void g2d_pm_qos_remove_cpufreq(struct g2d_qos_reqs *reqs)
-{
-	if (pm_qos_request_active(&reqs->cluster0_req))
-		pm_qos_remove_request(&reqs->cluster0_req);
-
-	if (pm_qos_request_active(&reqs->cluster1_req))
-		pm_qos_remove_request(&reqs->cluster1_req);
-}
-
-#ifdef CONFIG_PM_DEVFREQ
-static void g2d_pm_qos_update_devfreq(struct g2d_qos_reqs *reqs,
-				int pm_qos_class, u32 freq)
-{
-	struct pm_qos_request *req;
-
-	if (pm_qos_class == PM_QOS_BUS_THROUGHPUT)
-		req = &reqs->mif_req;
-	else if (pm_qos_class == PM_QOS_DEVICE_THROUGHPUT)
-		req = &reqs->int_req;
-	else
-		return;
-
-	if (!pm_qos_request_active(req))
-		pm_qos_add_request(req, pm_qos_class, 0);
-
-	pm_qos_update_request(req, freq);
-}
-static void g2d_pm_qos_remove_devfreq(struct g2d_qos_reqs *reqs,
-				int pm_qos_class)
-{
-	struct pm_qos_request *req;
-
-	if (pm_qos_class == PM_QOS_BUS_THROUGHPUT)
-		req = &reqs->mif_req;
-	else if (pm_qos_class == PM_QOS_DEVICE_THROUGHPUT)
-		req = &reqs->int_req;
-	else
-		return;
-
-	if (pm_qos_request_active(req))
-		pm_qos_remove_request(req);
-}
-#else
-#define g2d_pm_qos_update_devfreq(reqs, pm_qos_class, freq) do { } while (0)
-#define g2d_pm_qos_remove_devfreq(reqs, pm_qos_class) do { } while (0)
-#endif
-
-#define g2d_pm_qos_remove_all(g2d_ctx)	\
-do {	\
-	g2d_pm_qos_remove_cpufreq(&g2d_ctx->pm_qos_reqs);	\
-	g2d_pm_qos_remove_devfreq(&g2d_ctx->pm_qos_reqs,	\
-					PM_QOS_BUS_THROUGHPUT);	\
-	g2d_pm_qos_remove_devfreq(&g2d_ctx->pm_qos_reqs,	\
-					PM_QOS_DEVICE_THROUGHPUT);	\
-} while (0)
-
-static int g2d1shot_set_frequency_for_skia(struct g2d1shot_dev *g2d_dev,
-				struct g2d1shot_ctx *g2d_ctx, unsigned int lv)
-{
-	struct skia_qos_data *data = g2d_dev->priv;
-	struct skia_qos_entry *table = data->table;
-
-	if (lv >= data->size)
-		return -EINVAL;
-
-	g2d_pm_qos_update_cpufreq(&g2d_ctx->pm_qos_reqs,
-			table[lv].c1_freq,
-			table[lv].c0_freq);
-	g2d_pm_qos_update_devfreq(&g2d_ctx->pm_qos_reqs,
-			PM_QOS_BUS_THROUGHPUT,
-			table[lv].mif_freq);
-
-	return 0;
-}
-
-static void g2d1shot_set_frequency_for_device(struct g2d1shot_dev *g2d_dev,
-					  struct g2d1shot_ctx *g2d_ctx,
-					  struct m2m1shot2_performance_data *data)
-{
-	unsigned int ppc, i, j, cycle, ip_clock;
-	struct m2m1shot2_performance_frame_data *frame;
-	struct m2m1shot2_performance_layer_data *layer;
-
-	cycle = 0;
-
-	/* calculate the total size within 1 frame */
-	for (i = 0; i < data->num_frames; i++) {
-		frame = &data->frame[i];
-
-		ppc = g2d_dev->hw_ppc[PPC_DEFAULT];
-
-		for (j = 0; j < frame->num_layers; j++) {
-			layer = &frame->layer[j];
-
-			if (!!(layer->layer_attr & M2M1SHOT2_PERF_LAYER_ROTATE))
-				ppc = g2d_dev->hw_ppc[PPC_ROTATION];
-		}
-
-		for (j = 0; j < frame->num_layers; j++) {
-			layer = &frame->layer[j];
-			cycle += layer->pixelcount / ppc;
-		}
-
-		if (!!(frame->frame_attr & M2M1SHOT2_PERF_FRAME_SOLIDCOLORFILL))
-			cycle += frame->target_pixelcount /
-					g2d_dev->hw_ppc[PPC_COLORFILL];
-	}
-
-	/* ip_clock(Mhz) = cycles / time_in_ms * 1000 */
-	ip_clock = cycle / 8 * 1000;
-
-	g2d_pm_qos_update_devfreq(&g2d_ctx->pm_qos_reqs,
-			PM_QOS_DEVICE_THROUGHPUT, ip_clock);
-}
-
-static void g2d1shot_request_bts_performance(struct g2d1shot_dev *g2d_dev,
-					  struct g2d1shot_ctx *g2d_ctx,
-					  struct m2m1shot2_performance_data *data)
-{
-	struct m2m1shot2_performance_frame_data *frame;
-	u32 cur_rbw, rbw;
-	u32 cur_wbw, wbw;
-	int i;
-
-	cur_rbw = 0;
-	cur_wbw = 0;
-	rbw = 0;
-	wbw = 0;
-
-	if (data) {
-		for (i = 0; i < data->num_frames; i++) {
-			frame = &data->frame[i];
-
-			rbw += frame->bandwidth_read;
-			wbw += frame->bandwidth_write;
-		}
-	}
-
-	if (list_empty(&g2d_ctx->qos_node) && !rbw && !wbw)
-		return;
-
-	mutex_lock(&g2d_dev->lock_qos);
-
-	if (!list_empty(&g2d_dev->qos_contexts)) {
-		struct g2d1shot_ctx *ctx_qos;
-
-		ctx_qos = list_first_entry(&g2d_dev->qos_contexts,
-					   struct g2d1shot_ctx, qos_node);
-		cur_rbw = ctx_qos->r_bw;
-		cur_wbw = ctx_qos->w_bw;
-	}
-
-	/* this works although ctx is not attached to qos_contexts */
-	list_del_init(&g2d_ctx->qos_node);
-
-	g2d_ctx->r_bw = rbw;
-	g2d_ctx->w_bw = wbw;
-
-	if (rbw || wbw) {
-		struct list_head *node;
-
-		for (node = g2d_dev->qos_contexts.prev;
-				node != &g2d_dev->qos_contexts;
-						node = node->prev) {
-			struct g2d1shot_ctx *curctx = list_entry(node,
-					struct g2d1shot_ctx, qos_node);
-			if ((curctx->r_bw + curctx->w_bw) > (rbw + wbw))
-				break;
-		}
-		/*
-		 * node always points to the head node or the smallest bw node
-		 * among the larger bw nodes than qosnode
-		 */
-		list_add(&g2d_ctx->qos_node, node);
-	}
-
-	if (!list_empty(&g2d_dev->qos_contexts)) {
-		struct g2d1shot_ctx *ctx_qos;
-
-		ctx_qos = list_first_entry(&g2d_dev->qos_contexts,
-				      struct g2d1shot_ctx, qos_node);
-		/* bandwidth request is changed */
-		rbw = ctx_qos->r_bw;
-		wbw = ctx_qos->w_bw;
-	}
-
-	if ((rbw != cur_rbw) || (wbw != cur_wbw)) {
-		struct bts_bw bw;
-		bw.peak = ((rbw + wbw) / 1000) * BTS_PEAK_FPS_RATIO / 2;
-		bw.write = wbw;
-		bw.read = rbw;
-		bts_update_bw(BTS_BW_G2D, bw);
-	}
-
-	mutex_unlock(&g2d_dev->lock_qos);
-}
+module_param(g2d_dump, int, 0644);
 
 static int m2m1shot2_g2d_init_context(struct m2m1shot2_context *ctx)
 {
@@ -289,9 +70,6 @@ static int m2m1shot2_g2d_free_context(struct m2m1shot2_context *ctx)
 	struct g2d1shot_ctx *g2d_ctx = ctx->priv;
 
 	g2d_dbg_begin();
-
-	g2d1shot_request_bts_performance(g2d_dev, g2d_ctx, NULL);
-	g2d_pm_qos_remove_all(g2d_ctx);
 
 	clk_unprepare(g2d_dev->clock);
 	kfree(g2d_ctx);
@@ -449,56 +227,9 @@ static const struct g2d1shot_fmt *find_format(bool is_source, u32 fmt)
 	return NULL;
 }
 
-static bool g2d1shot_still_need_perf(struct m2m1shot2_context *ctx)
-{
-	struct m2m1shot2_device *m21dev = ctx->m21dev;
-	struct m2m1shot2_context *pctx;
-	unsigned long flags;
-
-	spin_lock_irqsave(&m21dev->lock_ctx, flags);
-
-	pctx = m2m1shot2_current_context(m21dev);
-	if (pctx && (pctx->priority == ctx->priority))
-		goto need_perf;
-
-	list_for_each_entry(pctx, &m21dev->active_contexts, node) {
-		if (pctx->priority == ctx->priority)
-			goto need_perf;
-	}
-
-	list_for_each_entry(pctx, &m21dev->contexts, node) {
-		if (M2M1S2_CTXSTATE_BUSY(pctx) &&
-				(pctx->priority == ctx->priority))
-			goto need_perf;
-	}
-
-	spin_unlock_irqrestore(&m21dev->lock_ctx, flags);
-
-	return false;
-
-need_perf:
-	spin_unlock_irqrestore(&m21dev->lock_ctx, flags);
-
-	return true;
-}
-
 static int m2m1shot2_g2d_prepare_performance(struct m2m1shot2_context *ctx,
 		struct m2m1shot2_performance_data *data)
 {
-	struct g2d1shot_ctx *g2d_ctx = ctx->priv;
-	struct g2d1shot_dev *g2d_dev = g2d_ctx->g2d_dev;
-
-	if (!data || data->num_frames == 0) {
-		if (g2d1shot_still_need_perf(ctx))
-			return 0;
-		/* remove the request */
-		g2d1shot_request_bts_performance(g2d_dev, g2d_ctx, NULL);
-		g2d_pm_qos_remove_all(g2d_ctx);
-	} else {
-		g2d1shot_request_bts_performance(g2d_dev, g2d_ctx, data);
-		g2d1shot_set_frequency_for_device(g2d_dev, g2d_ctx, data);
-	}
-
 	return 0;
 }
 
@@ -532,72 +263,26 @@ static int m2m1shot2_g2d_prepare_format(
 	return 0;
 }
 
-#ifdef CONFIG_EXYNOS_CONTENT_PATH_PROTECTION
-static bool g2d_prepare_secure_buffer(struct m2m1shot2_context *ctx)
+/*
+ * A dma-buf is mapped per job, after this check, at a page-aligned address,
+ * so its plane offset decides the alignment of the AFBC header.
+ */
+static dma_addr_t g2d_header_addr(struct m2m1shot2_context_image *img)
 {
-	int i;
-	bool secure = !!(ctx->target.flags & M2M1SHOT2_IMGFLAG_SECURE);
+	BUILD_BUG_ON(G2D_COMP_ALIGN_SRC_ADDR > PAGE_SIZE ||
+		     G2D_COMP_ALIGN_DST_ADDR > PAGE_SIZE);
 
-	for (i = 0; i < ctx->num_sources; i++) {
-		if (!!(ctx->source[i].img.flags & M2M1SHOT2_IMGFLAG_COLORFILL))
-			continue;
+	if (img->memory == M2M1SHOT2_BUFTYPE_DMABUF)
+		return img->plane[0].dmabuf.offset;
 
-		if (secure ^ !!(ctx->source[i].img.flags & M2M1SHOT2_IMGFLAG_SECURE)) {
-			pr_err("%s: secure flag is discord (src [%d] flag %x,  dst flag %x)\n",
-				__func__, i, ctx->source[i].img.flags, ctx->target.flags);
-			return false;
-		}
-	}
-
-	return true;
+	return img->plane[0].dma_addr;
 }
-
-#define G2D_SMC_PROTECTION_ID 14
-
-static void g2d_enable_secure(struct g2d1shot_dev *g2d_dev,
-		struct m2m1shot2_context *ctx)
-{
-	int ret = 0;
-
-	g2d_dbg_begin();
-	if (ctx->target.flags & M2M1SHOT2_IMGFLAG_SECURE) {
-		ret = exynos_smc(SMC_PROTECTION_SET, 0,
-				G2D_SMC_PROTECTION_ID, SMC_PROTECTION_ENABLE);
-		if (ret)
-			dev_err(g2d_dev->dev,
-				"fail to set protection (%d)\n", ret);
-	}
-	g2d_dbg_end();
-}
-
-static void g2d_disable_secure(struct g2d1shot_dev *g2d_dev,
-		struct m2m1shot2_context *ctx)
-{
-	int ret = 0;
-
-	g2d_dbg_begin();
-	if (ctx->target.flags & M2M1SHOT2_IMGFLAG_SECURE) {
-		ret = exynos_smc(SMC_PROTECTION_SET, 0,
-				G2D_SMC_PROTECTION_ID, SMC_PROTECTION_DISABLE);
-		if (ret)
-			dev_err(g2d_dev->dev,
-				"fail to disable protection (%d)\n", ret);
-	}
-	g2d_dbg_end();
-}
-#else
-static bool g2d_prepare_secure_buffer(struct m2m1shot2_context *ctx)
-{
-	return true;
-}
-
-#define g2d_enable_secure(g2d_dev, ctx) do { } while (0)
-#define g2d_disable_secure(g2d_dev, ctx) do { } while (0)
-#endif
 
 static int m2m1shot2_g2d_prepare_target(struct m2m1shot2_context *ctx,
 		struct m2m1shot2_context_image *img)
 {
+	struct g2d1shot_ctx *g2d_ctx = ctx->priv;
+	struct g2d1shot_dev *g2d_dev = g2d_ctx->g2d_dev;
 	bool compressed = img->flags & M2M1SHOT2_IMGFLAG_COMPRESSED;
 	bool u_order = img->flags & M2M1SHOT2_IMGFLAG_UORDER_ADDR;
 	struct m2m1shot2_context_format *ctx_fmt = m2m1shot2_dst_format(ctx);
@@ -606,6 +291,12 @@ static int m2m1shot2_g2d_prepare_target(struct m2m1shot2_context *ctx,
 	const struct g2d_csc_fmt *g2d_csc_fmt;
 	unsigned char w_align = 1;
 	unsigned char h_align = 1;
+
+	if (img->flags & M2M1SHOT2_IMGFLAG_SECURE) {
+		dev_warn_once(g2d_dev->dev,
+			      "m2m1shot2: secure image rejected (content path protection is not supported)\n");
+		return -EPERM;
+	}
 
 	/* check format conflict */
 	if (compressed && u_order) {
@@ -618,10 +309,6 @@ static int m2m1shot2_g2d_prepare_target(struct m2m1shot2_context *ctx,
 	}
 	if (compressed && (!is_rgb(g2d_fmt->value))) {
 		pr_err("Only ARGB format could be compressed\n");
-		return -EINVAL;
-	}
-	if (!g2d_prepare_secure_buffer(ctx)) {
-		pr_err("Select all or notihg attribute of secure about source and dest\n");
 		return -EINVAL;
 	}
 
@@ -684,7 +371,7 @@ static int m2m1shot2_g2d_prepare_target(struct m2m1shot2_context *ctx,
 		/* AFBC address align
 		 * NOTE : AFBC format is supported for ARGB (1 plane)
 		 */
-		header = m2m1shot2_dst_dma_addr(ctx, 0);
+		header = g2d_header_addr(img);
 		if (!IS_ALIGNED(header, G2D_COMP_ALIGN_DST_ADDR)) {
 			pr_err("Invalid header address for compressed format : 0x%lx\n",
 					(unsigned long)header);
@@ -712,15 +399,22 @@ static int m2m1shot2_g2d_prepare_target(struct m2m1shot2_context *ctx,
 static int m2m1shot2_g2d_prepare_source(struct m2m1shot2_context *ctx,
 			unsigned int index, struct m2m1shot2_source_image *img)
 {
+	struct g2d1shot_ctx *g2d_ctx = ctx->priv;
+	struct g2d1shot_dev *g2d_dev = g2d_ctx->g2d_dev;
 	bool compressed = img->img.flags & M2M1SHOT2_IMGFLAG_COMPRESSED;
 	bool u_order = img->img.flags & M2M1SHOT2_IMGFLAG_UORDER_ADDR;
 	struct m2m1shot2_context_format *ctx_fmt = m2m1shot2_src_format(ctx, index);
 	struct m2m1shot2_format *fmt = &ctx_fmt->fmt;
 	struct g2d1shot_fmt *g2d_fmt = ctx_fmt->priv;
 	const struct g2d_csc_fmt *g2d_csc_fmt;
-	struct g2d1shot_ctx *g2d_ctx = ctx->priv;
 	unsigned char w_align = 1;
 	unsigned char h_align = 1;
+
+	if (img->img.flags & M2M1SHOT2_IMGFLAG_SECURE) {
+		dev_warn_once(g2d_dev->dev,
+			      "m2m1shot2: secure image rejected (content path protection is not supported)\n");
+		return -EPERM;
+	}
 
 	/* check format conflict */
 	if (u_order) {
@@ -774,10 +468,11 @@ static int m2m1shot2_g2d_prepare_source(struct m2m1shot2_context *ctx,
 	/* check address alignment */
 	if (compressed) {
 		dma_addr_t header;
+
 		/* AFBC address align
 		 * NOTE : AFBC format is supported for ARGB (1 plane)
 		 */
-		header = m2m1shot2_src_dma_addr(ctx, index, 0);
+		header = g2d_header_addr(&img->img);
 		if (!IS_ALIGNED(header, G2D_COMP_ALIGN_SRC_ADDR)) {
 			pr_err("Invalid header address for compressed format : 0x%lx\n",
 					(unsigned long)header);
@@ -829,8 +524,7 @@ static int enable_g2d(struct g2d1shot_dev *g2d_dev)
 
 	g2d_dbg_begin();
 
-	ret = in_irq() ? pm_runtime_get(g2d_dev->dev) :
-			pm_runtime_get_sync(g2d_dev->dev);
+	ret = pm_runtime_resume_and_get(g2d_dev->dev);
 	if (ret < 0) {
 		pr_err("Failed to enable power (%d)\n", ret);
 		return ret;
@@ -1036,9 +730,6 @@ static int m2m1shot2_g2d_device_run(struct m2m1shot2_context *ctx)
 
 	g2d_hw_set_tile_direction(g2d_dev, ctx);
 
-	/* setting for secure */
-	g2d_enable_secure(g2d_dev, ctx);
-
 	/* setting for common */
 
 	if (g2d_dump) {
@@ -1057,15 +748,11 @@ static int m2m1shot2_g2d_device_run(struct m2m1shot2_context *ctx)
 	return 0;
 }
 
-int m2m1shot2_g2d_custom_ioctl(struct m2m1shot2_context *ctx,
-				unsigned int cmd,
-				unsigned int arg)
+static int m2m1shot2_g2d_custom_ioctl(struct m2m1shot2_context *ctx,
+				      unsigned int cmd,
+				      unsigned int arg)
 {
-	struct g2d1shot_ctx *g2d_ctx = ctx->priv;
-	struct g2d1shot_dev *g2d_dev = g2d_ctx->g2d_dev;
-
-	return g2d1shot_set_frequency_for_skia(g2d_dev,
-						g2d_ctx, arg);
+	return 0;
 }
 
 static const struct m2m1shot2_devops m2m1shot2_g2d_ops = {
@@ -1099,7 +786,6 @@ static irqreturn_t exynos_g2d_irq_handler(int irq, void *priv)
 		status = false;
 		dev_err(g2d_dev->dev, "g2d1shot makes i_rec #%d (%x)\n",
 			g2d_dev->num_rec++, irqpend);
-
 	}
 	g2d_hw_stop(g2d_dev);
 
@@ -1122,10 +808,10 @@ static irqreturn_t exynos_g2d_irq_handler(int irq, void *priv)
 		spin_unlock_irqrestore(&g2d_dev->state_lock, flags);
 		return IRQ_HANDLED;
 	}
-	suspending = g2d_dev->state & G2D_STATE_SUSPENDING;
+	suspending = !!(g2d_dev->state & G2D_STATE_SUSPENDING);
 	spin_unlock_irqrestore(&g2d_dev->state_lock, flags);
 
-	del_timer(&g2d_dev->timer);
+	timer_delete(&g2d_dev->timer);
 
 	hw_stat = readl(g2d_dev->reg + G2D_FIFO_STAT_REG);
 	g2d_hw_reset(g2d_dev);
@@ -1139,7 +825,6 @@ static irqreturn_t exynos_g2d_irq_handler(int irq, void *priv)
 		}
 	}
 
-	g2d_disable_secure(g2d_dev, m21ctx);
 	disable_g2d(g2d_dev);
 
 	spin_lock_irqsave(&g2d_dev->state_lock, flags);
@@ -1152,9 +837,10 @@ static irqreturn_t exynos_g2d_irq_handler(int irq, void *priv)
 					m21ctx->work_delay_in_nsec / 1000000,
 					m21ctx->work_delay_in_nsec % 1000000);
 	}
-	if (!suspending)
-		m2m1shot2_finish_context(m21ctx, status);
-	else {
+
+	if (!suspending) {
+		m2m1shot2_finish_context_deferred(m21ctx, status);
+	} else {
 		g2d_dev->suspend_ctx = m21ctx;
 		g2d_dev->suspend_ctx_success = true;
 	}
@@ -1166,33 +852,9 @@ static irqreturn_t exynos_g2d_irq_handler(int irq, void *priv)
 	return IRQ_HANDLED;
 }
 
-static int g2d_iommu_fault_handler(
-		struct iommu_domain *domain, struct device *dev,
-		unsigned long fault_addr, int fault_flags, void *token)
+static void g2d_timeout_handler(struct timer_list *t)
 {
-	struct g2d1shot_dev *g2d_dev = token;
-	struct m2m1shot2_context *m21ctx;
-
-	g2d_dbg_begin();
-
-	m21ctx = m2m1shot2_current_context(g2d_dev->oneshot2_dev);
-	if (!m21ctx) {
-		g2d_dump_regs(g2d_dev);
-		dev_err(g2d_dev->dev, "received null in fault handler\n");
-		return -EFAULT;
-	}
-
-	g2d_disp_info(m21ctx);
-	g2d_dump_regs(g2d_dev);
-
-	g2d_dbg_end();
-
-	return 0;
-}
-
-static void g2d_timeout_handler(unsigned long arg)
-{
-	struct g2d1shot_dev *g2d_dev = (struct g2d1shot_dev *)arg;
+	struct g2d1shot_dev *g2d_dev = timer_container_of(g2d_dev, t, timer);
 	struct m2m1shot2_context *m21ctx;
 	unsigned long flags;
 	bool suspending;
@@ -1235,23 +897,21 @@ static void g2d_timeout_handler(unsigned long arg)
 	g2d_disp_info(m21ctx);
 	g2d_dump_regs(g2d_dev);
 
-	g2d_disable_secure(g2d_dev, m21ctx);
 	disable_g2d(g2d_dev);
 
-	/* notify m2m1shot2 with false */
 	spin_lock_irqsave(&g2d_dev->state_lock, flags);
 	g2d_dev->state &= ~G2D_STATE_TIMEOUT;
-	suspending = g2d_dev->state & G2D_STATE_SUSPENDING;
+	suspending = !!(g2d_dev->state & G2D_STATE_SUSPENDING);
 	spin_unlock_irqrestore(&g2d_dev->state_lock, flags);
 
-	if (!suspending)
-		m2m1shot2_finish_context(m21ctx, false);
-	else {
+	if (!suspending) {
+		m2m1shot2_finish_context_deferred(m21ctx, false);
+	} else {
 		g2d_dev->suspend_ctx = m21ctx;
 		g2d_dev->suspend_ctx_success = false;
 		wake_up(&g2d_dev->suspend_wait);
 	}
-};
+}
 
 static int g2d_init_clock(struct device *dev, struct g2d1shot_dev *g2d_dev)
 {
@@ -1269,7 +929,7 @@ static int g2d_get_hw_version(struct device *dev, struct g2d1shot_dev *g2d_dev)
 {
 	int ret;
 
-	ret = pm_runtime_get_sync(dev);
+	ret = pm_runtime_resume_and_get(dev);
 	if (ret < 0) {
 		dev_err(dev, "Failed to enable power (%d)\n", ret);
 		return ret;
@@ -1281,38 +941,53 @@ static int g2d_get_hw_version(struct device *dev, struct g2d1shot_dev *g2d_dev)
 		dev_info(dev, "G2D version : %#010x\n", g2d_dev->version);
 
 		clk_disable_unprepare(g2d_dev->clock);
+	} else {
+		dev_err(dev, "Failed to enable clock (%d)\n", ret);
 	}
 
 	pm_runtime_put(dev);
 
-	return 0;
+	return ret;
 }
 
 static int g2d_populate_dt(struct g2d1shot_dev *g2d_dev)
 {
 	struct device *dev = g2d_dev->dev;
+	struct device_node *np = dev->of_node;
 	struct skia_qos_data *data;
 	struct skia_qos_entry *table;
-	int size, i;
+	int size, i, ret;
 
 	data = devm_kzalloc(dev, sizeof(struct skia_qos_data), GFP_KERNEL);
 	if (!data)
 		return -ENOMEM;
 
-	size = of_property_count_u32_elems(dev->of_node, "skia_qos_table");
+	size = of_property_count_u32_elems(np, "samsung,skia-qos-table");
 	if (size < 0)
 		return size;
 
-	table = devm_kzalloc(dev,
-		sizeof(struct skia_qos_entry) * size / 3, GFP_KERNEL);
+	if (size == 0 || (size % 3) != 0) {
+		dev_err(dev, "Invalid samsung,skia-qos-table size: %d\n", size);
+		return -EINVAL;
+	}
+
+	table = devm_kcalloc(dev, size / 3, sizeof(struct skia_qos_entry), GFP_KERNEL);
 	if (!table)
 		return -ENOMEM;
 
-	of_property_read_u32_array(dev->of_node, "skia_qos_table",
-					(unsigned int *)table, size);
+	ret = of_property_read_u32_array(np, "samsung,skia-qos-table",
+					 (u32 *)table, size);
+	if (ret) {
+		dev_err(dev, "Failed to read samsung,skia-qos-table: %d\n", ret);
+		return ret;
+	}
 
-	of_property_read_u32_array(dev->of_node, "hw_ppc",
-					(unsigned int *)g2d_dev->hw_ppc, PPC_ATTR_END);
+	ret = of_property_read_u32_array(np, "samsung,hw-ppc",
+					 (u32 *)g2d_dev->hw_ppc, PPC_ATTR_END);
+	if (ret) {
+		dev_err(dev, "Failed to read samsung,hw-ppc: %d\n", ret);
+		return ret;
+	}
 
 	for (i = 0; i < (size / 3); i++) {
 		dev_info(dev, "Skia QoS Table[%d] c1 : %u c0 : %u mif :%u\n", i,
@@ -1322,7 +997,7 @@ static int g2d_populate_dt(struct g2d1shot_dev *g2d_dev)
 	}
 
 	data->table = table;
-	data->size = (unsigned int) size / 3;
+	data->size = (unsigned int)(size / 3);
 
 	g2d_dev->priv = data;
 
@@ -1346,7 +1021,6 @@ static int exynos_g2d_notifier_event(struct notifier_block *this,
 
 		wait_event(g2d_dev->suspend_wait,
 			!(g2d_dev->state & G2D_STATE_RUNNING));
-
 		break;
 
 	case PM_POST_SUSPEND:
@@ -1367,11 +1041,11 @@ static int exynos_g2d_notifier_event(struct notifier_block *this,
 
 static int exynos_g2d_probe(struct platform_device *pdev)
 {
-	struct scatterlist sgl;
 	struct g2d1shot_dev *g2d_dev;
 	struct resource *res;
 	struct page *page;
-	int ret;
+	dma_addr_t dma_addr;
+	int irq, ret;
 
 	g2d_dev = devm_kzalloc(&pdev->dev, sizeof(*g2d_dev), GFP_KERNEL);
 	if (!g2d_dev)
@@ -1384,16 +1058,9 @@ static int exynos_g2d_probe(struct platform_device *pdev)
 	if (IS_ERR(g2d_dev->reg))
 		return PTR_ERR(g2d_dev->reg);
 
-	res = platform_get_resource(pdev, IORESOURCE_IRQ, 0);
-	if (res == NULL) {
-		dev_err(&pdev->dev, "Failed to get IRQ resource");
-		return -ENOENT;
-	}
-
-	ret = devm_request_irq(&pdev->dev, res->start, exynos_g2d_irq_handler,
-				0, pdev->name, g2d_dev);
-	if (ret) {
-		dev_err(&pdev->dev, "Failed to install IRQ handler");
+	ret = g2d_populate_dt(g2d_dev);
+	if (ret < 0) {
+		dev_err(&pdev->dev, "Failed to parse the device tree (%d)\n", ret);
 		return ret;
 	}
 
@@ -1401,88 +1068,89 @@ static int exynos_g2d_probe(struct platform_device *pdev)
 	if (ret)
 		return ret;
 
-	g2d_dev->oneshot2_dev = m2m1shot2_create_device(&pdev->dev,
-		&m2m1shot2_g2d_ops, NODE_NAME, -1, M2M1SHOT2_DEVATTR_COHERENT);
-	if (IS_ERR(g2d_dev->oneshot2_dev))
-		return PTR_ERR(g2d_dev->oneshot2_dev);
-
-	platform_set_drvdata(pdev, g2d_dev);
-	g2d_dev->q_reg = ioremap(0x13a07000, 0x100);
-
-	pm_runtime_enable(&pdev->dev);
-
-	ret = g2d_get_hw_version(&pdev->dev, g2d_dev);
-	if (ret < 0) {
-		dev_err(&pdev->dev, "Failed to get H/W version\n");
-		goto err_hwver;
-	}
-
-	iovmm_set_fault_handler(&pdev->dev, g2d_iommu_fault_handler, g2d_dev);
-
-	ret = iovmm_activate(&pdev->dev);
-	if (ret < 0) {
-		dev_err(&pdev->dev, "Failed to activate iommu\n");
-		goto err_hwver;
-	}
-
-	setup_timer(&g2d_dev->timer, g2d_timeout_handler,
-						(unsigned long)g2d_dev);
+	timer_setup(&g2d_dev->timer, g2d_timeout_handler, 0);
 	spin_lock_init(&g2d_dev->state_lock);
 	mutex_init(&g2d_dev->lock_qos);
 	init_waitqueue_head(&g2d_dev->suspend_wait);
 	INIT_LIST_HEAD(&g2d_dev->qos_contexts);
 
-	ret = g2d_populate_dt(g2d_dev);
+	ret = devm_pm_runtime_enable(&pdev->dev);
+	if (ret)
+		return ret;
+
+	ret = g2d_get_hw_version(&pdev->dev, g2d_dev);
 	if (ret < 0) {
-		dev_err(&pdev->dev, "Failed to parse the device tree\n");
-		goto err_hwver;
+		dev_err(&pdev->dev, "Failed to get H/W version (%d)\n", ret);
+		return ret;
 	}
 
-	page = alloc_pages(GFP_KERNEL, 0);
+	dma_set_max_seg_size(&pdev->dev, UINT_MAX);
+
+	page = alloc_pages(GFP_KERNEL | __GFP_ZERO, 0);
 	if (!page)
-		goto err_hwver;
+		return -ENOMEM;
 
-	sg_init_table(&sgl, 1);
-	sg_set_page(&sgl, page, PAGE_SIZE, 0);
-
+	dma_addr = dma_map_page(&pdev->dev, page, 0, PAGE_SIZE, DMA_FROM_DEVICE);
+	if (dma_mapping_error(&pdev->dev, dma_addr)) {
+		__free_pages(page, 0);
+		return -EFAULT;
+	}
 	g2d_dev->d_buf.page = page;
-	g2d_dev->d_buf.dma_addr = iovmm_map(&pdev->dev,
-			&sgl, 0, PAGE_SIZE, DMA_FROM_DEVICE,
-			IOMMU_WRITE | IOMMU_CACHE);
+	g2d_dev->d_buf.dma_addr = dma_addr;
+
+	/* open() reads the drvdata */
+	platform_set_drvdata(pdev, g2d_dev);
+	g2d_dev->oneshot2_dev = m2m1shot2_create_device(&pdev->dev,
+							&m2m1shot2_g2d_ops,
+							NODE_NAME, -1, 0);
+	if (IS_ERR(g2d_dev->oneshot2_dev)) {
+		ret = PTR_ERR(g2d_dev->oneshot2_dev);
+		goto err_m2m;
+	}
 
 	g2d_dev->pm_notifier.notifier_call = &exynos_g2d_notifier_event;
-	register_pm_notifier(&g2d_dev->pm_notifier);
+	ret = register_pm_notifier(&g2d_dev->pm_notifier);
+	if (ret) {
+		dev_err(&pdev->dev, "Failed to register PM notifier (%d)\n", ret);
+		goto err_pm_notif;
+	}
+
+	irq = platform_get_irq(pdev, 0);
+	if (irq < 0) {
+		ret = irq;
+		goto err_irq;
+	}
+
+	ret = devm_request_irq(&pdev->dev, irq, exynos_g2d_irq_handler,
+			       0, pdev->name, g2d_dev);
+	if (ret) {
+		dev_err(&pdev->dev, "Failed to install IRQ handler (%d)\n", ret);
+		goto err_irq;
+	}
 
 	dev_info(&pdev->dev, "G2D with m2m1shot2 is probed successfully.\n");
 
 	return 0;
-err_hwver:
+
+err_irq:
+	unregister_pm_notifier(&g2d_dev->pm_notifier);
+err_pm_notif:
 	m2m1shot2_destroy_device(g2d_dev->oneshot2_dev);
-
-	dev_err(&pdev->dev, "G2D m2m1shot2 probe is failed.\n");
-
+err_m2m:
+	dma_unmap_page(&pdev->dev, g2d_dev->d_buf.dma_addr, PAGE_SIZE, DMA_FROM_DEVICE);
+	__free_pages(g2d_dev->d_buf.page, 0);
 	return ret;
 }
 
-static void g2d1shot_put_dummy_buf(struct platform_device *pdev,
-		struct g2d_dummy_buf *d_buf)
-{
-	iovmm_unmap(&pdev->dev, d_buf->dma_addr);
-	__free_pages(d_buf->page, 0);
-}
-
-static int exynos_g2d_remove(struct platform_device *pdev)
+static void exynos_g2d_remove(struct platform_device *pdev)
 {
 	struct g2d1shot_dev *g2d_dev = platform_get_drvdata(pdev);
 
-	iounmap(g2d_dev->q_reg);
-
-	g2d1shot_put_dummy_buf(pdev, &g2d_dev->d_buf);
+	timer_delete_sync(&g2d_dev->timer);
 	unregister_pm_notifier(&g2d_dev->pm_notifier);
-
 	m2m1shot2_destroy_device(g2d_dev->oneshot2_dev);
-
-	return 0;
+	dma_unmap_page(&pdev->dev, g2d_dev->d_buf.dma_addr, PAGE_SIZE, DMA_FROM_DEVICE);
+	__free_pages(g2d_dev->d_buf.page, 0);
 }
 
 static void exynos_g2d_shutdown(struct platform_device *pdev)
@@ -1496,38 +1164,14 @@ static void exynos_g2d_shutdown(struct platform_device *pdev)
 
 	wait_event(g2d_dev->suspend_wait,
 			!(g2d_dev->state & G2D_STATE_RUNNING));
-
-	iovmm_deactivate(g2d_dev->dev);
 }
 
 #ifdef CONFIG_PM
 static int g2d_runtime_suspend(struct device *dev)
 {
-	struct g2d1shot_dev *g2d_dev = dev_get_drvdata(dev);
-	const u8 *ptr = g2d_dev->q_reg;
-	size_t len = G2D_QCH_SIZE;
-	int i, linelen, idx, remaining = len;
-	char linebuf[SZ_128];
-	int rowsize = 32;
-
-	for (i = 0; i < len; i += rowsize) {
-		idx = g2d_dev->dbg_idx % G2D_DEBUG_MAX_NUM;
-		linelen = min(remaining, rowsize);
-		remaining -= rowsize;
-
-		hex_dump_to_buffer(ptr + i, linelen, rowsize, 4,
-			linebuf, sizeof(linebuf), false);
-
-		g2d_dev->dbg_logs[idx].time = sched_clock();
-		snprintf(g2d_dev->dbg_logs[idx].log,
-			sizeof(g2d_dev->dbg_logs[idx].log),
-			"%p: %s", ptr + i, linebuf);
-
-		g2d_dev->dbg_idx++;
-	}
-
 	return 0;
 }
+
 static int g2d_runtime_resume(struct device *dev)
 {
 	return 0;
@@ -1540,18 +1184,18 @@ static const struct dev_pm_ops exynos_g2d_pm_ops = {
 
 static const struct of_device_id exynos_g2d_match[] = {
 	{
-		.compatible = "samsung,s5p-fimg2d",
+		.compatible = "samsung,exynos8895-g2d",
 	},
 	{},
 };
+MODULE_DEVICE_TABLE(of, exynos_g2d_match);
 
 static struct platform_driver exynos_g2d_driver = {
 	.probe		= exynos_g2d_probe,
 	.remove		= exynos_g2d_remove,
-        .shutdown       = exynos_g2d_shutdown,
+	.shutdown	= exynos_g2d_shutdown,
 	.driver = {
 		.name	= MODULE_NAME,
-		.owner	= THIS_MODULE,
 		.pm	= &exynos_g2d_pm_ops,
 		.of_match_table = of_match_ptr(exynos_g2d_match),
 	}
