@@ -842,7 +842,7 @@ static irqreturn_t exynos_g2d_irq_handler(int irq, void *priv)
 		m2m1shot2_finish_context_deferred(m21ctx, status);
 	} else {
 		g2d_dev->suspend_ctx = m21ctx;
-		g2d_dev->suspend_ctx_success = true;
+		g2d_dev->suspend_ctx_success = status;
 	}
 
 	wake_up(&g2d_dev->suspend_wait);
