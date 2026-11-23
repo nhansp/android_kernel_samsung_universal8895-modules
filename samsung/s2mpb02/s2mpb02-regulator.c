@@ -351,6 +351,7 @@ static int s2mpb02_pmic_dt_parse_pdata(struct s2mpb02_dev *iodev,
 		rdata->reg_node = reg_np;
 		rdata++;
 	}
+	pdata->num_regulators = rdata - pdata->regulators;
 	of_node_put(regulators_np);
 
 	return 0;
