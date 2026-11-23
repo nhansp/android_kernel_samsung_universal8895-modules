@@ -200,6 +200,8 @@ static int mfc_init_dec_ctx(struct s5p_mfc_ctx *ctx)
 	ctx->vq_dst.drv_priv = ctx;
 	ctx->vq_dst.buf_struct_size = sizeof(struct s5p_mfc_buf);
 	ctx->vq_dst.io_modes = VB2_MMAP | VB2_USERPTR | VB2_DMABUF;
+	/* decoded pictures are read back as references */
+	ctx->vq_dst.bidirectional = 1;
 	ctx->vq_dst.ops = &s5p_mfc_dec_qops;
 	ctx->vq_dst.mem_ops = s5p_mfc_mem_ops();
 	ctx->vq_dst.timestamp_flags = V4L2_BUF_FLAG_TIMESTAMP_COPY;
