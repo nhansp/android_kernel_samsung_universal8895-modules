@@ -37,7 +37,7 @@
 #include "fastcall.h"
 
 /* ExySp: Lock for core switch processing */
-static struct mutex core_switch_lock;
+static DEFINE_MUTEX(core_switch_lock);
 static u8 core_status = 0xFF;
 #ifdef CONFIG_SECURE_OS_BOOSTER_API
 static int disable_local_timer;
@@ -381,9 +381,6 @@ int mc_fastcall_init(void)
 	/* Create debugfs structs entry */
 	debugfs_create_file("active_cpu", 0600, g_ctx.debug_dir, NULL,
 			    &mc_debug_coreswitch_ops);
-
-	/* ExySp: init lock for core switch processing */
-	mutex_init(&core_switch_lock);
 
 	return 0;
 }
