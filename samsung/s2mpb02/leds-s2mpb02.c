@@ -463,7 +463,7 @@ static int of_s2mpb02_torch_dt(struct s2mpb02_dev *iodev,
 		return -ENODEV;
 	}
 
-	np = of_find_node_by_name(led_np, "torch");
+	np = of_get_child_by_name(led_np, "torch");
 	if (!np) {
 		pr_info("<%s> could not find led sub-node\n",
 								__func__);
@@ -542,7 +542,7 @@ static int of_s2mpb02_torch_dt(struct s2mpb02_dev *iodev,
 			pdata->leds[index].torch_table_enable = 0;
 		}
 	}
-	of_node_put(led_np);
+	of_node_put(np);
 
 	return 0;
 }
