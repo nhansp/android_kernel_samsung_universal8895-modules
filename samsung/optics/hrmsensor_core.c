@@ -1574,6 +1574,10 @@ int hrm_probe(struct i2c_client *client)
 	data->reg_vdd_1p8 = devm_regulator_get(&client->dev, "vdd-1p8");
 	data->reg_led_3p3 = devm_regulator_get(&client->dev, "led-3p3");
 	data->reg_i2c_1p8 = devm_regulator_get_optional(&client->dev, "i2c-1p8");
+	if (PTR_ERR_OR_ZERO(data->reg_i2c_1p8) == -EPROBE_DEFER) {
+		err = -EPROBE_DEFER;
+		goto err_parse_dt;
+	}
 	if (IS_ERR(data->reg_i2c_1p8))
 		data->reg_i2c_1p8 = NULL;
 	if (IS_ERR(data->reg_vdd_1p8) || IS_ERR(data->reg_led_3p3)) {
