@@ -16,6 +16,7 @@
 #include <linux/seq_file.h>
 
 #include <dt-bindings/clock/samsung,exynos8895-acpm.h>
+#include <soc/samsung/bts.h>
 #include <soc/samsung/exynos8895-mm-qos.h>
 
 #include <mali_kbase.h>
@@ -98,6 +99,12 @@ static void exynos8895_gpu_qos_apply(struct exynos8895_gpu *gpu, unsigned long r
 	mm_qos_update_request(&gpu->cl1_max_req, c ? c->cl1_max_khz : INT_MAX);
 }
 
+/*
+ * Samsung's gpu_mo_min_clock: from this clock up, the G3D bus ports get the
+ * BS_G3D_PEFORMANCE outstanding request limits.
+ */
+#define EXYNOS8895_G3D_MO_MIN_HZ	455000000UL
+
 static struct kbase_vendor_callbacks exynos8895_vendor_cb;
 
 static struct kbase_device *exynos8895_kbdev;
@@ -126,6 +133,7 @@ int exynos8895_gpu_set_rate(struct kbase_device *kbdev, unsigned long rate)
 		mutex_unlock(&gpu->lock);
 		if (!is_up)
 			exynos8895_gpu_qos_apply(gpu, rate);
+		bts_update_scen(BS_G3D_PEFORMANCE, rate >= EXYNOS8895_G3D_MO_MIN_HZ);
 		pm_runtime_put_autosuspend(kbdev->dev);
 	}
 
@@ -264,6 +272,8 @@ static int exynos8895_pm_runtime_on(struct kbase_device *kbdev)
 	    !clk_set_rate(gpu->clk, gpu->want_rate))
 		gpu->cur_rate = gpu->want_rate;
 	mutex_unlock(&gpu->lock);
+
+	bts_update_scen(BS_G3D_PEFORMANCE, gpu->want_rate >= EXYNOS8895_G3D_MO_MIN_HZ);
 
 	return 0;
 }
