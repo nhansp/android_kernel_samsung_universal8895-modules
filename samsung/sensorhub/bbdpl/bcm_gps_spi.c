@@ -831,32 +831,6 @@ static int bcm_spi_probe(struct spi_device *spi)
 		goto free_mem;
 	}
 
-	/* Request IRQ */
-	ret = request_irq(spi->irq, bcm_irq_handler, IRQF_TRIGGER_HIGH, "ttyBCM", priv);
-	if (ret) {
-		pr_err("[SSPBBD]: Failed to register BCM4773 SPI TTY IRQ %d.\n", spi->irq);
-		goto free_wq;
-	}
-
-	disable_irq(spi->irq);
-
-	pr_notice("[SSPBBD]: Probe OK. ssp-host-req=%d, irq=%d, priv=0x%pK\n",
-		  desc_to_gpio(host_req), spi->irq, priv);
-
-	/* Register misc device */
-	priv->misc.minor = MISC_DYNAMIC_MINOR;
-	priv->misc.name = "ttyBCM";
-	priv->misc.fops = &bcm_spi_fops;
-
-	ret = misc_register(&priv->misc);
-	if (ret) {
-		pr_err("[SSPBBD]: Failed to register bcm_gps_spi's misc dev. err=%d\n", ret);
-		goto free_irq;
-	}
-
-	/* Set driver data */
-	spi_set_drvdata(spi, priv);
-
 	/* Init - miscdev stuff */
 	init_waitqueue_head(&priv->poll_wait);
 	priv->read_buf.buf = priv->_read_buf;
@@ -884,6 +858,32 @@ static int bcm_spi_probe(struct spi_device *spi)
 
 	/* Init - etc */
 	priv->bcm_wake_lock = wakeup_source_register(NULL, "bcm_spi_wake_lock");
+
+	/* Request IRQ */
+	ret = request_irq(spi->irq, bcm_irq_handler, IRQF_TRIGGER_HIGH, "ttyBCM", priv);
+	if (ret) {
+		pr_err("[SSPBBD]: Failed to register BCM4773 SPI TTY IRQ %d.\n", spi->irq);
+		goto free_wq;
+	}
+
+	disable_irq(spi->irq);
+
+	pr_notice("[SSPBBD]: Probe OK. ssp-host-req=%d, irq=%d, priv=0x%pK\n",
+		  desc_to_gpio(host_req), spi->irq, priv);
+
+	/* Register misc device */
+	priv->misc.minor = MISC_DYNAMIC_MINOR;
+	priv->misc.name = "ttyBCM";
+	priv->misc.fops = &bcm_spi_fops;
+
+	ret = misc_register(&priv->misc);
+	if (ret) {
+		pr_err("[SSPBBD]: Failed to register bcm_gps_spi's misc dev. err=%d\n", ret);
+		goto free_irq;
+	}
+
+	/* Set driver data */
+	spi_set_drvdata(spi, priv);
 
 	g_bcm_gps = priv;
 	/* Init BBD & SSP */
