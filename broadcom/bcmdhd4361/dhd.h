@@ -926,6 +926,7 @@ typedef struct dhd_pub {
 	/* Suspend disable flag and "in suspend" flag */
 	int suspend_disable_flag; /* "1" to disable all extra powersaving during suspend */
 	int in_suspend;			/* flag set to 1 when early suspend called */
+	int pm_suspend_programmed;	/* suspend state set by the PM notifier */
 #ifdef PNO_SUPPORT
 	int pno_enable;			/* pno status : "1" is pno enable */
 	int pno_suspend;		/* pno suspend status : "1" is pno suspended */

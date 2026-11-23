@@ -1550,6 +1550,7 @@ static int dhd_toe_set(dhd_info_t *dhd, int idx, uint32 toe_ol);
 
 static int dhd_wl_host_event(dhd_info_t *dhd, int ifidx, void *pktdata, uint16 pktlen,
 		wl_event_msg_t *event_ptr, void **data_ptr);
+static int dhd_suspend_resume_helper(struct dhd_info *dhd, int val, int force);
 
 #if defined(CONFIG_PM_SLEEP)
 static int dhd_pm_callback(struct notifier_block *nfb, unsigned long action, void *ignored)
@@ -1579,6 +1580,22 @@ static int dhd_pm_callback(struct notifier_block *nfb, unsigned long action, voi
 	case PM_POST_SUSPEND:
 		suspend = FALSE;
 		break;
+	}
+
+	/*
+	 * Program the dongle's suspend state across a system suspend if userspace has not
+	 * (screen-off SETSUSPENDMODE), and undo on resume only what was programmed here.
+	 */
+	if (suspend) {
+		if (!dhdinfo->pub.in_suspend && dhdinfo->pub.up) {
+			dhd_suspend_resume_helper(dhdinfo, 1, 0);
+			dhdinfo->pub.pm_suspend_programmed = TRUE;
+		}
+	} else {
+		if (dhdinfo->pub.pm_suspend_programmed) {
+			dhdinfo->pub.pm_suspend_programmed = FALSE;
+			dhd_suspend_resume_helper(dhdinfo, 0, 0);
+		}
 	}
 
 #if defined(SUPPORT_P2P_GO_PS) && defined(PROP_TXSTATUS)
