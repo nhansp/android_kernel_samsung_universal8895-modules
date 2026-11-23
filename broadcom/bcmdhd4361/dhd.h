@@ -45,6 +45,7 @@
 #include <linux/etherdevice.h>
 #include <linux/random.h>
 #include <linux/spinlock.h>
+#include <linux/stringify.h>
 #include <linux/ethtool.h>
 #include <linux/fs.h>
 #include <linux/proc_fs.h>
@@ -2113,7 +2114,12 @@ extern int dhd_keep_alive_onoff(dhd_pub_t *dhd);
 #endif /* KEEP_ALIVE */
 
 /* OS spin lock API */
-extern void *dhd_os_spin_lock_init(osl_t *osh);
+/* One lockdep class per call site, as spin_lock_init() gives */
+extern void *__dhd_os_spin_lock_init(osl_t *osh, struct lock_class_key *key, const char *name);
+#define dhd_os_spin_lock_init(osh) ({						\
+	static struct lock_class_key __dhd_lock_key;				\
+	__dhd_os_spin_lock_init((osh), &__dhd_lock_key, __FILE__ ":" __stringify(__LINE__)); \
+})
 extern void dhd_os_spin_lock_deinit(osl_t *osh, void *lock);
 extern unsigned long dhd_os_spin_lock(void *lock);
 void dhd_os_spin_unlock(void *lock, unsigned long flags);

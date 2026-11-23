@@ -16560,14 +16560,16 @@ void dhd_os_general_spin_unlock(dhd_pub_t *pub, unsigned long flags)
 
 /* Linux specific multipurpose spinlock API */
 void *
-dhd_os_spin_lock_init(osl_t *osh)
+__dhd_os_spin_lock_init(osl_t *osh, struct lock_class_key *key, const char *name)
 {
 	/* Adding 4 bytes since the sizeof(spinlock_t) could be 0 */
 	/* if CONFIG_SMP and CONFIG_DEBUG_SPINLOCK are not defined */
 	/* and this results in kernel asserts in internal builds */
 	spinlock_t * lock = MALLOC(osh, sizeof(spinlock_t) + 4);
-	if (lock)
+	if (lock) {
 		spin_lock_init(lock);
+		lockdep_set_class_and_name(lock, key, name);
+	}
 	return ((void *)lock);
 }
 void
