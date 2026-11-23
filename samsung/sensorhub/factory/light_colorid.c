@@ -55,7 +55,7 @@ int light_corloid_read_colorid(void)
 	int iRet = 0;
 	struct file *colorid_filp = NULL;
 	int color_id;
-	char buf[8] = {0, };
+	char buf[8 + 1] = {0, };
 	char temp;
 	char *token, *str;
 
@@ -110,7 +110,7 @@ int light_colorid_read_efs_version(char buf[], int buf_length)
 	}
 
 	iRet = kernel_read(version_filp,
-		(char *)buf, buf_length * sizeof(char), &version_filp->f_pos);
+		(char *)buf, (buf_length - 1) * sizeof(char), &version_filp->f_pos);
 
 
 	if (iRet < 0)
@@ -233,7 +233,7 @@ int light_colorid_read_predefined_file(int color_id, int coef[], unsigned int th
 	int iRet = 0, crc, i;
 	struct file *coef_filp = NULL;
 	char file_name[COLOR_ID_PREDEFINED_FILENAME_LENTH] = {0, };
-	char file_contents[COLOR_ID_PREDEFINED_FILE_LENGTH] = {0, };
+	char file_contents[COLOR_ID_PREDEFINED_FILE_LENGTH + 1] = {0, };
 	char *token, *str;
 
 

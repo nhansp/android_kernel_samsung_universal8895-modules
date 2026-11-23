@@ -52,7 +52,7 @@ static ssize_t sea_level_pressure_store(struct device *dev,
 
 int pressure_open_calibration(struct ssp_data *data)
 {
-	char chBuf[10] = {0,};
+	char chBuf[10 + 1] = {0,};
 	int iErr = 0;
 	struct file *cal_filp = NULL;
 
