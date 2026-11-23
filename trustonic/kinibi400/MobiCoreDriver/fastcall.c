@@ -189,7 +189,7 @@ static inline void mc_set_schedule_policy(int core)
 /* ExySp: for sos performance */
 static int mc_cpu_offline(int cpu)
 {
-	int i;
+	int i, ret = 0;
 
 	mutex_lock(&core_switch_lock);
 	core_status &= ~(0x1 << cpu);
@@ -211,8 +211,17 @@ static int mc_cpu_offline(int cpu)
 
 		mc_dev_devel("Skipping CPU %d", cpu);
 	}
+
+	if (active_cpu == cpu) {
+		/* The hotplug rollback does not call tee_cpu_online() */
+		core_status |= (0x1 << cpu);
+		mc_set_schedule_policy(cpu);
+		mc_dev_info("CPU #%d hosts the TEE and could not be vacated, refusing unplug",
+			    cpu);
+		ret = -EBUSY;
+	}
 	mutex_unlock(&core_switch_lock);
-	return 0;
+	return ret;
 }
 
 /* ExySp: for sos performance */
