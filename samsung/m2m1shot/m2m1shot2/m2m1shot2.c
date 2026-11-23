@@ -1674,7 +1674,10 @@ static long m2m1shot2_ioctl(struct file *filp,
 	{
 		enum m2m1shot2_priority data;
 
-		get_user(data, (enum m2m1shot2_priority __user *)arg);
+		if (get_user(data, (enum m2m1shot2_priority __user *)arg)) {
+			ret = -EFAULT;
+			break;
+		}
 
 		if ((data < M2M1SHOT2_LOW_PRIORITY) ||
 		    (data >= M2M1SHOT2_PRIORITY_END)) {
