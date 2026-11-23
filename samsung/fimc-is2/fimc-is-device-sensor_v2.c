@@ -2917,6 +2917,7 @@ static int fimc_is_sensor_back_start(void *qdevice,
 {
 	int ret = 0;
 	int enable;
+	bool group_started = false, devicemgr_started = false, internal_started = false;
 	struct fimc_is_device_sensor *device = qdevice;
 	struct v4l2_subdev *subdev_flite;
 	struct fimc_is_device_flite *flite;
@@ -2978,23 +2979,41 @@ static int fimc_is_sensor_back_start(void *qdevice,
 	ret = fimc_is_group_start(groupmgr, group);
 	if (ret) {
 		merr("fimc_is_group_start is fail(%d)", device, ret);
-		goto p_err;
+		goto p_err_stop;
 	}
+	group_started = true;
 
 	ret = fimc_is_devicemgr_start(device->devicemgr, (void *)device, FIMC_IS_DEVICE_SENSOR);
 	if (ret) {
 		merr("fimc_is_group_start is fail(%d)", device, ret);
-		goto p_err;
+		goto p_err_stop;
 	}
+	devicemgr_started = true;
 
 	ret = fimc_is_subdev_internal_start((void *)device, FIMC_IS_DEVICE_SENSOR);
 	if (ret) {
 		merr("subdev internal start is fail(%d)", device, ret);
 		ret = -EINVAL;
-		goto p_err;
+		internal_started = true;
+		goto p_err_stop;
 	}
 
 	set_bit(FIMC_IS_SENSOR_BACK_START, &device->state);
+	goto p_err;
+
+	/* back_stop() does nothing without BACK_START: undo in its order */
+p_err_stop:
+	set_bit(FLITE_STOP_NOWAIT, &flite->state);
+	if (v4l2_subdev_call(subdev_flite, video, s_stream, 0))
+		merr("v4l2_flite_call(s_stream) is fail", device);
+	if (internal_started && fimc_is_subdev_internal_stop((void *)device, FIMC_IS_DEVICE_SENSOR))
+		merr("subdev internal stop is fail", device);
+	if (group_started && fimc_is_group_stop(groupmgr, group))
+		merr("fimc_is_group_stop is fail", device);
+	if (devicemgr_started &&
+	    fimc_is_devicemgr_stop(device->devicemgr, (void *)device, FIMC_IS_DEVICE_SENSOR))
+		merr("fimc_is_devicemgr_stop is fail", device);
+	clear_bit(FIMC_IS_SENSOR_S_CONFIG, &device->state);
 
 p_err:
 	minfo("[SEN:D] %s(%dx%d, %d)\n", device, __func__,
