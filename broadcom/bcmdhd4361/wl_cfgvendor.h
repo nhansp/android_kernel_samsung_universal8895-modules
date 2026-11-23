@@ -477,6 +477,12 @@ enum andr_wifi_attr {
 };
 
 /* As the Android Wi-Fi HAL numbers them */
+enum andr_lstat_attributes {
+	ANDR_LSTAT_ATTRIBUTE_INVALID,
+	ANDR_LSTAT_ATTRIBUTE_NUM_RADIO,
+	ANDR_LSTAT_ATTRIBUTE_STATS_INFO
+};
+/* As the Android Wi-Fi HAL numbers them */
 enum usable_channel_attributes {
 	USABLECHAN_ATTRIBUTE_INVALID,
 	USABLECHAN_ATTRIBUTE_BAND,

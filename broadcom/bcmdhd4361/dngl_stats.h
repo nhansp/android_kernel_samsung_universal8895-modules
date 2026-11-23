@@ -108,9 +108,12 @@ typedef struct {
 	uint32 capabilities;             /* WIFI_CAPABILITY_XXX (self) */
 	uint8 ssid[DOT11_MAX_SSID_LEN+1]; /* null terminated SSID */
 	uint8 bssid[ETHER_ADDR_LEN];     /* bssid */
-	uint8 PAD[1];
 	uint8 ap_country_str[3];         /* country string advertised by AP */
 	uint8 country_str[3];            /* country string for this association */
+	uint8 time_slicing_duty_cycle_percent;	/* share of the radio's time this interface
+						 * gets when it time-slices a channel with
+						 * another one, 100 when it does not
+						 */
 	uint8 PAD[2];
 } wifi_interface_info;
 
@@ -198,10 +201,13 @@ typedef struct {
 	wifi_channel_stat channels[1];   /* channel statistics */
 } wifi_radio_stat;
 
+/* Radio statistics as the Android Wi-Fi HAL reads them, without the channels that follow */
 typedef struct {
 	wifi_radio radio;
 	uint32 on_time;
 	uint32 tx_time;
+	uint32 num_tx_levels;
+	uint32 *tx_time_per_levels;	/* user pointer, always NULL with num_tx_levels 0 */
 	uint32 rx_time;
 	uint32 on_time_scan;
 	uint32 on_time_nbd;
@@ -211,6 +217,24 @@ typedef struct {
 	uint32 on_time_hs20;
 	uint32 num_channels;
 } wifi_radio_stat_h;
+
+#ifdef CONFIG_COMPAT
+typedef struct {
+	wifi_radio radio;
+	uint32 on_time;
+	uint32 tx_time;
+	uint32 num_tx_levels;
+	compat_uptr_t tx_time_per_levels;
+	uint32 rx_time;
+	uint32 on_time_scan;
+	uint32 on_time_nbd;
+	uint32 on_time_gscan;
+	uint32 on_time_roam_scan;
+	uint32 on_time_pno_scan;
+	uint32 on_time_hs20;
+	uint32 num_channels;
+} compat_wifi_radio_stat_h;
+#endif /* CONFIG_COMPAT */
 
 /* per rate statistics */
 typedef struct {
@@ -256,11 +280,18 @@ typedef enum
 	WIFI_PEER_INVALID
 } wifi_peer_type;
 
+typedef struct bssload_info {
+	uint16 sta_count;	/* station count */
+	uint16 chan_util;	/* channel utilization */
+	uint8 PAD[4];
+} bssload_info_t;
+
 /* per peer statistics */
 typedef struct {
 	wifi_peer_type type;           /* peer type (AP, TDLS, GO etc.) */
 	uint8 peer_mac_address[6];        /* mac address */
 	uint32 capabilities;              /* peer WIFI_CAPABILITY_XXX */
+	bssload_info_t bssload;           /* STA count and channel utilization */
 	uint32 num_rate;                  /* number of rates */
 	wifi_rate_stat rate_stats[1];   /* per rate statistics, number of entries  = num_rate */
 } wifi_peer_info;
