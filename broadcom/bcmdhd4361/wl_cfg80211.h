@@ -561,7 +561,7 @@ struct wl_event_q {
 	u32 etype;
 	wl_event_msg_t emsg;
 	u32 datalen;
-	s8 edata[1];
+	s8 edata[];
 };
 
 /* security information with currently associated ap */
