@@ -272,10 +272,8 @@ static inline int wait_mcp_notification(void)
 	}
 
 	/* TEE halted or dead: dump status and SMC log */
-	/* ExySp */
-//	mark_mcp_dead();
+	mark_mcp_dead();
 	nq_dump_status();
-	panic("tbase halt");
 
 	return -ETIME;
 }
