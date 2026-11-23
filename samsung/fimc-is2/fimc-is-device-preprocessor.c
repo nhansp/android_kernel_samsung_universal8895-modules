@@ -18,8 +18,6 @@
 #include <linux/device.h>
 #include <linux/platform_device.h>
 #include <linux/slab.h>
-#include <video/videonode.h>
-#include <media/exynos_mc.h>
 #include <asm/cacheflush.h>
 #include <asm/pgtable.h>
 #include <linux/firmware.h>
@@ -40,6 +38,7 @@
 #include "fimc-is-dvfs.h"
 #ifdef CONFIG_COMPANION_FACTORY_VALIDATION
 #include "fimc-is-companion.h"
+#include "fimc-is-drivers.h"
 #endif
 
 extern struct pm_qos_request exynos_isp_qos_int;
@@ -672,18 +671,28 @@ static int fimc_is_preproc_probe(struct platform_device *pdev)
 	pm_runtime_enable(&pdev->dev);
 #endif
 
+	/*
+	 * DMA goes through fimc_is, the master of the camera SysMMUs, so it must
+	 * be resumed with this device. Not RPM_ACTIVE: the preprocessor is suspended here.
+	 */
+	if (!device_link_add(&pdev->dev, &core->pdev->dev,
+			     DL_FLAG_PM_RUNTIME | DL_FLAG_AUTOREMOVE_CONSUMER)) {
+		ret = -EINVAL;
+		goto p_err;
+	}
+
+	/* device_link_add() resumed fimc_is and nothing else will idle it */
+	pm_runtime_idle(&core->pdev->dev);
+
 p_err:
 	info("[%d][PRE:D] %s():%d\n", instance, __func__, ret);
 	return ret;
 }
 
-static int fimc_is_preproc_remove(struct platform_device *pdev)
+static void fimc_is_preproc_remove(struct platform_device *pdev)
 {
-	int ret = 0;
 
 	info("%s\n", __func__);
-
-	return ret;
 }
 
 static int fimc_is_preproc_suspend(struct device *dev)
@@ -929,15 +938,15 @@ static const struct dev_pm_ops fimc_is_preproc_pm_ops = {
 #ifdef CONFIG_OF
 static const struct of_device_id exynos_fimc_is_preproc_match[] = {
 	{
-		.compatible = "samsung,exynos5-fimc-is-preprocessor",
+		.compatible = "samsung,exynos8895-fimc-is-preprocessor",
 	},
 	{},
 };
 MODULE_DEVICE_TABLE(of, exynos_fimc_is_preproc_match);
 
-static struct platform_driver fimc_is_preproc_driver = {
+struct platform_driver fimc_is_preproc_driver = {
 	.probe		= fimc_is_preproc_probe,
-	.remove 	= fimc_is_preproc_remove,
+	.remove		= fimc_is_preproc_remove,
 	.driver = {
 		.name	= FIMC_IS_PREPROC_DEV_NAME,
 		.owner	= THIS_MODULE,
@@ -956,9 +965,9 @@ static struct platform_device_id fimc_is_preproc_driver_ids[] = {
 };
 MODULE_DEVICE_TABLE(platform, fimc_is_preproc_driver_ids);
 
-static struct platform_driver fimc_is_preproc_driver = {
+struct platform_driver fimc_is_preproc_driver = {
 	.probe		= fimc_is_preproc_probe,
-	.remove 	= __devexit_p(fimc_is_preproc_remove),
+	.remove		= fimc_is_preproc_remove,
 	.id_table	= fimc_is_preproc_driver_ids,
 	.driver	  = {
 		.name	= FIMC_IS_PREPROC_DEV_NAME,
@@ -968,22 +977,4 @@ static struct platform_driver fimc_is_preproc_driver = {
 };
 #endif
 
-static int __init fimc_is_preproc_init(void)
-{
-	int ret = platform_driver_register(&fimc_is_preproc_driver);
-	if (ret)
-		err("platform_driver_register failed: %d\n", ret);
-
-	return ret;
-}
-late_initcall(fimc_is_preproc_init);
-
-static void __exit fimc_is_preproc_exit(void)
-{
-	platform_driver_unregister(&fimc_is_preproc_driver);
-}
-module_exit(fimc_is_preproc_exit);
-
 MODULE_AUTHOR("Wooki Min<wooki.min@samsung.com>");
-MODULE_DESCRIPTION("Exynos FIMC_IS_PREPROCESSOR driver");
-MODULE_LICENSE("GPL");

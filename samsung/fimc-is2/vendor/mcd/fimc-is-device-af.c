@@ -135,7 +135,7 @@ int fimc_is_af_i2c_write(struct i2c_client *client ,u8 addr, u8 data)
         return 0;
 }
 
-int fimc_is_af_ldo_enable(char *name, bool on)
+static int fimc_is_af_ldo_enable(char *name, bool on)
 {
 	struct fimc_is_core *core = (struct fimc_is_core *)dev_get_drvdata(fimc_is_dev);
 	struct regulator *regulator = NULL;
@@ -183,7 +183,7 @@ exit:
 	return ret;
 }
 
-int fimc_is_af_power(struct fimc_is_device_af *af_device, bool onoff)
+static int fimc_is_af_power(struct fimc_is_device_af *af_device, bool onoff)
 {
 	int ret = 0;
 
@@ -228,7 +228,7 @@ int fimc_is_af_power(struct fimc_is_device_af *af_device, bool onoff)
 	return ret;
 }
 
-bool fimc_is_check_regulator_status(char *name)
+static bool fimc_is_check_regulator_status(char *name)
 {
 	struct fimc_is_core *core = (struct fimc_is_core *)dev_get_drvdata(fimc_is_dev);
 	struct regulator *regulator = NULL;
@@ -410,6 +410,4 @@ int16_t fimc_is_af_move_lens_rear2(struct fimc_is_core *core)
 }
 #endif
 
-MODULE_DESCRIPTION("AF driver for remove noise");
 MODULE_AUTHOR("kyoungho yun <kyoungho.yun@samsung.com>");
-MODULE_LICENSE("GPL v2");

@@ -827,7 +827,7 @@ int fimc_is_subdev_buffer_queue(struct fimc_is_subdev *subdev,
 
 	framemgr_x_barrier_irqr(framemgr, FMGR_IDX_17, flags);
 
-	if (!(v4l2_buf->flags & V4L2_BUF_FLAG_NO_CACHE_CLEAN))
+	if (!(vbuf->cache_hints & V4L2_BUF_FLAG_NO_CACHE_CLEAN))
 		CALL_VOID_BUFOP(vbuf, buf_prepare, vbuf, false);
 
 p_err:
@@ -879,7 +879,7 @@ int fimc_is_subdev_buffer_finish(struct fimc_is_subdev *subdev,
 
 	framemgr_x_barrier_irq(framemgr, FMGR_IDX_18);
 
-	if (!(v4l2_buf->flags & V4L2_BUF_FLAG_NO_CACHE_INVALIDATE))
+	if (!(vbuf->cache_hints & V4L2_BUF_FLAG_NO_CACHE_INVALIDATE))
 		CALL_VOID_BUFOP(vbuf, buf_finish, vbuf, false);
 
 	return ret;

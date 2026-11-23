@@ -181,7 +181,7 @@ p_err:
 	return ret;
 }
 
-void fimc_is_hw_mcsc_hw_info(struct fimc_is_hw_ip *hw_ip, struct fimc_is_hw_mcsc_cap *cap)
+static void fimc_is_hw_mcsc_hw_info(struct fimc_is_hw_ip *hw_ip, struct fimc_is_hw_mcsc_cap *cap)
 {
 	int i = 0;
 
@@ -789,8 +789,8 @@ int fimc_is_hw_mcsc_set_param(struct fimc_is_hw_ip *hw_ip, struct is_region *reg
 	return ret;
 }
 
-void fimc_is_hw_mcsc_check_size(struct fimc_is_hw_ip *hw_ip, struct mcs_param *param,
-	u32 instance, u32 output_id)
+static __maybe_unused void fimc_is_hw_mcsc_check_size(struct fimc_is_hw_ip *hw_ip, struct mcs_param *param,
+						      u32 instance, u32 output_id)
 {
 	struct param_mcs_input *input = &param->input;
 	struct param_mcs_output *output = &param->output[output_id];
@@ -810,8 +810,8 @@ void fimc_is_hw_mcsc_check_size(struct fimc_is_hw_ip *hw_ip, struct mcs_param *p
 	info_hw("[%d]<<< hw_mcsc_check_size <<<\n", instance);
 }
 
-int fimc_is_hw_mcsc_update_register(struct fimc_is_hw_ip *hw_ip,
-	struct mcs_param *param, u32 output_id, u32 instance)
+static int fimc_is_hw_mcsc_update_register(struct fimc_is_hw_ip *hw_ip,
+					   struct mcs_param *param, u32 output_id, u32 instance)
 {
 	int ret = 0;
 

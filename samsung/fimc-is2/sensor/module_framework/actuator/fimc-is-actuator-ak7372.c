@@ -23,6 +23,7 @@
 
 #include "fimc-is-helper-i2c.h"
 #include "fimc-is-device-af.h"
+#include "fimc-is-drivers.h"
 
 #define ACTUATOR_NAME		"AK7372"
 
@@ -140,7 +141,7 @@ p_err:
 	return ret;
 }
 
-int sensor_ak7372_actuator_init(struct v4l2_subdev *subdev, u32 val)
+static int sensor_ak7372_actuator_init(struct v4l2_subdev *subdev, u32 val)
 {
 	int ret = 0;
 	u8 product_id = 0;
@@ -209,7 +210,7 @@ p_err:
 	return ret;
 }
 
-int sensor_ak7372_actuator_get_status(struct v4l2_subdev *subdev, u32 *info)
+static int sensor_ak7372_actuator_get_status(struct v4l2_subdev *subdev, u32 *info)
 {
 	int ret = 0;
 	struct fimc_is_actuator *actuator = NULL;
@@ -251,7 +252,7 @@ p_err:
 	return ret;
 }
 
-int sensor_ak7372_actuator_set_position(struct v4l2_subdev *subdev, u32 *info)
+static int sensor_ak7372_actuator_set_position(struct v4l2_subdev *subdev, u32 *info)
 {
 	int ret = 0;
 	struct fimc_is_actuator *actuator;
@@ -352,18 +353,28 @@ p_err:
 	return ret;
 }
 
+static long core_ops_fimc_is_ioctl(struct v4l2_subdev *sd, unsigned int cmd, void *arg)
+{
+	switch (cmd) {
+	case FIMC_IS_SUBDEV_G_CTRL:
+		return sensor_ak7372_actuator_g_ctrl(sd, arg);
+	case FIMC_IS_SUBDEV_S_CTRL:
+		return sensor_ak7372_actuator_s_ctrl(sd, arg);
+	}
+
+	return -ENOIOCTLCMD;
+}
+
 static const struct v4l2_subdev_core_ops core_ops = {
 	.init = sensor_ak7372_actuator_init,
-	.g_ctrl = sensor_ak7372_actuator_g_ctrl,
-	.s_ctrl = sensor_ak7372_actuator_s_ctrl,
+	.ioctl = core_ops_fimc_is_ioctl,
 };
 
 static const struct v4l2_subdev_ops subdev_ops = {
 	.core = &core_ops,
 };
 
-int sensor_ak7372_actuator_probe(struct i2c_client *client,
-		const struct i2c_device_id *id)
+static int sensor_ak7372_actuator_probe(struct i2c_client *client)
 {
 	int ret = 0;
 	struct fimc_is_core *core= NULL;
@@ -378,7 +389,8 @@ int sensor_ak7372_actuator_probe(struct i2c_client *client,
 	u32 sensor_id_len;
 	int i = 0;
 
-	BUG_ON(!fimc_is_dev);
+	if (!fimc_is_dev)
+		return -EPROBE_DEFER;
 	BUG_ON(!client);
 	core = (struct fimc_is_core *)dev_get_drvdata(fimc_is_dev);
 	if (!core) {
@@ -457,11 +469,8 @@ p_err:
 	return ret;
 }
 
-static int sensor_ak7372_actuator_remove(struct i2c_client *client)
+static void sensor_ak7372_actuator_remove(struct i2c_client *client)
 {
-	int ret = 0;
-
-	return ret;
 }
 
 static const struct of_device_id exynos_fimc_is_ak7372_match[] = {
@@ -477,7 +486,7 @@ static const struct i2c_device_id actuator_ak7372_idt[] = {
 	{},
 };
 
-static struct i2c_driver actuator_ak7372_driver = {
+struct i2c_driver actuator_ak7372_driver = {
 	.driver = {
 		.name	= ACTUATOR_NAME,
 		.owner	= THIS_MODULE,
@@ -487,4 +496,3 @@ static struct i2c_driver actuator_ak7372_driver = {
 	.remove	= sensor_ak7372_actuator_remove,
 	.id_table = actuator_ak7372_idt
 };
-module_i2c_driver(actuator_ak7372_driver);

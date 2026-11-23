@@ -53,7 +53,7 @@ static int exynos_fimc_is_module_pin_control(struct device *dev,
 	u32 voltage = pin_ctrls->voltage;
 	u32 act = pin_ctrls->act;
 	int ret = 0;
-	int active_count;
+	int active_count = 0;
 	unsigned long flags;
 
 	if (pin_ctrls->shared_rsc_type) {
@@ -242,7 +242,7 @@ static int exynos_fimc_is_module_pin_debug(struct device *dev,
 			ulong base, pin;
 			u32 index;
 
-			base = (ulong)ioremap_nocache(0x13470000, 0x10000);
+			base = (ulong)ioremap(0x13470000, 0x10000);
 
 			index = 0x60; /* GPC2 */
 			pin = base + index;

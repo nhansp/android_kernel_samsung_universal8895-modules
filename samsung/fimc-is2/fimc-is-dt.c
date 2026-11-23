@@ -11,7 +11,6 @@
  */
 
 #include <linux/sched.h>
-#include <media/exynos_mc.h>
 #ifdef CONFIG_OF
 #include <linux/of.h>
 #include <linux/of_gpio.h>
@@ -63,9 +62,7 @@ static int parse_gate_info(struct exynos_platform_fimc_is *pdata, struct device_
 	int ret = 0;
 	struct device_node *group_np = NULL;
 	struct device_node *gate_info_np;
-	struct property *prop;
 	struct property *prop2;
-	const __be32 *p;
 	const char *s;
 	u32 i = 0, u = 0;
 	struct exynos_fimc_is_clk_gate_info *gate_info;
@@ -80,7 +77,7 @@ static int parse_gate_info(struct exynos_platform_fimc_is *pdata, struct device_
 	s = NULL;
 	/* get gate register info */
 	prop2 = of_find_property(np, "clk_gate_strs", NULL);
-	of_property_for_each_u32(np, "clk_gate_enums", prop, p, u) {
+	of_property_for_each_u32(np, "clk_gate_enums", u) {
 		printk(KERN_INFO "int value: %d\n", u);
 		s = of_prop_next_string(prop2, s);
 		if (s != NULL) {
@@ -90,7 +87,7 @@ static int parse_gate_info(struct exynos_platform_fimc_is *pdata, struct device_
 	}
 
 	/* gate info */
-	gate_info_np = of_find_node_by_name(np, "clk_gate_ctrl");
+	gate_info_np = of_get_child_by_name(np, "clk_gate_ctrl");
 	if (!gate_info_np) {
 		printk(KERN_ERR "%s: can't find fimc_is clk_gate_ctrl node\n", __func__);
 		ret = -ENOENT;
@@ -100,19 +97,19 @@ static int parse_gate_info(struct exynos_platform_fimc_is *pdata, struct device_
 	while ((group_np = of_get_next_child(gate_info_np, group_np))) {
 		struct exynos_fimc_is_clk_gate_group *group =
 				&gate_info->groups[i];
-		of_property_for_each_u32(group_np, "mask_clk_on_org", prop, p, u) {
+		of_property_for_each_u32(group_np, "mask_clk_on_org", u) {
 			printk(KERN_INFO "(%d) int1 value: %d\n", i, u);
 			group->mask_clk_on_org |= (1 << u);
 		}
-		of_property_for_each_u32(group_np, "mask_clk_off_self_org", prop, p, u) {
+		of_property_for_each_u32(group_np, "mask_clk_off_self_org", u) {
 			printk(KERN_INFO "(%d) int2 value: %d\n", i, u);
 			group->mask_clk_off_self_org |= (1 << u);
 		}
-		of_property_for_each_u32(group_np, "mask_clk_off_depend", prop, p, u) {
+		of_property_for_each_u32(group_np, "mask_clk_off_depend", u) {
 			printk(KERN_INFO "(%d) int3 value: %d\n", i, u);
 			group->mask_clk_off_depend |= (1 << u);
 		}
-		of_property_for_each_u32(group_np, "mask_cond_for_depend", prop, p, u) {
+		of_property_for_each_u32(group_np, "mask_cond_for_depend", u) {
 			printk(KERN_INFO "(%d) int4 value: %d\n", i, u);
 			group->mask_cond_for_depend |= (1 << u);
 		}
@@ -254,7 +251,7 @@ int fimc_is_parse_dt(struct platform_device *pdev)
 	of_property_read_u32(np, "chain_config", &core->chain_config);
 	probe_info("FIMC-IS chain configuration: %d", core->chain_config);
 
-	vender_np = of_find_node_by_name(np, "vender");
+	vender_np = of_get_child_by_name(np, "vender");
 	if (vender_np) {
 		ret = fimc_is_vender_dt(vender_np);
 		if (ret)
@@ -267,7 +264,7 @@ int fimc_is_parse_dt(struct platform_device *pdev)
 		goto p_err;
 	}
 
-	dvfs_np = of_find_node_by_name(np, "fimc_is_dvfs");
+	dvfs_np = of_get_child_by_name(np, "fimc_is_dvfs");
 	if (dvfs_np) {
 		ret = parse_dvfs_table(dvfs, pdata, dvfs_np);
 		if (ret)
@@ -618,28 +615,28 @@ int fimc_is_sensor_module_parse_dt(struct platform_device *pdev,
 		goto p_err;
 	}
 
-	af_np = of_find_node_by_name(dnode, "af");
+	af_np = of_get_child_by_name(dnode, "af");
 	if (!af_np) {
 		pdata->af_product_name = ACTUATOR_NAME_NOTHING;
 	} else {
 		parse_af_data(pdata, af_np);
 	}
 
-	flash_np = of_find_node_by_name(dnode, "flash");
+	flash_np = of_get_child_by_name(dnode, "flash");
 	if (!flash_np) {
 		pdata->flash_product_name = FLADRV_NAME_NOTHING;
 	} else {
 		parse_flash_data(pdata, flash_np);
 	}
 
-	preprocessor_np = of_find_node_by_name(dnode, "preprocessor");
+	preprocessor_np = of_get_child_by_name(dnode, "preprocessor");
 	if (!preprocessor_np) {
 		pdata->preprocessor_product_name = PREPROCESSOR_NAME_NOTHING;
 	} else {
 		parse_preprocessor_data(pdata, preprocessor_np);
 	}
 
-	ois_np = of_find_node_by_name(dnode, "ois");
+	ois_np = of_get_child_by_name(dnode, "ois");
 	if (!ois_np) {
 		pdata->ois_product_name = OIS_NAME_NOTHING;
 	} else {
@@ -648,7 +645,7 @@ int fimc_is_sensor_module_parse_dt(struct platform_device *pdev,
 
 	pdata->power_seq_dt = of_property_read_bool(dnode, "use_power_seq");
 	if(pdata->power_seq_dt == true) {
-		power_np = of_find_node_by_name(dnode, "power_seq");
+		power_np = of_get_child_by_name(dnode, "power_seq");
 		if (!power_np) {
 			probe_err("power sequence is not declared to DT");
 			goto p_err;
@@ -675,7 +672,7 @@ int fimc_is_sensor_module_parse_dt(struct platform_device *pdev,
 		goto p_err;
 	}
 
-	internal_vc_np = of_find_node_by_name(dnode, "internal_vc");
+	internal_vc_np = of_get_child_by_name(dnode, "internal_vc");
 	if (internal_vc_np)
 		parse_internal_vc_data(pdata, internal_vc_np);
 
@@ -744,28 +741,28 @@ int fimc_is_module_parse_dt(struct device *dev,
 		goto p_err;
 	}
 
-	af_np = of_find_node_by_name(dnode, "af");
+	af_np = of_get_child_by_name(dnode, "af");
 	if (!af_np) {
 		pdata->af_product_name = ACTUATOR_NAME_NOTHING;
 	} else {
 		parse_af_data(pdata, af_np);
 	}
 
-	flash_np = of_find_node_by_name(dnode, "flash");
+	flash_np = of_get_child_by_name(dnode, "flash");
 	if (!flash_np) {
 		pdata->flash_product_name = FLADRV_NAME_NOTHING;
 	} else {
 		parse_flash_data(pdata, flash_np);
 	}
 
-	preprocessor_np = of_find_node_by_name(dnode, "preprocessor");
+	preprocessor_np = of_get_child_by_name(dnode, "preprocessor");
 	if (!preprocessor_np) {
 		pdata->preprocessor_product_name = PREPROCESSOR_NAME_NOTHING;
 	} else {
 		parse_preprocessor_data(pdata, preprocessor_np);
 	}
 
-	ois_np = of_find_node_by_name(dnode, "ois");
+	ois_np = of_get_child_by_name(dnode, "ois");
 	if (!ois_np) {
 		pdata->ois_product_name = OIS_NAME_NOTHING;
 	} else {
@@ -774,7 +771,7 @@ int fimc_is_module_parse_dt(struct device *dev,
 
 	pdata->power_seq_dt = of_property_read_bool(dnode, "use_power_seq");
 	if(pdata->power_seq_dt == true) {
-		power_np = of_find_node_by_name(dnode, "power_seq");
+		power_np = of_get_child_by_name(dnode, "power_seq");
 		if (!power_np) {
 			probe_err("power sequence is not declared to DT");
 			goto p_err;
@@ -802,7 +799,7 @@ int fimc_is_module_parse_dt(struct device *dev,
 		goto p_err;
 	}
 
-	internal_vc_np = of_find_node_by_name(dnode, "internal_vc");
+	internal_vc_np = of_get_child_by_name(dnode, "internal_vc");
 	if (internal_vc_np)
 		parse_internal_vc_data(pdata, internal_vc_np);
 

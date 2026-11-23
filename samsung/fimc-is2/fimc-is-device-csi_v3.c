@@ -414,7 +414,7 @@ static void csis_flush_all_vc_buf_done(struct fimc_is_device_csi *csi, u32 state
  * tasklet_csis_end     : In case of OTF or M2M mode (csi->)
  */
 static u32 g_print_cnt;
-void tasklet_csis_str_otf(unsigned long data)
+static void tasklet_csis_str_otf(unsigned long data)
 {
 	struct v4l2_subdev *subdev;
 	struct fimc_is_device_csi *csi;
@@ -536,7 +536,7 @@ trigger_skip:
 	clear_bit(FIMC_IS_SENSOR_WAIT_STREAMING, &device->state);
 }
 
-void tasklet_csis_str_m2m(unsigned long data)
+static __maybe_unused void tasklet_csis_str_m2m(unsigned long data)
 {
 	struct v4l2_subdev *subdev;
 	struct fimc_is_device_csi *csi;
@@ -1290,11 +1290,24 @@ static int csi_g_ctrl(struct v4l2_subdev *subdev, struct v4l2_control *ctrl)
 	return ret;
 }
 
+static int csi_s_param(struct v4l2_subdev *subdev, struct v4l2_streamparm *param);
+
+static long core_ops_fimc_is_ioctl(struct v4l2_subdev *sd, unsigned int cmd, void *arg)
+{
+	switch (cmd) {
+	case FIMC_IS_SUBDEV_G_CTRL:
+		return csi_g_ctrl(sd, arg);
+	case FIMC_IS_SUBDEV_S_PARM:
+		return csi_s_param(sd, arg);
+	}
+
+	return csi_ioctl(sd, cmd, arg);
+}
+
 static const struct v4l2_subdev_core_ops core_ops = {
 	.init = csi_init,
 	.s_power = csi_s_power,
-	.ioctl = csi_ioctl,
-	.g_ctrl = csi_g_ctrl
+	.ioctl = core_ops_fimc_is_ioctl,
 };
 
 static int csi_stream_on(struct v4l2_subdev *subdev,
@@ -1602,7 +1615,7 @@ static int csi_s_param(struct v4l2_subdev *subdev, struct v4l2_streamparm *param
 }
 
 static int csi_s_format(struct v4l2_subdev *subdev,
-	struct v4l2_subdev_pad_config *cfg,
+	struct v4l2_subdev_state *cfg,
 	struct v4l2_subdev_format *fmt)
 {
 	int ret = 0;
@@ -1707,7 +1720,6 @@ static int csi_g_errorCode(struct v4l2_subdev *subdev, u32 *errorCode)
 
 static const struct v4l2_subdev_video_ops video_ops = {
 	.s_stream = csi_s_stream,
-	.s_parm = csi_s_param,
 	.s_rx_buffer = csi_s_buffer,
 	.g_input_status = csi_g_errorCode
 };
@@ -1762,7 +1774,7 @@ int fimc_is_csi_probe(void *parent, u32 instance)
 
 	csi->regs_start = mem_res->start;
 	csi->regs_end = mem_res->end;
-	csi->base_reg =  devm_ioremap_nocache(&pdev->dev, mem_res->start, resource_size(mem_res));
+	csi->base_reg =  devm_ioremap(&pdev->dev, mem_res->start, resource_size(mem_res));
 	if (!csi->base_reg) {
 		probe_err("Failed to remap io region(%p)", csi->base_reg);
 		ret = -ENOMEM;
@@ -1850,7 +1862,7 @@ int fimc_is_csi_dma_probe(struct fimc_is_device_csi_dma *csi_dma, struct platfor
 
 	csi_dma->regs_start = mem_res->start;
 	csi_dma->regs_end = mem_res->end;
-	csi_dma->base_reg =  devm_ioremap_nocache(&pdev->dev, mem_res->start, resource_size(mem_res));
+	csi_dma->base_reg =  devm_ioremap(&pdev->dev, mem_res->start, resource_size(mem_res));
 	if (!csi_dma->base_reg) {
 		probe_err("Failed to remap io region(%p)", csi_dma->base_reg);
 		ret = -ENOMEM;

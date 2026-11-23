@@ -157,6 +157,7 @@ struct fimc_is_flash_data {
 	bool				flash_fired;
 	struct work_struct		flash_fire_work;
 	struct timer_list		flash_expire_timer;
+	unsigned long			flash_expire_data;
 	struct work_struct		flash_expire_work;
 };
 

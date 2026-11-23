@@ -9,15 +9,15 @@
  */
 
 #include "fimc-is-interface-ddk.h"
+#include "fimc-is-interface-jopp.h"
 #include "fimc-is-hw-control.h"
 #include "sfr/fimc-is-sfr-isp-v310.h"
 #include "fimc-is-err.h"
-#include <soc/samsung/bcm.h>
 
 unsigned int stop_tirgger_count = 0;
 void fimc_is_stop_trigger(void);
 
-bool check_dma_done(struct fimc_is_hw_ip *hw_ip, u32 instance_id, u32 fcount)
+static bool check_dma_done(struct fimc_is_hw_ip *hw_ip, u32 instance_id, u32 fcount)
 {
 	bool ret = false;
 	int expected_fcount;
@@ -252,7 +252,6 @@ static void fimc_is_lib_io_callback(void *this, enum lib_cb_event_type event_id,
 					output_id, IS_SHOT_SUCCESS, true);
 		break;
 	case LIB_EVENT_ERROR_CIN_OVERFLOW:
-		bcm_stop(NULL);
 		info_hw("[%d][ID:%d]LIB_EVENT_ERROR_CIN_OVERFLOW\n", instance_id, hw_ip->id);
 		fimc_is_hardware_flush_frame(hw_ip, FS_HW_CONFIGURE, IS_SHOT_OVERFLOW);
 
@@ -362,13 +361,16 @@ static void fimc_is_lib_camera_callback(void *this, enum lib_cb_event_type event
 	return;
 };
 
+FIMC_IS_JOPP_ENTRY(fimc_is_lib_camera_callback);
+FIMC_IS_JOPP_ENTRY(fimc_is_lib_io_callback);
+
 struct lib_callback_func fimc_is_lib_cb_func = {
-	.camera_callback	= fimc_is_lib_camera_callback,
-	.io_callback		= fimc_is_lib_io_callback,
+	.camera_callback	= FIMC_IS_JOPP(fimc_is_lib_camera_callback),
+	.io_callback		= FIMC_IS_JOPP(fimc_is_lib_io_callback),
 };
 
-int fimc_is_lib_isp_chain_create(struct fimc_is_hw_ip *hw_ip,
-	struct fimc_is_lib_isp *this, u32 instance_id)
+int __nocfi fimc_is_lib_isp_chain_create(struct fimc_is_hw_ip *hw_ip,
+					 struct fimc_is_lib_isp *this, u32 instance_id)
 {
 	int ret = 0;
 	u32 chain_id;
@@ -431,8 +433,8 @@ int fimc_is_lib_isp_chain_create(struct fimc_is_hw_ip *hw_ip,
 	return ret;
 }
 
-int fimc_is_lib_isp_object_create(struct fimc_is_hw_ip *hw_ip,
-	struct fimc_is_lib_isp *this, u32 instance_id, u32 rep_flag, u32 module_id)
+int __nocfi fimc_is_lib_isp_object_create(struct fimc_is_hw_ip *hw_ip,
+					  struct fimc_is_lib_isp *this, u32 instance_id, u32 rep_flag, u32 module_id)
 {
 	int ret = 0;
 	u32 chain_id, input_type, obj_info = 0;
@@ -498,8 +500,8 @@ int fimc_is_lib_isp_object_create(struct fimc_is_hw_ip *hw_ip,
 	return ret;
 }
 
-void fimc_is_lib_isp_chain_destroy(struct fimc_is_hw_ip *hw_ip,
-	struct fimc_is_lib_isp *this, u32 instance_id)
+void __nocfi fimc_is_lib_isp_chain_destroy(struct fimc_is_hw_ip *hw_ip,
+					   struct fimc_is_lib_isp *this, u32 instance_id)
 {
 	int ret = 0;
 	u32 chain_id;
@@ -542,8 +544,8 @@ void fimc_is_lib_isp_chain_destroy(struct fimc_is_hw_ip *hw_ip,
 	return;
 }
 
-void fimc_is_lib_isp_object_destroy(struct fimc_is_hw_ip *hw_ip,
-	struct fimc_is_lib_isp *this, u32 instance_id)
+void __nocfi fimc_is_lib_isp_object_destroy(struct fimc_is_hw_ip *hw_ip,
+					    struct fimc_is_lib_isp *this, u32 instance_id)
 {
 	int ret = 0;
 
@@ -567,8 +569,8 @@ void fimc_is_lib_isp_object_destroy(struct fimc_is_hw_ip *hw_ip,
 	return;
 }
 
-int fimc_is_lib_isp_set_param(struct fimc_is_hw_ip *hw_ip,
-	struct fimc_is_lib_isp *this, void *param)
+int __nocfi fimc_is_lib_isp_set_param(struct fimc_is_hw_ip *hw_ip,
+				      struct fimc_is_lib_isp *this, void *param)
 {
 	int ret;
 
@@ -605,8 +607,8 @@ int fimc_is_lib_isp_set_param(struct fimc_is_hw_ip *hw_ip,
 	return ret;
 }
 
-int fimc_is_lib_isp_set_ctrl(struct fimc_is_hw_ip *hw_ip,
-	struct fimc_is_lib_isp *this, struct fimc_is_frame *frame)
+int __nocfi fimc_is_lib_isp_set_ctrl(struct fimc_is_hw_ip *hw_ip,
+				     struct fimc_is_lib_isp *this, struct fimc_is_frame *frame)
 {
 	int ret = 0;
 
@@ -646,8 +648,8 @@ int fimc_is_lib_isp_set_ctrl(struct fimc_is_hw_ip *hw_ip,
 	return 0;
 }
 
-void fimc_is_lib_isp_shot(struct fimc_is_hw_ip *hw_ip,
-	struct fimc_is_lib_isp *this, void *param_set, struct camera2_shot *shot)
+void __nocfi fimc_is_lib_isp_shot(struct fimc_is_hw_ip *hw_ip,
+				  struct fimc_is_lib_isp *this, void *param_set, struct camera2_shot *shot)
 {
 	int ret = 0;
 
@@ -689,8 +691,8 @@ void fimc_is_lib_isp_shot(struct fimc_is_hw_ip *hw_ip,
 	}
 }
 
-int fimc_is_lib_isp_get_meta(struct fimc_is_hw_ip *hw_ip,
-	struct fimc_is_lib_isp *this, struct fimc_is_frame *frame)
+int __nocfi fimc_is_lib_isp_get_meta(struct fimc_is_hw_ip *hw_ip,
+				     struct fimc_is_lib_isp *this, struct fimc_is_frame *frame)
 
 {
 	int ret = 0;
@@ -732,8 +734,8 @@ int fimc_is_lib_isp_get_meta(struct fimc_is_hw_ip *hw_ip,
 	return ret;
 }
 
-void fimc_is_lib_isp_stop(struct fimc_is_hw_ip *hw_ip,
-	struct fimc_is_lib_isp *this, u32 instance_id)
+void __nocfi fimc_is_lib_isp_stop(struct fimc_is_hw_ip *hw_ip,
+				  struct fimc_is_lib_isp *this, u32 instance_id)
 {
 	int ret = 0;
 
@@ -755,8 +757,8 @@ void fimc_is_lib_isp_stop(struct fimc_is_hw_ip *hw_ip,
 	return;
 }
 
-int fimc_is_lib_isp_create_tune_set(struct fimc_is_lib_isp *this,
-	ulong addr, u32 size, u32 index, int flag, u32 instance_id)
+int __nocfi fimc_is_lib_isp_create_tune_set(struct fimc_is_lib_isp *this,
+					    ulong addr, u32 size, u32 index, int flag, u32 instance_id)
 {
 	int ret = 0;
 	struct lib_tune_set tune_set;
@@ -782,8 +784,8 @@ int fimc_is_lib_isp_create_tune_set(struct fimc_is_lib_isp *this,
 	return ret;
 }
 
-int fimc_is_lib_isp_apply_tune_set(struct fimc_is_lib_isp *this,
-	u32 index, u32 instance_id)
+int __nocfi fimc_is_lib_isp_apply_tune_set(struct fimc_is_lib_isp *this,
+					   u32 index, u32 instance_id)
 {
 	int ret = 0;
 
@@ -800,8 +802,8 @@ int fimc_is_lib_isp_apply_tune_set(struct fimc_is_lib_isp *this,
 	return ret;
 }
 
-int fimc_is_lib_isp_delete_tune_set(struct fimc_is_lib_isp *this,
-	u32 index, u32 instance_id)
+int __nocfi fimc_is_lib_isp_delete_tune_set(struct fimc_is_lib_isp *this,
+					    u32 index, u32 instance_id)
 {
 	int ret = 0;
 
@@ -820,8 +822,8 @@ int fimc_is_lib_isp_delete_tune_set(struct fimc_is_lib_isp *this,
 	return ret;
 }
 
-int fimc_is_lib_isp_load_cal_data(struct fimc_is_lib_isp *this,
-	u32 instance_id, ulong addr)
+int __nocfi fimc_is_lib_isp_load_cal_data(struct fimc_is_lib_isp *this,
+					  u32 instance_id, ulong addr)
 {
 	char version[32];
 	int ret = 0;
@@ -843,8 +845,8 @@ int fimc_is_lib_isp_load_cal_data(struct fimc_is_lib_isp *this,
 	return ret;
 }
 
-int fimc_is_lib_isp_get_cal_data(struct fimc_is_lib_isp *this,
-	u32 instance_id, struct cal_info *data, int type)
+int __nocfi fimc_is_lib_isp_get_cal_data(struct fimc_is_lib_isp *this,
+					 u32 instance_id, struct cal_info *data, int type)
 {
 	int ret = 0;
 
@@ -862,8 +864,8 @@ int fimc_is_lib_isp_get_cal_data(struct fimc_is_lib_isp *this,
 	return ret;
 }
 
-int fimc_is_lib_isp_sensor_info_mode_chg(struct fimc_is_lib_isp *this,
-	u32 instance_id, struct camera2_shot *shot)
+int __nocfi fimc_is_lib_isp_sensor_info_mode_chg(struct fimc_is_lib_isp *this,
+						 u32 instance_id, struct camera2_shot *shot)
 {
 	int ret = 0;
 
@@ -882,8 +884,8 @@ int fimc_is_lib_isp_sensor_info_mode_chg(struct fimc_is_lib_isp *this,
 	return ret;
 }
 
-int fimc_is_lib_isp_sensor_update_control(struct fimc_is_lib_isp *this,
-	u32 instance_id, u32 frame_count, struct camera2_shot *shot)
+int __nocfi fimc_is_lib_isp_sensor_update_control(struct fimc_is_lib_isp *this,
+						  u32 instance_id, u32 frame_count, struct camera2_shot *shot)
 {
 	int ret = 0;
 

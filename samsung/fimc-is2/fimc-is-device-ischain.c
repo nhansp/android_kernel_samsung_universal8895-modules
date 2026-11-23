@@ -18,8 +18,6 @@
 #include <linux/device.h>
 #include <linux/platform_device.h>
 #include <linux/slab.h>
-#include <video/videonode.h>
-#include <media/exynos_mc.h>
 #include <asm/cacheflush.h>
 #include <asm/pgtable.h>
 #include <linux/firmware.h>
@@ -787,7 +785,7 @@ static void fimc_is_ischain_region_flush(struct fimc_is_device_ischain *device)
 #endif
 }
 
-void fimc_is_ischain_meta_flush(struct fimc_is_frame *frame)
+static void fimc_is_ischain_meta_flush(struct fimc_is_frame *frame)
 {
 #ifdef ENABLE_CACHE
 	CALL_BUFOP((void *)frame->cookie_shot, sync_for_device,
@@ -887,7 +885,7 @@ char* fimc_is_ischain_get_version(enum fimc_is_bin_type type)
 	return "N/A";
 }
 
-void fimc_is_ischain_savefirm(struct fimc_is_device_ischain *this)
+static __maybe_unused void fimc_is_ischain_savefirm(struct fimc_is_device_ischain *this)
 {
 #ifdef DEBUG_DUMP_FIRMWARE
 	loff_t pos;
@@ -1405,8 +1403,8 @@ void * fimc_is_itf_g_param(struct fimc_is_device_ischain *device,
 	return (void *)dst_param;
 }
 
-int fimc_is_itf_a_param(struct fimc_is_device_ischain *device,
-	u32 group)
+static int fimc_is_itf_a_param(struct fimc_is_device_ischain *device,
+			       u32 group)
 {
 	int ret = 0;
 
@@ -2006,8 +2004,8 @@ int fimc_is_itf_power_down(struct fimc_is_interface *interface)
 	return ret;
 }
 
-int fimc_is_itf_sys_ctl(struct fimc_is_device_ischain *this,
-			int cmd, int val)
+static int fimc_is_itf_sys_ctl(struct fimc_is_device_ischain *this,
+			       int cmd, int val)
 {
 	int ret = 0;
 
@@ -2162,7 +2160,7 @@ int fimc_is_ischain_runtime_suspend(struct device *dev)
 	exynos7_update_media_scenario(TYPE_CAM, false, 0);
 #endif
 #endif
-#if defined(CONFIG_SOC_EXYNOS8895)
+#if IS_ENABLED(CONFIG_PCIE_EXYNOS8895)
 	exynos_pcie_l1ss_ctrl(1, PCIE_L1SS_CTRL_CAMERA);
 #endif
 
@@ -2308,7 +2306,7 @@ int fimc_is_ischain_runtime_resume(struct device *dev)
 	exynos7_update_media_scenario(TYPE_CAM, true, 0);
 #endif
 #endif
-#if defined(CONFIG_SOC_EXYNOS8895)
+#if IS_ENABLED(CONFIG_PCIE_EXYNOS8895)
 	exynos_pcie_l1ss_ctrl(0, PCIE_L1SS_CTRL_CAMERA);
 #endif
 
@@ -6723,9 +6721,9 @@ int fimc_is_ischain_tag(struct fimc_is_device_ischain *ischain,
 	frame->shot->dm.flash.firingTime =
 		applied_ctl->flashUd.ctl.firingTime;
 #else
-	struct timespec curtime;
+	struct timespec64 curtime;
 
-	ktime_get_ts(&curtime);
+	ktime_get_ts64(&curtime);
 
 	frame->shot->dm.request.frameCount = frame->fcount;
 	frame->shot->dm.sensor.timeStamp = fimc_is_get_timestamp();
@@ -6733,7 +6731,7 @@ int fimc_is_ischain_tag(struct fimc_is_device_ischain *ischain,
 	return ret;
 }
 
-void fimc_is_bts_control(struct fimc_is_device_ischain *device)
+static __maybe_unused void fimc_is_bts_control(struct fimc_is_device_ischain *device)
 {
 #if defined(USE_BTS_SCEN)
 	struct fimc_is_groupmgr *groupmgr;

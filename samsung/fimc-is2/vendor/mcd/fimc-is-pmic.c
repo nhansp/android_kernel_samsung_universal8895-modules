@@ -143,6 +143,3 @@ void comp_pmic_init(struct dcdc_power *dcdc, struct i2c_client *client)
 	dcdc->get_vout_str = comp_pmic_get_vout_str;
 	dcdc->set_vout = comp_pmic_set_vout;
 }
-
-MODULE_DESCRIPTION("Exynos FIMC-IS PMIC driver");
-MODULE_LICENSE("GPL");

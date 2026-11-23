@@ -263,7 +263,7 @@ static void prepare_sfr_dump_debug(struct fimc_is_hardware *hardware)
 }
 #endif
 
-void print_hw_frame_count(struct fimc_is_hw_ip *hw_ip)
+static void print_hw_frame_count(struct fimc_is_hw_ip *hw_ip)
 {
 	int f_index, p_index;
 	struct hw_debug_info *debug_info;
@@ -370,7 +370,7 @@ void fimc_is_hardware_flush_frame(struct fimc_is_hw_ip *hw_ip,
 		err_hw("frame flush is not completed");
 }
 
-u32 get_group_id_from_hw_ip(u32 hw_id)
+static u32 get_group_id_from_hw_ip(u32 hw_id)
 {
 	u32 group_id = GROUP_ID_MAX;
 
@@ -452,8 +452,8 @@ u32 get_hw_id_from_group(u32 group_id)
 	return hw_id;
 }
 
-int fimc_is_set_mshot_frame(u32 instance,
-	struct fimc_is_frame *frame,
+static int fimc_is_set_mshot_frame(u32 instance,
+				   struct fimc_is_frame *frame,
 	struct fimc_is_framemgr *framemgr)
 {
 	int ret = 0;
@@ -627,6 +627,19 @@ static int kthread_mshot(void *data)
 					hw_ip->task_mshot->pid);
 
 	return 0;
+}
+
+/* the library uses FP/SIMD in this thread */
+static int kthread_mshot_neon(void *data)
+{
+	struct user_fpsimd_state st;
+	int ret;
+
+	kernel_neon_begin(&st);
+	ret = kthread_mshot(data);
+	kernel_neon_end(&st);
+
+	return ret;
 }
 #endif
 
@@ -905,6 +918,13 @@ static void fimc_is_hardware_shot_timer(unsigned long data)
 	fimc_is_hardware_flush_frame(hw_ip, FS_HW_REQUEST, IS_SHOT_TIMEOUT);
 }
 
+static void fimc_is_hardware_shot_timer_fn(struct timer_list *t)
+{
+	struct fimc_is_hw_ip *hw_ip = timer_container_of(hw_ip, t, shot_timer);
+
+	fimc_is_hardware_shot_timer((unsigned long)hw_ip);
+}
+
 int fimc_is_hardware_shot(struct fimc_is_hardware *hardware, u32 instance,
 	struct fimc_is_group *group, struct fimc_is_frame *frame,
 	struct fimc_is_framemgr *framemgr, ulong hw_map, u32 framenum)
@@ -980,8 +1000,8 @@ int fimc_is_hardware_shot(struct fimc_is_hardware *hardware, u32 instance,
 	return ret;
 }
 
-int fimc_is_hardware_get_meta(struct fimc_is_hw_ip *hw_ip, struct fimc_is_frame *frame,
-	u32 instance, ulong hw_map, u32 output_id, enum ShotErrorType done_type)
+static int fimc_is_hardware_get_meta(struct fimc_is_hw_ip *hw_ip, struct fimc_is_frame *frame,
+				     u32 instance, ulong hw_map, u32 output_id, enum ShotErrorType done_type)
 {
 	int ret = 0;
 
@@ -1033,7 +1053,7 @@ int fimc_is_hardware_get_meta(struct fimc_is_hw_ip *hw_ip, struct fimc_is_frame 
 	return ret;
 }
 
-int check_shot_exist(struct fimc_is_framemgr *framemgr, u32 fcount)
+static int check_shot_exist(struct fimc_is_framemgr *framemgr, u32 fcount)
 {
 	struct fimc_is_frame *frame;
 
@@ -1058,8 +1078,8 @@ int check_shot_exist(struct fimc_is_framemgr *framemgr, u32 fcount)
 	return 0;
 }
 
-void fimc_is_set_hw_count(struct fimc_is_hardware *hardware, struct fimc_is_group *head,
-	u32 instance, u32 fcount, u32 num_buffers, ulong hw_map)
+static void fimc_is_set_hw_count(struct fimc_is_hardware *hardware, struct fimc_is_group *head,
+				 u32 instance, u32 fcount, u32 num_buffers, ulong hw_map)
 {
 	struct fimc_is_group *child;
 	struct fimc_is_hw_ip *hw_ip = NULL;
@@ -1256,8 +1276,8 @@ int fimc_is_hardware_grp_shot(struct fimc_is_hardware *hardware, u32 instance,
 	return ret;
 }
 
-int make_internal_shot(struct fimc_is_hw_ip *hw_ip, u32 instance, u32 fcount,
-	struct fimc_is_frame **in_frame, struct fimc_is_framemgr *framemgr)
+static int make_internal_shot(struct fimc_is_hw_ip *hw_ip, u32 instance, u32 fcount,
+			      struct fimc_is_frame **in_frame, struct fimc_is_framemgr *framemgr)
 {
 	int ret = 0;
 	int i = 0;
@@ -1393,7 +1413,7 @@ retry_get_frame:
 	return ret;
 }
 
-void check_late_shot(struct fimc_is_hw_ip *hw_ip)
+static void check_late_shot(struct fimc_is_hw_ip *hw_ip)
 {
 	struct fimc_is_frame *frame;
 	struct fimc_is_framemgr *framemgr = hw_ip->framemgr_late;
@@ -1787,8 +1807,8 @@ static int flush_frames_in_instance(struct fimc_is_hw_ip *hw_ip,
 	return ret;
 }
 
-void fimc_is_hardware_force_stop(struct fimc_is_hardware *hardware,
-	struct fimc_is_hw_ip *hw_ip, u32 instance)
+static void fimc_is_hardware_force_stop(struct fimc_is_hardware *hardware,
+					struct fimc_is_hw_ip *hw_ip, u32 instance)
 {
 	int ret = 0;
 	struct fimc_is_framemgr *framemgr;
@@ -2001,7 +2021,7 @@ int fimc_is_hardware_open(struct fimc_is_hardware *hardware, u32 hw_id,
 		atomic_set(&hw_ip->count.dma, 0);
 		atomic_set(&hw_ip->status.Vvalid, V_BLANK);
 		atomic_set(&hw_ip->run_rsccount, 0);
-		setup_timer(&hw_ip->shot_timer, fimc_is_hardware_shot_timer, (unsigned long)hw_ip);
+		timer_setup(&hw_ip->shot_timer, fimc_is_hardware_shot_timer_fn, 0);
 
 		set_bit(HW_OPEN, &hw_ip->state);
 		set_bit(HW_INIT, &hw_ip->state);
@@ -2011,14 +2031,12 @@ int fimc_is_hardware_open(struct fimc_is_hardware *hardware, u32 hw_id,
 			tasklet_init(&hw_ip->tasklet_mshot, tasklet_mshot, (unsigned long)hw_ip);
 #elif defined(MULTI_SHOT_KTHREAD)
 			sema_init(&hw_ip->smp_mshot, 0);
-			hw_ip->task_mshot = kthread_create(kthread_mshot, (void *)hw_ip, "shot_m2m_hw%d", hw_ip->id);
+			hw_ip->task_mshot = kthread_create(kthread_mshot_neon, (void *)hw_ip,
+							   "shot_m2m_hw%d", hw_ip->id);
 			if (IS_ERR(hw_ip->task_mshot)) {
 				err_hw("######## kthread creation is fail[ID:%d]\n", hw_ip->id);
 				return PTR_ERR(hw_ip->task_mshot);
 			}
-#ifdef ENABLE_FPSIMD_FOR_USER
-			fpsimd_set_task_using(hw_ip->task_mshot);
-#endif
 			wake_up_process(hw_ip->task_mshot);
 			hw_ip->task_mshot_flag = true;
 
@@ -2164,8 +2182,8 @@ void fimc_is_hardware_clear(struct fimc_is_hardware *hardware)
 	}
 }
 
-int do_frame_done_work_func(struct fimc_is_interface *itf, int wq_id, u32 instance,
-	u32 group_id, u32 fcount, u32 rcount, u32 status)
+static int do_frame_done_work_func(struct fimc_is_interface *itf, int wq_id, u32 instance,
+				   u32 group_id, u32 fcount, u32 rcount, u32 status)
 {
 	int ret = 0;
 	bool retry_flag = false;
@@ -2204,8 +2222,8 @@ retry:
 	return ret;
 }
 
-int check_core_end(struct fimc_is_hw_ip *hw_ip, u32 hw_fcount,
-	struct fimc_is_frame **in_frame, struct fimc_is_framemgr *framemgr,
+static int check_core_end(struct fimc_is_hw_ip *hw_ip, u32 hw_fcount,
+			  struct fimc_is_frame **in_frame, struct fimc_is_framemgr *framemgr,
 	u32 output_id, enum ShotErrorType done_type)
 {
 	int ret = 0;
@@ -2266,8 +2284,8 @@ int check_core_end(struct fimc_is_hw_ip *hw_ip, u32 hw_fcount,
 	return ret;
 }
 
-int check_frame_end(struct fimc_is_hw_ip *hw_ip, u32 hw_fcount,
-	struct fimc_is_frame **in_frame, struct fimc_is_framemgr *framemgr,
+static int check_frame_end(struct fimc_is_hw_ip *hw_ip, u32 hw_fcount,
+			   struct fimc_is_frame **in_frame, struct fimc_is_framemgr *framemgr,
 	u32 output_id, enum ShotErrorType done_type)
 {
 	int ret = 0;
@@ -2790,11 +2808,13 @@ static void set_hw_slots_bit(unsigned long *slots, int nslots, int hw_id)
 		if (valid_hw_slot_id(hw_slot))
 			set_bit(hw_slot, slots);
 		hw_id = DEV_HW_3AA1;
+		fallthrough;
 	case DEV_HW_3AA1:
 		hw_slot = fimc_is_hw_slot_id(hw_id);
 		if (valid_hw_slot_id(hw_slot))
 			set_bit(hw_slot, slots);
 		hw_id = DEV_HW_ISP0;
+		fallthrough;
 	case DEV_HW_ISP0:
 		hw_slot = fimc_is_hw_slot_id(hw_id);
 		if (valid_hw_slot_id(hw_slot))

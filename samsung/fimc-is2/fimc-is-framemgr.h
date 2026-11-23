@@ -248,21 +248,23 @@ static const char * const frame_state_name[NR_FRAME_STATE] = {
 };
 
 int frame_fcount(struct fimc_is_frame *frame, void *data);
+
+/* the queues are used with both FS_* and FS_HW_* states */
 int put_frame(struct fimc_is_framemgr *this, struct fimc_is_frame *frame,
-			enum fimc_is_frame_state state);
+			u32 state);
 struct fimc_is_frame *get_frame(struct fimc_is_framemgr *this,
-			enum fimc_is_frame_state state);
+			u32 state);
 int trans_frame(struct fimc_is_framemgr *this, struct fimc_is_frame *frame,
-			enum fimc_is_frame_state state);
+			u32 state);
 struct fimc_is_frame *peek_frame(struct fimc_is_framemgr *this,
-			enum fimc_is_frame_state state);
+			u32 state);
 struct fimc_is_frame *peek_frame_tail(struct fimc_is_framemgr *this,
-			enum fimc_is_frame_state state);
+			u32 state);
 struct fimc_is_frame *find_frame(struct fimc_is_framemgr *this,
-			enum fimc_is_frame_state state,
+			u32 state,
 			int (*fn)(struct fimc_is_frame *, void *), void *data);
 void print_frame_queue(struct fimc_is_framemgr *this,
-			enum fimc_is_frame_state state);
+			u32 state);
 
 int frame_manager_probe(struct fimc_is_framemgr *this, u32 id);
 int frame_manager_open(struct fimc_is_framemgr *this, u32 buffers);

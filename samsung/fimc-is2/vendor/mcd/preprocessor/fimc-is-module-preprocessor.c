@@ -42,6 +42,7 @@
 
 #include "fimc-is-interface-library.h"
 #include "fimc-is-cis.h"
+#include "fimc-is-drivers.h"
 
 #define FIMC_IS_DEV_COMP_DEV_NAME "73C3"
 
@@ -167,8 +168,8 @@ static int sensor_preproc_stream_off(struct v4l2_subdev *subdev)
 	return ret;
 }
 
-int sensor_preproc_get_mode(struct v4l2_subdev *subdev,
-		struct fimc_is_device_sensor *device, u16 *mode_select)
+static int sensor_preproc_get_mode(struct v4l2_subdev *subdev,
+				   struct fimc_is_device_sensor *device, u16 *mode_select)
 {
 	struct fimc_is_preprocessor *preprocessor;
 	struct fimc_is_device_preproc *device_preproc;
@@ -997,7 +998,7 @@ p_err:
 	return ret;
 }
 
-int sensor_preproc_deinit(struct v4l2_subdev *subdev)
+static int sensor_preproc_deinit(struct v4l2_subdev *subdev)
 {
 	struct fimc_is_preprocessor *preprocessor;
 	struct fimc_is_module_preprocessor *module_preproc;
@@ -1053,7 +1054,7 @@ exit:
 	return ret;
 }
 
-int sensor_preproc_s_format(struct v4l2_subdev *subdev, struct fimc_is_device_sensor *device)
+static int sensor_preproc_s_format(struct v4l2_subdev *subdev, struct fimc_is_device_sensor *device)
 {
 	struct fimc_is_preprocessor *preprocessor;
 	struct fimc_is_module_preprocessor *module_preproc;
@@ -1145,7 +1146,8 @@ static int sensor_preproc_probe(struct platform_device *pdev)
 	int preproc_irq = 0;
 
 	BUG_ON(!pdev);
-	BUG_ON(!fimc_is_dev);
+	if (!fimc_is_dev)
+		return -EPROBE_DEFER;
 
 	dev = &pdev->dev;
 	dnode = dev->of_node;
@@ -1265,13 +1267,10 @@ p_err:
 	return ret;
 }
 
-static int sensor_preproc_remove(struct platform_device *pdev)
+static void sensor_preproc_remove(struct platform_device *pdev)
 {
-	int ret = 0;
 
 	info("%s\n", __func__);
-
-	return ret;
 }
 
 #ifdef CONFIG_OF
@@ -1283,7 +1282,7 @@ static const struct of_device_id exynos_fimc_device_preproc_match[] = {
 };
 MODULE_DEVICE_TABLE(of, exynos_fimc_device_preproc_match);
 
-static struct platform_driver fimc_is_device_preproc_driver = {
+struct platform_driver fimc_is_device_preproc_driver = {
 	.probe		= sensor_preproc_probe,
 	.remove		= sensor_preproc_remove,
 	.driver = {
@@ -1303,9 +1302,9 @@ static struct platform_device_id fimc_is_device_preproc_driver_ids[] = {
 };
 MODULE_DEVICE_TABLE(platform, fimc_is_device_preproc_driver_ids);
 
-static struct platform_driver fimc_is_device_preproc_driver = {
+struct platform_driver fimc_is_device_preproc_driver = {
 	.probe		= sensor_preproc_probe,
-	.remove		= __devexit_p(sensor_preproc_remove),
+	.remove		= sensor_preproc_remove,
 	.id_table	= fimc_is_device_preproc_driver_ids,
 	.driver	  = {
 		.name	= FIMC_IS_DEV_COMP_DEV_NAME,
@@ -1314,22 +1313,4 @@ static struct platform_driver fimc_is_device_preproc_driver = {
 };
 #endif
 
-static int __init sensor_preproc_module_init(void)
-{
-	int ret = platform_driver_register(&fimc_is_device_preproc_driver);
-	if (ret)
-		err("platform_driver_register failed: %d\n", ret);
-
-	return ret;
-}
-late_initcall(sensor_preproc_module_init);
-
-static void __exit sensor_preproc_module_exit(void)
-{
-	platform_driver_unregister(&fimc_is_device_preproc_driver);
-}
-module_exit(sensor_preproc_module_exit);
-
 MODULE_AUTHOR("Wonjin LIM<wj.lim@samsung.com>");
-MODULE_DESCRIPTION("Exynos FIMC_IS_DEVICE_COMPANION driver");
-MODULE_LICENSE("GPL");

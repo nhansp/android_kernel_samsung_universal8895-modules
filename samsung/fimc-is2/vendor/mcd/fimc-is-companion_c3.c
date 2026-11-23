@@ -380,7 +380,7 @@ static int fimc_is_comp_single_read(struct fimc_is_core *core , u16 addr, u16 *d
 	return ret;
 }
 
-int fimc_is_comp_get_crc(struct fimc_is_core *core, u32 addr, int size, char* crc)
+static int fimc_is_comp_get_crc(struct fimc_is_core *core, u32 addr, int size, char *crc)
 {
 	int ret = 0;
 	int fail_count = 0;
@@ -573,7 +573,7 @@ p_err:
 }
 
 #if defined(CONFIG_COMPANION_AUTOMATIC_CRC_ON_OPEN) || defined(CONFIG_COMPANION_AUTOMATIC_CRC_ON_CLOSE)
-int fimc_is_comp_check_crc_with_signature(struct fimc_is_core *core)
+static int fimc_is_comp_check_crc_with_signature(struct fimc_is_core *core)
 {
 	int ret = 0;
 	struct fimc_is_from_info *sysfs_finfo;
@@ -684,7 +684,7 @@ int fimc_is_comp_check_crc_with_signature(struct fimc_is_core *core)
 }
 #endif
 
-int fimc_is_comp_check_cal_crc(struct fimc_is_core *core)
+static int fimc_is_comp_check_cal_crc(struct fimc_is_core *core)
 {
 	int ret = 0;
 	struct fimc_is_from_info *sysfs_finfo;
@@ -1395,7 +1395,7 @@ exit:
 }
 #endif
 
-int fimc_is_comp_read_ver(void *core_data)
+static int fimc_is_comp_read_ver(void *core_data)
 {
 	struct fimc_is_core *core = core_data;
 	int ret = 0;
@@ -1601,7 +1601,7 @@ p_err:
 }
 
 #ifdef C3_CSI_ERROR_RECOVERY
-void fimc_is_comp_csi_recovery(void *core_data)
+static void fimc_is_comp_csi_recovery(void *core_data)
 {
 	int ret = 0;
 	struct fimc_is_core *core = core_data;

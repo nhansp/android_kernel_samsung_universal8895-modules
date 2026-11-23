@@ -503,7 +503,7 @@ int fimc_is_vender_dt(struct device_node *np)
 	for (camera_num = 0; camera_num < max_camera_num; camera_num++) {
 		sprintf(camInfo_string, "%s%d", "camera_info", camera_num);
 
-		camInfo_np = of_find_node_by_name(np, camInfo_string);
+		camInfo_np = of_get_child_by_name(np, camInfo_string);
 		if (!camInfo_np) {
 			info("%s: camera_num = %d can't find camInfo_string node\n", __func__, camera_num);
 			continue;
@@ -515,7 +515,7 @@ int fimc_is_vender_dt(struct device_node *np)
 	return ret;
 }
 
-bool fimc_is_vender_check_sensor(struct fimc_is_core *core)
+static bool fimc_is_vender_check_sensor(struct fimc_is_core *core)
 {
 	int i = 0;
 	bool ret = false;
@@ -702,7 +702,7 @@ int fimc_is_vender_request_binary(struct fimc_is_binary *bin, const char *path1,
 
 	/* whether the loader is customized or not */
 	if (bin->customized != (unsigned long)bin) {
-		bin->alloc = &vmalloc;
+		bin->alloc = &fimc_is_vmalloc;
 		bin->free =  &vfree;
 	} else {
 		retry_cnt = bin->retry_cnt;
@@ -1635,7 +1635,7 @@ int fimc_is_vender_sensor_gpio_off(struct fimc_is_vender *vender, u32 scenario, 
 	return ret;
 }
 
-void fimc_is_vender_check_retention(struct fimc_is_vender *vender, struct sensor_open_extended *ext_info)
+static void fimc_is_vender_check_retention(struct fimc_is_vender *vender, struct sensor_open_extended *ext_info)
 {
 	struct fimc_is_vender_specific *specific;
 	struct fimc_is_from_info *sysfs_finfo;

@@ -38,6 +38,7 @@
 #include "fimc-is-dt.h"
 #include "fimc-is-device-module-base.h"
 #include "fimc-is-device-module-5e6.h"
+#include "fimc-is-drivers.h"
 
 #define SENSOR_NAME "S5K5E6"
 
@@ -238,7 +239,7 @@ static void sensor_5e6_vsync_work(struct work_struct *data)
 	info("5e6 was recovered\n");
 }
 
-enum hrtimer_restart sensor_5e6_vsync_timeout(struct hrtimer *timer)
+static enum hrtimer_restart sensor_5e6_vsync_timeout(struct hrtimer *timer)
 {
 	struct fimc_is_module_enum *module
 		= container_of(timer, struct fimc_is_module_enum, vsync_timer);
@@ -440,8 +441,8 @@ static int sensor_5e6_init(struct v4l2_subdev *subdev, u32 val)
 		}
 	}
 
-	hrtimer_init(&module->vsync_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
-	module->vsync_timer.function = sensor_5e6_vsync_timeout;
+	hrtimer_setup(&module->vsync_timer, sensor_5e6_vsync_timeout, CLOCK_MONOTONIC,
+		      HRTIMER_MODE_REL);
 	INIT_WORK(&module->vsync_work, sensor_5e6_vsync_work);
 
 	pr_info("[MOD:D:%d] %s(%d)\n", module->sensor_id, __func__, val);
@@ -450,7 +451,7 @@ exit:
 	return ret;
 }
 
-long sensor_5e6_ioctl(struct v4l2_subdev *subdev, unsigned int cmd, void *arg)
+static long sensor_5e6_ioctl(struct v4l2_subdev *subdev, unsigned int cmd, void *arg)
 {
 	struct fimc_is_module_enum *module;
 
@@ -469,14 +470,30 @@ long sensor_5e6_ioctl(struct v4l2_subdev *subdev, unsigned int cmd, void *arg)
 	return 0;
 }
 
+static int sensor_5e6_s_param(struct v4l2_subdev *subdev, struct v4l2_streamparm *param);
+
+static long core_ops_fimc_is_ioctl(struct v4l2_subdev *sd, unsigned int cmd, void *arg)
+{
+	switch (cmd) {
+	case FIMC_IS_SUBDEV_G_CTRL:
+		return sensor_module_g_ctrl(sd, arg);
+	case FIMC_IS_SUBDEV_S_CTRL:
+		return sensor_module_s_ctrl(sd, arg);
+	case FIMC_IS_SUBDEV_G_EXT_CTRLS:
+		return sensor_module_g_ext_ctrls(sd, arg);
+	case FIMC_IS_SUBDEV_S_EXT_CTRLS:
+		return sensor_module_s_ext_ctrls(sd, arg);
+	case FIMC_IS_SUBDEV_S_PARM:
+		return sensor_5e6_s_param(sd, arg);
+	}
+
+	return sensor_5e6_ioctl(sd, cmd, arg);
+}
+
 static const struct v4l2_subdev_core_ops core_ops = {
 	.init = sensor_5e6_init,
-	.g_ctrl = sensor_module_g_ctrl,
-	.s_ctrl = sensor_module_s_ctrl,
-	.g_ext_ctrls = sensor_module_g_ext_ctrls,
-	.s_ext_ctrls = sensor_module_s_ext_ctrls,
-	.ioctl = sensor_5e6_ioctl,
 	.log_status = sensor_module_log_status,
+	.ioctl = core_ops_fimc_is_ioctl,
 };
 
 #define VSYNC_TIMEOUT_IN_NSEC	(300 * NSEC_PER_MSEC) /* msec */
@@ -567,7 +584,7 @@ p_err:
 	return ret;
 }
 
-static int sensor_5e6_s_format(struct v4l2_subdev *subdev,	struct v4l2_subdev_pad_config *cfg,	struct v4l2_subdev_format *fmt)
+static int sensor_5e6_s_format(struct v4l2_subdev *subdev,	struct v4l2_subdev_state *cfg,	struct v4l2_subdev_format *fmt)
 {
 	/* TODO */
 	return 0;
@@ -575,7 +592,6 @@ static int sensor_5e6_s_format(struct v4l2_subdev *subdev,	struct v4l2_subdev_pa
 
 static const struct v4l2_subdev_video_ops video_ops = {
 	.s_stream = sensor_5e6_s_stream,
-	.s_parm = sensor_5e6_s_param
 };
 
 static const struct v4l2_subdev_pad_ops pad_ops = {
@@ -588,7 +604,7 @@ static const struct v4l2_subdev_ops subdev_ops = {
 	.pad = &pad_ops
 };
 
-int sensor_5e6_stream_on(struct v4l2_subdev *subdev)
+static int sensor_5e6_stream_on(struct v4l2_subdev *subdev)
 {
 	int ret = 0;
 	struct fimc_is_module_enum *module;
@@ -683,7 +699,7 @@ p_err:
 	return ret;
 }
 
-int sensor_5e6_stream_off(struct v4l2_subdev *subdev)
+static int sensor_5e6_stream_off(struct v4l2_subdev *subdev)
 {
 	int ret = 0;
 	struct fimc_is_module_enum *module;
@@ -724,7 +740,7 @@ p_err:
  * nano second
  * @ remarks
  */
-int sensor_5e6_s_duration(struct v4l2_subdev *subdev, u64 duration)
+static int sensor_5e6_s_duration(struct v4l2_subdev *subdev, u64 duration)
 {
 	int i = 0;
 	int ret = 0;
@@ -765,19 +781,19 @@ exit:
 	return ret;
 }
 
-int sensor_5e6_g_min_duration(struct v4l2_subdev *subdev)
+static int sensor_5e6_g_min_duration(struct v4l2_subdev *subdev)
 {
 	int ret = 0;
 	return ret;
 }
 
-int sensor_5e6_g_max_duration(struct v4l2_subdev *subdev)
+static int sensor_5e6_g_max_duration(struct v4l2_subdev *subdev)
 {
 	int ret = 0;
 	return ret;
 }
 
-int sensor_5e6_s_exposure(struct v4l2_subdev *subdev, u64 exposure)
+static int sensor_5e6_s_exposure(struct v4l2_subdev *subdev, u64 exposure)
 {
 	int ret = 0;
 	u8 value;
@@ -810,19 +826,19 @@ int sensor_5e6_s_exposure(struct v4l2_subdev *subdev, u64 exposure)
 	return ret;
 }
 
-int sensor_5e6_g_min_exposure(struct v4l2_subdev *subdev)
+static int sensor_5e6_g_min_exposure(struct v4l2_subdev *subdev)
 {
 	int ret = 0;
 	return ret;
 }
 
-int sensor_5e6_g_max_exposure(struct v4l2_subdev *subdev)
+static int sensor_5e6_g_max_exposure(struct v4l2_subdev *subdev)
 {
 	int ret = 0;
 	return ret;
 }
 
-int sensor_5e6_s_again(struct v4l2_subdev *subdev, u64 gain)
+static int sensor_5e6_s_again(struct v4l2_subdev *subdev, u64 gain)
 {
 	int ret = 0;
 	u8 value;
@@ -860,37 +876,37 @@ int sensor_5e6_s_again(struct v4l2_subdev *subdev, u64 gain)
 	return ret;
 }
 
-int sensor_5e6_g_min_again(struct v4l2_subdev *subdev)
+static int sensor_5e6_g_min_again(struct v4l2_subdev *subdev)
 {
 	int ret = 0;
 	return ret;
 }
 
-int sensor_5e6_g_max_again(struct v4l2_subdev *subdev)
+static int sensor_5e6_g_max_again(struct v4l2_subdev *subdev)
 {
 	int ret = 0;
 	return ret;
 }
 
-int sensor_5e6_s_dgain(struct v4l2_subdev *subdev)
+static int sensor_5e6_s_dgain(struct v4l2_subdev *subdev)
 {
 	int ret = 0;
 	return ret;
 }
 
-int sensor_5e6_g_min_dgain(struct v4l2_subdev *subdev)
+static int sensor_5e6_g_min_dgain(struct v4l2_subdev *subdev)
 {
 	int ret = 0;
 	return ret;
 }
 
-int sensor_5e6_g_max_dgain(struct v4l2_subdev *subdev)
+static int sensor_5e6_g_max_dgain(struct v4l2_subdev *subdev)
 {
 	int ret = 0;
 	return ret;
 }
 
-int sensor_5e6_s_shutterspeed(struct v4l2_subdev *subdev, u64 shutterspeed)
+static int sensor_5e6_s_shutterspeed(struct v4l2_subdev *subdev, u64 shutterspeed)
 {
 	int ret = 0;
 	u8 value;
@@ -929,13 +945,13 @@ p_err:
 
 }
 
-int sensor_5e6_g_min_shutterspeed(struct v4l2_subdev *subdev)
+static int sensor_5e6_g_min_shutterspeed(struct v4l2_subdev *subdev)
 {
 	int ret = 0;
 	return ret;
 }
 
-int sensor_5e6_g_max_shutterspeed(struct v4l2_subdev *subdev)
+static __maybe_unused int sensor_5e6_g_max_shutterspeed(struct v4l2_subdev *subdev)
 {
 	int ret = 0;
 	return ret;
@@ -1060,8 +1076,7 @@ static int sensor_5e6_power_setpin(struct device *dev,
 }
 #endif /* CONFIG_OF */
 
-int sensor_5e6_probe(struct i2c_client *client,
-	const struct i2c_device_id *id)
+int sensor_5e6_probe(struct i2c_client *client)
 {
 	int ret = 0;
 	struct fimc_is_core *core;
@@ -1191,10 +1206,8 @@ p_err:
 }
 
 
-static int sensor_5e6_remove(struct i2c_client *client)
+static void sensor_5e6_remove(struct i2c_client *client)
 {
-	int ret = 0;
-	return ret;
 }
 
 #ifdef CONFIG_OF
@@ -1211,7 +1224,7 @@ static const struct i2c_device_id sensor_5e6_idt[] = {
 	{},
 };
 
-static struct i2c_driver sensor_5e6_driver = {
+struct i2c_driver sensor_5e6_driver = {
 	.driver = {
 		.name	= SENSOR_NAME,
 		.owner  = THIS_MODULE,
@@ -1224,22 +1237,4 @@ static struct i2c_driver sensor_5e6_driver = {
 	.id_table = sensor_5e6_idt
 };
 
-static int __init sensor_5e6_load(void)
-{
-	probe_info("%s TEST \n", __func__);
-
-        return i2c_add_driver(&sensor_5e6_driver);
-}
-
-static void __exit sensor_5e6_unload(void)
-{
-        i2c_del_driver(&sensor_5e6_driver);
-}
-
-module_init(sensor_5e6_load);
-module_exit(sensor_5e6_unload);
-
 MODULE_AUTHOR("Gilyeon lim");
-MODULE_DESCRIPTION("Sensor 5E6 driver");
-MODULE_LICENSE("GPL v2");
-

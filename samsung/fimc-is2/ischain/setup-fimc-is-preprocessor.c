@@ -28,35 +28,32 @@
 
 #include <exynos-fimc-is.h>
 #include <exynos-fimc-is-sensor.h>
+#include <exynos-fimc-is-preprocessor.h>
 
 #if defined(CONFIG_SOC_EXYNOS8895)
-int exynos8895_fimc_is_preproc_iclk_cfg(struct device *dev,
-	u32 scenario,
+static int exynos8895_fimc_is_preproc_iclk_cfg(struct device *dev,
+					       u32 scenario,
 	u32 channel)
 {
 	return 0;
 }
 
-int exynos8895_fimc_is_preproc_iclk_on(struct device *dev,
-	u32 scenario,
+static int exynos8895_fimc_is_preproc_iclk_on(struct device *dev,
+					      u32 scenario,
 	u32 channel)
 {
-	fimc_is_enable(dev, "MUX_CIS_CLK2");
-
 	return 0;
 }
 
-int exynos8895_fimc_is_preproc_iclk_off(struct device *dev,
-	u32 scenario,
+static int exynos8895_fimc_is_preproc_iclk_off(struct device *dev,
+					       u32 scenario,
 	u32 channel)
 {
-	fimc_is_disable(dev, "MUX_CIS_CLK2");
-
 	return 0;
 }
 
-int exynos8895_fimc_is_preproc_mclk_on(struct device *dev,
-	u32 scenario,
+static int exynos8895_fimc_is_preproc_mclk_on(struct device *dev,
+					      u32 scenario,
 	u32 channel)
 {
 	char sclk_name[30];
@@ -71,8 +68,8 @@ int exynos8895_fimc_is_preproc_mclk_on(struct device *dev,
 	return 0;
 }
 
-int exynos8895_fimc_is_preproc_mclk_off(struct device *dev,
-	u32 scenario,
+static int exynos8895_fimc_is_preproc_mclk_off(struct device *dev,
+					       u32 scenario,
 	u32 channel)
 {
 	char sclk_name[30];

@@ -18,8 +18,6 @@
 #include <linux/device.h>
 #include <linux/platform_device.h>
 #include <linux/slab.h>
-#include <video/videonode.h>
-#include <media/exynos_mc.h>
 #include <asm/cacheflush.h>
 #include <asm/pgtable.h>
 #include <linux/firmware.h>
@@ -34,7 +32,7 @@
 #include "fimc-is-resourcemgr.h"
 
 const struct v4l2_file_operations fimc_is_pre_video_fops;
-const struct v4l2_ioctl_ops fimc_is_pre_video_ioctl_ops;
+const struct fimc_is_video_ioctl_ops fimc_is_pre_video_ioctl_ops;
 const struct vb2_ops fimc_is_pre_qops;
 
 int fimc_is_pre_video_probe(void *data)
@@ -66,7 +64,7 @@ int fimc_is_pre_video_probe(void *data)
 		&device->mem,
 		&device->v4l2_dev,
 		&fimc_is_pre_video_fops,
-		&fimc_is_pre_video_ioctl_ops);
+		&fimc_is_pre_video_ioctl_ops.ops);
 	if (ret)
 		dev_err(&device->pdev->dev, "%s is fail(%d)\n", __func__, ret);
 
@@ -158,7 +156,7 @@ const struct v4l2_file_operations fimc_is_pre_video_fops = {
 	.owner		= THIS_MODULE,
 	.open		= fimc_is_pre_video_open,
 	.release	= fimc_is_pre_video_close,
-	.unlocked_ioctl	= video_ioctl2,
+	.unlocked_ioctl	= fimc_is_video_ioctl2,
 };
 
 /*
@@ -193,8 +191,8 @@ p_err:
 	return ret;
 }
 
-const struct v4l2_ioctl_ops fimc_is_pre_video_ioctl_ops = {
-	.vidioc_s_input			= fimc_is_pre_video_s_input,
+const struct fimc_is_video_ioctl_ops fimc_is_pre_video_ioctl_ops = {
+	.ops.vidioc_s_input			= fimc_is_pre_video_s_input,
 };
 
 const struct vb2_ops fimc_is_pre_qops = {

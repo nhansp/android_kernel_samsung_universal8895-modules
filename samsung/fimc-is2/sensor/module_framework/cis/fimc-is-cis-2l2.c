@@ -41,6 +41,7 @@
 #include "fimc-is-cis-2l2-setB.h"
 
 #include "fimc-is-helper-i2c.h"
+#include "fimc-is-drivers.h"
 
 #define SENSOR_NAME "S5K2L2"
 /* #define DEBUG_2L2_PLL */
@@ -157,7 +158,7 @@ static void sensor_2l2_cis_data_calculation(const struct sensor_pll_info_compact
 	cis_data->min_coarse_integration_time = SENSOR_2L2_COARSE_INTEGRATION_TIME_MIN;
 }
 
-void sensor_2l2_cis_data_calc(struct v4l2_subdev *subdev, u32 mode)
+static void sensor_2l2_cis_data_calc(struct v4l2_subdev *subdev, u32 mode)
 {
 	int ret = 0;
 	struct fimc_is_cis *cis = NULL;
@@ -211,7 +212,7 @@ static int sensor_2l2_wait_stream_off_status(cis_shared_data *cis_data)
 	return ret;
 }
 
-int sensor_2l2_cis_check_rev(struct fimc_is_cis *cis)
+static int sensor_2l2_cis_check_rev(struct fimc_is_cis *cis)
 {
 	int ret = 0;
 	u8 rev = 0;
@@ -271,7 +272,7 @@ p_err:
 }
 
 /* CIS OPS */
-int sensor_2l2_cis_init(struct v4l2_subdev *subdev)
+static int sensor_2l2_cis_init(struct v4l2_subdev *subdev)
 {
 	int ret = 0;
 	struct fimc_is_cis *cis;
@@ -350,7 +351,7 @@ p_err:
 	return ret;
 }
 
-int sensor_2l2_cis_log_status(struct v4l2_subdev *subdev)
+static int sensor_2l2_cis_log_status(struct v4l2_subdev *subdev)
 {
 	int ret = 0;
 	struct fimc_is_cis *cis;
@@ -439,7 +440,7 @@ static inline int sensor_2l2_cis_group_param_hold_func(struct v4l2_subdev *subde
  *		positive - setted by request
  *		negative - ERROR value
  */
-int sensor_2l2_cis_group_param_hold(struct v4l2_subdev *subdev, bool hold)
+static int sensor_2l2_cis_group_param_hold(struct v4l2_subdev *subdev, bool hold)
 {
 	int ret = 0;
 	struct fimc_is_cis *cis = NULL;
@@ -461,7 +462,7 @@ p_err:
 	return ret;
 }
 
-int sensor_2l2_cis_set_global_setting_internal(struct v4l2_subdev *subdev)
+static int sensor_2l2_cis_set_global_setting_internal(struct v4l2_subdev *subdev)
 {
 	int ret = 0;
 	struct fimc_is_cis *cis = NULL;
@@ -489,7 +490,7 @@ p_err:
 int sensor_2l2_cis_retention_crc_check(struct v4l2_subdev *subdev);
 int sensor_2l2_cis_retention_prepare(struct v4l2_subdev *subdev);
 
-int sensor_2l2_cis_set_global_setting(struct v4l2_subdev *subdev)
+static int sensor_2l2_cis_set_global_setting(struct v4l2_subdev *subdev)
 {
 	int ret = 0;
 	struct fimc_is_cis *cis = NULL;
@@ -593,7 +594,7 @@ p_err:
 	return ret;
 }
 /* TODO: Sensor set size sequence(sensor done, sensor stop, 3AA done in FW case */
-int sensor_2l2_cis_set_size(struct v4l2_subdev *subdev, cis_shared_data *cis_data)
+static int sensor_2l2_cis_set_size(struct v4l2_subdev *subdev, cis_shared_data *cis_data)
 {
 	int ret = 0;
 	bool binning = false;
@@ -751,7 +752,7 @@ p_err:
 	return ret;
 }
 
-int sensor_2l2_cis_stream_on(struct v4l2_subdev *subdev)
+static int sensor_2l2_cis_stream_on(struct v4l2_subdev *subdev)
 {
 	int ret = 0;
 	struct fimc_is_cis *cis;
@@ -886,7 +887,7 @@ p_err:
 	return ret;
 }
 
-int sensor_2l2_cis_stream_off(struct v4l2_subdev *subdev)
+static int sensor_2l2_cis_stream_off(struct v4l2_subdev *subdev)
 {
 	int ret = 0;
 	struct fimc_is_cis *cis;
@@ -940,7 +941,7 @@ p_err:
 	return ret;
 }
 
-int sensor_2l2_cis_mode_change(struct v4l2_subdev *subdev, u32 mode)
+static int sensor_2l2_cis_mode_change(struct v4l2_subdev *subdev, u32 mode)
 {
 	int ret = 0;
 	struct fimc_is_cis *cis = NULL;
@@ -1070,7 +1071,7 @@ p_err:
 	return ret;
 }
 
-int sensor_2l2_cis_set_exposure_time(struct v4l2_subdev *subdev, struct ae_param *target_exposure)
+static int sensor_2l2_cis_set_exposure_time(struct v4l2_subdev *subdev, struct ae_param *target_exposure)
 {
 	int ret = 0;
 	int hold = 0;
@@ -1202,7 +1203,7 @@ p_err:
 	return ret;
 }
 
-int sensor_2l2_cis_get_min_exposure_time(struct v4l2_subdev *subdev, u32 *min_expo)
+static int sensor_2l2_cis_get_min_exposure_time(struct v4l2_subdev *subdev, u32 *min_expo)
 {
 	int ret = 0;
 	struct fimc_is_cis *cis = NULL;
@@ -1251,7 +1252,7 @@ p_err:
 	return ret;
 }
 
-int sensor_2l2_cis_get_max_exposure_time(struct v4l2_subdev *subdev, u32 *max_expo)
+static int sensor_2l2_cis_get_max_exposure_time(struct v4l2_subdev *subdev, u32 *max_expo)
 {
 	int ret = 0;
 	struct fimc_is_cis *cis;
@@ -1313,7 +1314,7 @@ p_err:
 	return ret;
 }
 
-int sensor_2l2_cis_adjust_frame_duration(struct v4l2_subdev *subdev,
+static int sensor_2l2_cis_adjust_frame_duration(struct v4l2_subdev *subdev,
 						u32 input_exposure_time,
 						u32 *target_duration)
 {
@@ -1364,7 +1365,7 @@ int sensor_2l2_cis_adjust_frame_duration(struct v4l2_subdev *subdev,
 	return ret;
 }
 
-int sensor_2l2_cis_set_frame_duration(struct v4l2_subdev *subdev, u32 frame_duration)
+static int sensor_2l2_cis_set_frame_duration(struct v4l2_subdev *subdev, u32 frame_duration)
 {
 	int ret = 0;
 	int hold = 0;
@@ -1447,7 +1448,7 @@ p_err:
 	return ret;
 }
 
-int sensor_2l2_cis_set_frame_rate(struct v4l2_subdev *subdev, u32 min_fps)
+static int sensor_2l2_cis_set_frame_rate(struct v4l2_subdev *subdev, u32 min_fps)
 {
 	int ret = 0;
 	struct fimc_is_cis *cis;
@@ -1509,7 +1510,7 @@ p_err:
 	return ret;
 }
 
-int sensor_2l2_cis_adjust_analog_gain(struct v4l2_subdev *subdev, u32 input_again, u32 *target_permile)
+static int sensor_2l2_cis_adjust_analog_gain(struct v4l2_subdev *subdev, u32 input_again, u32 *target_permile)
 {
 	int ret = 0;
 	struct fimc_is_cis *cis;
@@ -1555,7 +1556,7 @@ int sensor_2l2_cis_adjust_analog_gain(struct v4l2_subdev *subdev, u32 input_agai
 	return ret;
 }
 
-int sensor_2l2_cis_set_analog_gain(struct v4l2_subdev *subdev, struct ae_param *again)
+static int sensor_2l2_cis_set_analog_gain(struct v4l2_subdev *subdev, struct ae_param *again)
 {
 	int ret = 0;
 	int hold = 0;
@@ -1623,7 +1624,7 @@ p_err:
 	return ret;
 }
 
-int sensor_2l2_cis_get_analog_gain(struct v4l2_subdev *subdev, u32 *again)
+static int sensor_2l2_cis_get_analog_gain(struct v4l2_subdev *subdev, u32 *again)
 {
 	int ret = 0;
 	int hold = 0;
@@ -1683,7 +1684,7 @@ p_err:
 	return ret;
 }
 
-int sensor_2l2_cis_get_min_analog_gain(struct v4l2_subdev *subdev, u32 *min_again)
+static int sensor_2l2_cis_get_min_analog_gain(struct v4l2_subdev *subdev, u32 *min_again)
 {
 	int ret = 0;
 	struct fimc_is_cis *cis;
@@ -1728,7 +1729,7 @@ p_err:
 	return ret;
 }
 
-int sensor_2l2_cis_get_max_analog_gain(struct v4l2_subdev *subdev, u32 *max_again)
+static int sensor_2l2_cis_get_max_analog_gain(struct v4l2_subdev *subdev, u32 *max_again)
 {
 	int ret = 0;
 	struct fimc_is_cis *cis;
@@ -1773,7 +1774,7 @@ p_err:
 	return ret;
 }
 
-int sensor_2l2_cis_set_digital_gain(struct v4l2_subdev *subdev, struct ae_param *dgain)
+static int sensor_2l2_cis_set_digital_gain(struct v4l2_subdev *subdev, struct ae_param *dgain)
 {
 	int ret = 0;
 	int hold = 0;
@@ -1869,7 +1870,7 @@ p_err:
 	return ret;
 }
 
-int sensor_2l2_cis_get_digital_gain(struct v4l2_subdev *subdev, u32 *dgain)
+static int sensor_2l2_cis_get_digital_gain(struct v4l2_subdev *subdev, u32 *dgain)
 {
 	int ret = 0;
 	int hold = 0;
@@ -1929,7 +1930,7 @@ p_err:
 	return ret;
 }
 
-int sensor_2l2_cis_get_min_digital_gain(struct v4l2_subdev *subdev, u32 *min_dgain)
+static int sensor_2l2_cis_get_min_digital_gain(struct v4l2_subdev *subdev, u32 *min_dgain)
 {
 	int ret = 0;
 	struct fimc_is_cis *cis;
@@ -1974,7 +1975,7 @@ p_err:
 	return ret;
 }
 
-int sensor_2l2_cis_get_max_digital_gain(struct v4l2_subdev *subdev, u32 *max_dgain)
+static int sensor_2l2_cis_get_max_digital_gain(struct v4l2_subdev *subdev, u32 *max_dgain)
 {
 	int ret = 0;
 	struct fimc_is_cis *cis;
@@ -2019,7 +2020,7 @@ p_err:
 	return ret;
 }
 
-int sensor_2l2_cis_long_term_exposure(struct v4l2_subdev *subdev)
+static int sensor_2l2_cis_long_term_exposure(struct v4l2_subdev *subdev)
 {
 	int ret = 0;
 	struct fimc_is_cis *cis;
@@ -2084,7 +2085,7 @@ int sensor_2l2_cis_long_term_exposure(struct v4l2_subdev *subdev)
 	return ret;
 }
 
-int sensor_2l2_cis_compensate_gain_for_extremely_br(struct v4l2_subdev *subdev, u32 expo, u32 *again, u32 *dgain)
+static int sensor_2l2_cis_compensate_gain_for_extremely_br(struct v4l2_subdev *subdev, u32 expo, u32 *again, u32 *dgain)
 {
 	int ret = 0;
 	struct fimc_is_cis *cis;
@@ -2177,8 +2178,7 @@ static struct fimc_is_cis_ops cis_ops_2l2 = {
 	.cis_set_long_term_exposure = sensor_2l2_cis_long_term_exposure,
 };
 
-int cis_2l2_probe(struct i2c_client *client,
-	const struct i2c_device_id *id)
+static int cis_2l2_probe(struct i2c_client *client)
 {
 	int ret = 0;
 	struct fimc_is_core *core = NULL;
@@ -2195,7 +2195,8 @@ int cis_2l2_probe(struct i2c_client *client,
 	int i;
 
 	BUG_ON(!client);
-	BUG_ON(!fimc_is_dev);
+	if (!fimc_is_dev)
+		return -EPROBE_DEFER;
 
 	core = (struct fimc_is_core *)dev_get_drvdata(fimc_is_dev);
 	if (!core) {
@@ -2340,10 +2341,8 @@ p_err:
 	return ret;
 }
 
-static int cis_2l2_remove(struct i2c_client *client)
+static void cis_2l2_remove(struct i2c_client *client)
 {
-	int ret = 0;
-	return ret;
 }
 
 static const struct of_device_id exynos_fimc_is_cis_2l2_match[] = {
@@ -2359,7 +2358,7 @@ static const struct i2c_device_id cis_2l2_idt[] = {
 	{},
 };
 
-static struct i2c_driver cis_2l2_driver = {
+struct i2c_driver cis_2l2_driver = {
 	.driver = {
 		.name	= SENSOR_NAME,
 		.owner	= THIS_MODULE,
@@ -2369,4 +2368,3 @@ static struct i2c_driver cis_2l2_driver = {
 	.remove	= cis_2l2_remove,
 	.id_table = cis_2l2_idt
 };
-module_i2c_driver(cis_2l2_driver);

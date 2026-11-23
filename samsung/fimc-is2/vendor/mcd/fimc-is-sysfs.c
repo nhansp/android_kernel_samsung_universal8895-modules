@@ -29,7 +29,6 @@
 /* #define FORCE_CAL_LOAD */
 
 extern struct device *fimc_is_dev;
-struct class *camera_class = NULL;
 struct device *camera_front_dev;
 struct device *camera_rear_dev;
 #ifdef CONFIG_SECURE_CAMERA_USE
@@ -245,7 +244,7 @@ static ssize_t camera_ssrm_camera_info_store(struct device *dev,
 	ret_count = sscanf(buf, "%d%d%d%d%d%d%d", &temp.operation, &temp.cameraID, &temp.previewMinFPS,
 		&temp.previewMaxFPS, &temp.previewSizeWidth,  &temp.previewSizeHeight, &temp.sensorOn);
 
-	if (ret_count > sizeof(SsrmCameraInfo)/sizeof(int))
+	if (ret_count > sizeof(SsrmCameraInfo)/(sizeof(int)))
 		return -EINVAL;
 
 	switch (temp.operation) {
@@ -2357,7 +2356,7 @@ static ssize_t camera_front_sensorid_exif_show(struct device *dev,
 }
 #endif
 
-int camera_fw_show_sub(char *path, char *buf, int startPos, int readsize)
+static int camera_fw_show_sub(char *path, char *buf, int startPos, int readsize)
 {
 	struct file *fp = NULL;
 	long fsize, nread;
@@ -3007,7 +3006,7 @@ static DEVICE_ATTR(iris_hwparam, S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP|S_IROTH,
 #endif
 #endif
 
-int svc_cheating_prevent_device_file_create(struct kobject **obj)
+static int svc_cheating_prevent_device_file_create(struct kobject **obj)
 {
 	struct kernfs_node *svc_sd;
 	struct kobject *data;
@@ -3050,7 +3049,7 @@ int fimc_is_create_sysfs(struct fimc_is_core *core)
 	svc_cheating_prevent_device_file_create(&svc);
 
 	if (camera_class == NULL) {
-		camera_class = class_create(THIS_MODULE, "camera");
+		camera_class = class_create("camera");
 		if (IS_ERR(camera_class)) {
 			pr_err("Failed to create class(camera)!\n");
 			return PTR_ERR(camera_class);
@@ -3419,7 +3418,7 @@ int fimc_is_create_sysfs(struct fimc_is_core *core)
 	return 0;
 }
 
-int fimc_is_destroy_sysfs(struct fimc_is_core *core)
+static __maybe_unused int fimc_is_destroy_sysfs(struct fimc_is_core *core)
 {
 	if (camera_front_dev) {
 		device_remove_file(camera_front_dev, &dev_attr_front_sensorid);

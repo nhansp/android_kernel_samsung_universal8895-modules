@@ -43,6 +43,7 @@
 #include "fimc-is-cis-3m3-setB.h"
 
 #include "fimc-is-helper-i2c.h"
+#include "fimc-is-drivers.h"
 
 #define SENSOR_NAME "S5K3M3"
 /* #define DEBUG_3M3_PLL */
@@ -144,7 +145,7 @@ static void sensor_3m3_cis_data_calculation(const struct sensor_pll_info_compact
 	cis_data->max_margin_coarse_integration_time= SENSOR_3M3_COARSE_INTEGRATION_TIME_MAX_MARGIN;
 }
 
-void sensor_3m3_cis_data_calc(struct v4l2_subdev *subdev, u32 mode)
+static void sensor_3m3_cis_data_calc(struct v4l2_subdev *subdev, u32 mode)
 {
 	//int ret = 0;
 	struct fimc_is_cis *cis = NULL;
@@ -189,7 +190,7 @@ static int sensor_3m3_wait_stream_off_status(cis_shared_data *cis_data)
 }
 
 /* CIS OPS */
-int sensor_3m3_cis_init(struct v4l2_subdev *subdev)
+static int sensor_3m3_cis_init(struct v4l2_subdev *subdev)
 {
 	int ret = 0;
 	struct fimc_is_cis *cis;
@@ -283,7 +284,7 @@ p_err:
 	return ret;
 }
 
-int sensor_3m3_cis_log_status(struct v4l2_subdev *subdev)
+static int sensor_3m3_cis_log_status(struct v4l2_subdev *subdev)
 {
 	int ret = 0;
 	struct fimc_is_cis *cis;
@@ -372,7 +373,7 @@ static inline int sensor_3m3_cis_group_param_hold_func(struct v4l2_subdev *subde
  *		positive - setted by request
  *		negative - ERROR value
  */
-int sensor_3m3_cis_group_param_hold(struct v4l2_subdev *subdev, bool hold)
+static int sensor_3m3_cis_group_param_hold(struct v4l2_subdev *subdev, bool hold)
 {
 	int ret = 0;
 	struct fimc_is_cis *cis = NULL;
@@ -392,7 +393,7 @@ p_err:
 	return ret;
 }
 
-int sensor_3m3_cis_set_global_setting(struct v4l2_subdev *subdev)
+static int sensor_3m3_cis_set_global_setting(struct v4l2_subdev *subdev)
 {
 	int ret = 0;
 	struct fimc_is_cis *cis = NULL;
@@ -415,7 +416,7 @@ p_err:
 	return ret;
 }
 
-int sensor_3m3_cis_mode_change(struct v4l2_subdev *subdev, u32 mode)
+static int sensor_3m3_cis_mode_change(struct v4l2_subdev *subdev, u32 mode)
 {
 	int ret = 0;
 	struct fimc_is_cis *cis = NULL;
@@ -515,7 +516,7 @@ p_err:
 }
 
 /* TODO: Sensor set size sequence(sensor done, sensor stop, 3AA done in FW case */
-int sensor_3m3_cis_set_size(struct v4l2_subdev *subdev, cis_shared_data *cis_data)
+static int sensor_3m3_cis_set_size(struct v4l2_subdev *subdev, cis_shared_data *cis_data)
 {
 	int ret = 0;
 	bool binning = false;
@@ -670,7 +671,7 @@ p_err:
 	return ret;
 }
 
-int sensor_3m3_cis_stream_on(struct v4l2_subdev *subdev)
+static int sensor_3m3_cis_stream_on(struct v4l2_subdev *subdev)
 {
 	int ret = 0;
 	struct fimc_is_cis *cis;
@@ -809,7 +810,7 @@ p_err:
 	return ret;
 }
 
-int sensor_3m3_cis_stream_off(struct v4l2_subdev *subdev)
+static int sensor_3m3_cis_stream_off(struct v4l2_subdev *subdev)
 {
 	int ret = 0;
 	struct fimc_is_cis *cis;
@@ -855,7 +856,7 @@ p_err:
 	return ret;
 }
 
-int sensor_3m3_cis_set_exposure_time(struct v4l2_subdev *subdev, struct ae_param *target_exposure)
+static int sensor_3m3_cis_set_exposure_time(struct v4l2_subdev *subdev, struct ae_param *target_exposure)
 {
 	int ret = 0;
 	int hold = 0;
@@ -977,7 +978,7 @@ p_err:
 	return ret;
 }
 
-int sensor_3m3_cis_get_min_exposure_time(struct v4l2_subdev *subdev, u32 *min_expo)
+static int sensor_3m3_cis_get_min_exposure_time(struct v4l2_subdev *subdev, u32 *min_expo)
 {
 	int ret = 0;
 	struct fimc_is_cis *cis = NULL;
@@ -1026,7 +1027,7 @@ p_err:
 	return ret;
 }
 
-int sensor_3m3_cis_get_max_exposure_time(struct v4l2_subdev *subdev, u32 *max_expo)
+static int sensor_3m3_cis_get_max_exposure_time(struct v4l2_subdev *subdev, u32 *max_expo)
 {
 	int ret = 0;
 	int hold = 0;
@@ -1095,7 +1096,7 @@ p_err:
 	return ret;
 }
 
-int sensor_3m3_cis_adjust_frame_duration(struct v4l2_subdev *subdev,
+static int sensor_3m3_cis_adjust_frame_duration(struct v4l2_subdev *subdev,
 						u32 input_exposure_time,
 						u32 *target_duration)
 {
@@ -1146,7 +1147,7 @@ int sensor_3m3_cis_adjust_frame_duration(struct v4l2_subdev *subdev,
 	return ret;
 }
 
-int sensor_3m3_cis_set_frame_duration(struct v4l2_subdev *subdev, u32 frame_duration)
+static int sensor_3m3_cis_set_frame_duration(struct v4l2_subdev *subdev, u32 frame_duration)
 {
 	int ret = 0;
 	int hold = 0;
@@ -1221,7 +1222,7 @@ p_err:
 	return ret;
 }
 
-int sensor_3m3_cis_set_frame_rate(struct v4l2_subdev *subdev, u32 min_fps)
+static int sensor_3m3_cis_set_frame_rate(struct v4l2_subdev *subdev, u32 min_fps)
 {
 	int ret = 0;
 	struct fimc_is_cis *cis;
@@ -1283,7 +1284,7 @@ p_err:
 	return ret;
 }
 
-int sensor_3m3_cis_adjust_analog_gain(struct v4l2_subdev *subdev, u32 input_again, u32 *target_permile)
+static int sensor_3m3_cis_adjust_analog_gain(struct v4l2_subdev *subdev, u32 input_again, u32 *target_permile)
 {
 	int ret = 0;
 	struct fimc_is_cis *cis;
@@ -1329,7 +1330,7 @@ int sensor_3m3_cis_adjust_analog_gain(struct v4l2_subdev *subdev, u32 input_agai
 	return ret;
 }
 
-int sensor_3m3_cis_set_analog_gain(struct v4l2_subdev *subdev, struct ae_param *again)
+static int sensor_3m3_cis_set_analog_gain(struct v4l2_subdev *subdev, struct ae_param *again)
 {
 	int ret = 0;
 	int hold = 0;
@@ -1395,7 +1396,7 @@ p_err:
 	return ret;
 }
 
-int sensor_3m3_cis_get_analog_gain(struct v4l2_subdev *subdev, u32 *again)
+static int sensor_3m3_cis_get_analog_gain(struct v4l2_subdev *subdev, u32 *again)
 {
 	int ret = 0;
 	int hold = 0;
@@ -1453,7 +1454,7 @@ p_err:
 	return ret;
 }
 
-int sensor_3m3_cis_get_min_analog_gain(struct v4l2_subdev *subdev, u32 *min_again)
+static int sensor_3m3_cis_get_min_analog_gain(struct v4l2_subdev *subdev, u32 *min_again)
 {
 	int ret = 0;
 	struct fimc_is_cis *cis;
@@ -1503,7 +1504,7 @@ p_err:
 	return ret;
 }
 
-int sensor_3m3_cis_get_max_analog_gain(struct v4l2_subdev *subdev, u32 *max_again)
+static int sensor_3m3_cis_get_max_analog_gain(struct v4l2_subdev *subdev, u32 *max_again)
 {
 	int ret = 0;
 	struct fimc_is_cis *cis;
@@ -1553,7 +1554,7 @@ p_err:
 	return ret;
 }
 
-int sensor_3m3_cis_set_digital_gain(struct v4l2_subdev *subdev, struct ae_param *dgain)
+static int sensor_3m3_cis_set_digital_gain(struct v4l2_subdev *subdev, struct ae_param *dgain)
 {
 	int ret = 0;
 	int hold = 0;
@@ -1646,7 +1647,7 @@ p_err:
 	return ret;
 }
 
-int sensor_3m3_cis_get_digital_gain(struct v4l2_subdev *subdev, u32 *dgain)
+static int sensor_3m3_cis_get_digital_gain(struct v4l2_subdev *subdev, u32 *dgain)
 {
 	int ret = 0;
 	int hold = 0;
@@ -1704,7 +1705,7 @@ p_err:
 	return ret;
 }
 
-int sensor_3m3_cis_get_min_digital_gain(struct v4l2_subdev *subdev, u32 *min_dgain)
+static int sensor_3m3_cis_get_min_digital_gain(struct v4l2_subdev *subdev, u32 *min_dgain)
 {
 	int ret = 0;
 	struct fimc_is_cis *cis;
@@ -1742,7 +1743,7 @@ int sensor_3m3_cis_get_min_digital_gain(struct v4l2_subdev *subdev, u32 *min_dga
 	return ret;
 }
 
-int sensor_3m3_cis_set_adjust_sync(struct v4l2_subdev *subdev, u32 sync)
+static int sensor_3m3_cis_set_adjust_sync(struct v4l2_subdev *subdev, u32 sync)
 {
 	int ret = 0;
 	struct fimc_is_cis *cis;	
@@ -1765,7 +1766,7 @@ p_err:
 	return ret;
 }
 
-int sensor_3m3_cis_get_max_digital_gain(struct v4l2_subdev *subdev, u32 *max_dgain)
+static int sensor_3m3_cis_get_max_digital_gain(struct v4l2_subdev *subdev, u32 *max_dgain)
 {
 	int ret = 0;
 	struct fimc_is_cis *cis;
@@ -1833,8 +1834,7 @@ static struct fimc_is_cis_ops cis_ops = {
 	.cis_set_adjust_sync = sensor_3m3_cis_set_adjust_sync,
 };
 
-int cis_3m3_probe(struct i2c_client *client,
-	const struct i2c_device_id *id)
+static int cis_3m3_probe(struct i2c_client *client)
 {
 	int ret = 0;
 	struct fimc_is_core *core = NULL;
@@ -1848,7 +1848,8 @@ int cis_3m3_probe(struct i2c_client *client,
 	struct device_node *dnode;
 
 	BUG_ON(!client);
-	BUG_ON(!fimc_is_dev);
+	if (!fimc_is_dev)
+		return -EPROBE_DEFER;
 
 	core = (struct fimc_is_core *)dev_get_drvdata(fimc_is_dev);
 	if (!core) {
@@ -1938,10 +1939,8 @@ p_err:
 	return ret;
 }
 
-static int cis_3m3_remove(struct i2c_client *client)
+static void cis_3m3_remove(struct i2c_client *client)
 {
-	int ret = 0;
-	return ret;
 }
 
 static const struct of_device_id exynos_fimc_is_cis_3m3_match[] = {
@@ -1957,7 +1956,7 @@ static const struct i2c_device_id cis_3m3_idt[] = {
 	{},
 };
 
-static struct i2c_driver cis_3m3_driver = {
+struct i2c_driver cis_3m3_driver = {
 	.driver = {
 		.name	= SENSOR_NAME,
 		.owner	= THIS_MODULE,
@@ -1967,4 +1966,3 @@ static struct i2c_driver cis_3m3_driver = {
 	.remove	= cis_3m3_remove,
 	.id_table = cis_3m3_idt
 };
-module_i2c_driver(cis_3m3_driver);

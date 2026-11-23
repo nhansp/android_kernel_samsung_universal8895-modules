@@ -18,8 +18,6 @@
 #include <linux/device.h>
 #include <linux/platform_device.h>
 #include <linux/slab.h>
-#include <video/videonode.h>
-#include <media/exynos_mc.h>
 #include <asm/cacheflush.h>
 #include <asm/pgtable.h>
 #include <linux/firmware.h>
@@ -38,7 +36,7 @@
 #include "fimc-is-video.h"
 
 const struct v4l2_file_operations fimc_is_ixs_video_fops;
-const struct v4l2_ioctl_ops fimc_is_ixs_video_ioctl_ops;
+const struct fimc_is_video_ioctl_ops fimc_is_ixs_video_ioctl_ops;
 const struct vb2_ops fimc_is_ixs_qops;
 
 int fimc_is_i0s_video_probe(void *data)
@@ -66,7 +64,7 @@ int fimc_is_i0s_video_probe(void *data)
 		&core->resourcemgr.mem,
 		&core->v4l2_dev,
 		&fimc_is_ixs_video_fops,
-		&fimc_is_ixs_video_ioctl_ops);
+		&fimc_is_ixs_video_ioctl_ops.ops);
 	if (ret)
 		dev_err(&core->pdev->dev, "%s is fail(%d)\n", __func__, ret);
 
@@ -99,7 +97,7 @@ int fimc_is_i1s_video_probe(void *data)
 		&core->resourcemgr.mem,
 		&core->v4l2_dev,
 		&fimc_is_ixs_video_fops,
-		&fimc_is_ixs_video_ioctl_ops);
+		&fimc_is_ixs_video_ioctl_ops.ops);
 	if (ret)
 		dev_err(&core->pdev->dev, "%s is fail(%d)\n", __func__, ret);
 
@@ -238,7 +236,7 @@ const struct v4l2_file_operations fimc_is_ixs_video_fops = {
 	.open		= fimc_is_ixs_video_open,
 	.release	= fimc_is_ixs_video_close,
 	.poll		= fimc_is_ixs_video_poll,
-	.unlocked_ioctl	= video_ioctl2,
+	.unlocked_ioctl	= fimc_is_video_ioctl2,
 	.mmap		= fimc_is_ixs_video_mmap,
 };
 
@@ -258,9 +256,6 @@ static int fimc_is_ixs_video_querycap(struct file *file, void *fh,
 	strncpy(cap->card, isp->pdev->name, sizeof(cap->card) - 1);
 	cap->bus_info[0] = 0;
 	cap->version = KERNEL_VERSION(1, 0, 0);
-	cap->capabilities = V4L2_CAP_STREAMING
-				| V4L2_CAP_VIDEO_CAPTURE
-				| V4L2_CAP_VIDEO_CAPTURE_MPLANE;
 
 	return 0;
 }
@@ -631,34 +626,33 @@ static int fimc_is_ixs_video_g_ext_ctrl(struct file *file, void *priv,
 	return ret;
 }
 
-const struct v4l2_ioctl_ops fimc_is_ixs_video_ioctl_ops = {
-	.vidioc_querycap		= fimc_is_ixs_video_querycap,
-	.vidioc_enum_fmt_vid_out_mplane	= fimc_is_ixs_video_enum_fmt_mplane,
-	.vidioc_g_fmt_vid_out_mplane	= fimc_is_ixs_video_get_format_mplane,
-	.vidioc_s_fmt_vid_out_mplane	= fimc_is_ixs_video_set_format_mplane,
+const struct fimc_is_video_ioctl_ops fimc_is_ixs_video_ioctl_ops = {
+	.ops.vidioc_querycap		= fimc_is_ixs_video_querycap,
+	.ops.vidioc_enum_fmt_vid_out	= fimc_is_ixs_video_enum_fmt_mplane,
+	.ops.vidioc_g_fmt_vid_out_mplane	= fimc_is_ixs_video_get_format_mplane,
+	.ops.vidioc_s_fmt_vid_out_mplane	= fimc_is_ixs_video_set_format_mplane,
 	.vidioc_cropcap			= fimc_is_ixs_video_cropcap,
 	.vidioc_g_crop			= fimc_is_ixs_video_get_crop,
 	.vidioc_s_crop			= fimc_is_ixs_video_set_crop,
-	.vidioc_reqbufs			= fimc_is_ixs_video_reqbufs,
-	.vidioc_querybuf		= fimc_is_ixs_video_querybuf,
-	.vidioc_qbuf			= fimc_is_ixs_video_qbuf,
-	.vidioc_dqbuf			= fimc_is_ixs_video_dqbuf,
-	.vidioc_prepare_buf		= fimc_is_ixs_video_prepare,
-	.vidioc_streamon		= fimc_is_ixs_video_streamon,
-	.vidioc_streamoff		= fimc_is_ixs_video_streamoff,
-	.vidioc_enum_input		= fimc_is_ixs_video_enum_input,
-	.vidioc_g_input			= fimc_is_ixs_video_g_input,
-	.vidioc_s_input			= fimc_is_ixs_video_s_input,
+	.ops.vidioc_reqbufs			= fimc_is_ixs_video_reqbufs,
+	.ops.vidioc_querybuf		= fimc_is_ixs_video_querybuf,
+	.ops.vidioc_qbuf			= fimc_is_ixs_video_qbuf,
+	.ops.vidioc_dqbuf			= fimc_is_ixs_video_dqbuf,
+	.ops.vidioc_prepare_buf		= fimc_is_ixs_video_prepare,
+	.ops.vidioc_streamon		= fimc_is_ixs_video_streamon,
+	.ops.vidioc_streamoff		= fimc_is_ixs_video_streamoff,
+	.ops.vidioc_enum_input		= fimc_is_ixs_video_enum_input,
+	.ops.vidioc_g_input			= fimc_is_ixs_video_g_input,
+	.ops.vidioc_s_input			= fimc_is_ixs_video_s_input,
 	.vidioc_s_ctrl			= fimc_is_ixs_video_s_ctrl,
 	.vidioc_g_ctrl			= fimc_is_ixs_video_g_ctrl,
-	.vidioc_g_ext_ctrls		= fimc_is_ixs_video_g_ext_ctrl,
+	.ops.vidioc_g_ext_ctrls		= fimc_is_ixs_video_g_ext_ctrl,
 };
 
 static int fimc_is_ixs_queue_setup(struct vb2_queue *vbq,
-	const void *parg,
 	unsigned int *num_buffers, unsigned int *num_planes,
 	unsigned int sizes[],
-	void *allocators[])
+	struct device *allocators[])
 {
 	int ret = 0;
 	struct fimc_is_video_ctx *vctx = vbq->drv_priv;

@@ -290,8 +290,6 @@ enum hw_g_ctrl_id {
 	HW_G_CTRL_HAS_VRA_CH1_ONLY,
 };
 
-void fimc_is_enter_lib_isr(void);
-void fimc_is_exit_lib_isr(void);
 int fimc_is_hw_group_cfg(void *group_data);
 int fimc_is_hw_group_open(void *group_data);
 int fimc_is_hw_camif_cfg(void *sensor_data);

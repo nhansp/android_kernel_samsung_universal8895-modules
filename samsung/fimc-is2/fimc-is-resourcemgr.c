@@ -26,11 +26,21 @@
 #include <media/v4l2-ctrls.h>
 #include <media/v4l2-device.h>
 #include <media/v4l2-subdev.h>
-#include <soc/samsung/tmu.h>
-#include <linux/isp_cooling.h>
+/* ISP states of the vendor TMU driver */
+enum isp_noti_state_t {
+	ISP_NORMAL = 0,
+	ISP_COLD,
+	ISP_THROTTLING,
+	ISP_THROTTLING1,
+	ISP_THROTTLING2,
+	ISP_THROTTLING3,
+	ISP_THROTTLING4,
+	ISP_TRIPPING,
+};
+
 #if defined(CONFIG_SOC_EXYNOS8895)
 #include <linux/cpuidle.h>
-#include <linux/soc/samsung/exynos-soc.h>
+#include <linux/panic_notifier.h>
 #include <soc/samsung/bts.h>
 #endif
 
@@ -248,7 +258,7 @@ static int fimc_is_resourcemgr_allocmem(struct fimc_is_resourcemgr *resourcemgr)
 	minfo->total_size += minfo->pb_front_cal->size;
 
 	/* library logging */
-	minfo->pb_debug = mem->kmalloc(DEBUG_REGION_SIZE + 0x10, 16);
+	minfo->pb_debug = (mem->kmalloc)(DEBUG_REGION_SIZE + 0x10, 16);
 	if (IS_ERR(minfo->pb_debug)) {
 		/* retry by ION */
 		minfo->pb_debug = CALL_PTR_MEMOP(mem, alloc, mem->default_ctx, DEBUG_REGION_SIZE + 0x10, 16);
@@ -438,57 +448,69 @@ static int fimc_is_resourcemgr_deinitmem(struct fimc_is_resourcemgr *resourcemgr
 #endif
 #endif /* #ifdef ENABLE_IS_CORE */
 
-static int fimc_is_tmu_notifier(struct notifier_block *nb,
-	unsigned long state, void *data)
-{
-#ifdef CONFIG_EXYNOS_THERMAL
-	int ret = 0, fps = 0;
-	struct fimc_is_resourcemgr *resourcemgr;
-#ifdef CONFIG_EXYNOS_SNAPSHOT_THERMAL
-	char *cooling_device_name = "ISP";
-#endif
-	resourcemgr = container_of(nb, struct fimc_is_resourcemgr, tmu_notifier);
+/*
+ * The ISP frame rate limit the vendor TMU driver set through its ISP notifier,
+ * as a cooling device: no limit, 15 fps (throttling) and 5 fps (tripping).
+ */
+#define FIMC_IS_ISP_COOLING_STATES	3
+static const u32 fimc_is_isp_fps[FIMC_IS_ISP_COOLING_STATES] = { 60, 15, 5 };
 
-	switch (state) {
-	case ISP_NORMAL:
+static unsigned int fimc_is_isp_state_of_fps(u32 fps)
+{
+	if (!fps || fps >= 60)
+		return 0;
+	if (fps <= 5)
+		return 2;
+	return 1;
+}
+
+static int fimc_is_isp_get_max_state(struct thermal_cooling_device *cdev,
+				     unsigned long *state)
+{
+	*state = FIMC_IS_ISP_COOLING_STATES - 1;
+
+	return 0;
+}
+
+static int fimc_is_isp_get_cur_state(struct thermal_cooling_device *cdev,
+				     unsigned long *state)
+{
+	struct fimc_is_resourcemgr *resourcemgr = cdev->devdata;
+
+	*state = fimc_is_isp_state_of_fps(resourcemgr->limited_fps);
+
+	return 0;
+}
+
+static int fimc_is_isp_set_cur_state(struct thermal_cooling_device *cdev,
+				     unsigned long state)
+{
+	struct fimc_is_resourcemgr *resourcemgr = cdev->devdata;
+	int fps;
+
+	if (state >= FIMC_IS_ISP_COOLING_STATES)
+		return -EINVAL;
+
+	fps = fimc_is_isp_fps[state];
+
+	if (fps >= 60) {
 		resourcemgr->tmu_state = ISP_NORMAL;
 		resourcemgr->limited_fps = 0;
-		break;
-	case ISP_COLD:
-		resourcemgr->tmu_state = ISP_COLD;
-		resourcemgr->limited_fps = 0;
-		break;
-	case ISP_THROTTLING:
-		resourcemgr->tmu_state = ISP_THROTTLING;
-		fps = isp_cooling_get_fps(0, *(unsigned long *)data);
-
-		/* The FPS can be defined to any specific value. */
-		if (fps >= 60) {
-			resourcemgr->limited_fps = 0;
-			warn("[RSC] THROTTLING : Unlimited FPS");
-		} else {
-			resourcemgr->limited_fps = fps;
-			warn("[RSC] THROTTLING : Limited %dFPS", fps);
-		}
-		break;
-	case ISP_TRIPPING:
-		resourcemgr->tmu_state = ISP_TRIPPING;
-		resourcemgr->limited_fps = 5;
-		warn("[RSC] TRIPPING : Limited 5FPS");
-		break;
-	default:
-		err("[RSC] invalid tmu state(%ld)", state);
-		break;
+		warn("[RSC] THROTTLING : Unlimited FPS");
+	} else {
+		resourcemgr->tmu_state = state == 2 ? ISP_TRIPPING : ISP_THROTTLING;
+		resourcemgr->limited_fps = fps;
+		warn("[RSC] THROTTLING : Limited %dFPS", fps);
 	}
 
-#ifdef CONFIG_EXYNOS_SNAPSHOT_THERMAL
-	exynos_ss_thermal(NULL, 0, cooling_device_name, resourcemgr->limited_fps);
-#endif
-	return ret;
-#else
 	return 0;
-#endif
 }
+
+static const struct thermal_cooling_device_ops fimc_is_isp_cooling_ops = {
+	.get_max_state = fimc_is_isp_get_max_state,
+	.get_cur_state = fimc_is_isp_get_cur_state,
+	.set_cur_state = fimc_is_isp_set_cur_state,
+};
 
 #ifdef CONFIG_EXYNOS_BUSMONITOR
 static int due_to_fimc_is(const char *desc)
@@ -778,8 +800,6 @@ int fimc_is_resourcemgr_probe(struct fimc_is_resourcemgr *resourcemgr,
 	resourcemgr->hal_version = IS_HAL_VER_1_0;
 
 	/* temperature monitor unit */
-	resourcemgr->tmu_notifier.notifier_call = fimc_is_tmu_notifier;
-	resourcemgr->tmu_notifier.priority = 0;
 	resourcemgr->tmu_state = ISP_NORMAL;
 	resourcemgr->limited_fps = 0;
 
@@ -792,11 +812,22 @@ int fimc_is_resourcemgr_probe(struct fimc_is_resourcemgr *resourcemgr,
 	busmon_notifier_chain_register(&resourcemgr->bm_notifier);
 #endif
 
-	ret = exynos_tmu_isp_add_notifier(&resourcemgr->tmu_notifier);
-	if (ret) {
-		probe_err("exynos_tmu_isp_add_notifier is fail(%d)", ret);
+#ifdef CONFIG_THERMAL
+	{
+	struct device *dev = &((struct fimc_is_core *)resourcemgr->private_data)->pdev->dev;
+
+	resourcemgr->isp_cdev =
+		devm_thermal_of_cooling_device_register(dev, dev->of_node, "ISP",
+							resourcemgr,
+							&fimc_is_isp_cooling_ops);
+	if (IS_ERR(resourcemgr->isp_cdev)) {
+		ret = PTR_ERR(resourcemgr->isp_cdev);
+		resourcemgr->isp_cdev = NULL;
+		probe_err("devm_thermal_of_cooling_device_register is fail(%d)", ret);
 		goto p_err;
 	}
+	}
+#endif
 
 #ifdef ENABLE_RESERVED_MEM
 	ret = fimc_is_resourcemgr_initmem(resourcemgr);

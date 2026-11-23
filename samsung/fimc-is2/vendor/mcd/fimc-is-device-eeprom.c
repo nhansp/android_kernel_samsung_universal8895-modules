@@ -23,6 +23,7 @@
 #include "fimc-is-hw.h"
 #include "fimc-is-device-eeprom.h"
 #include "fimc-is-vender-specific.h"
+#include "fimc-is-drivers.h"
 
 #define DRIVER_NAME "fimc_is_eeprom_i2c"
 #define DRIVER_NAME_REAR "rear-eeprom-i2c"
@@ -43,16 +44,16 @@
  * published by the Free Software Foundation.
  */
 
-int fimc_is_eeprom_parse_dt(struct i2c_client *client)
+static int fimc_is_eeprom_parse_dt(struct i2c_client *client)
 {
 	int ret = 0;
 
 	return ret;
 }
 
-int sensor_eeprom_probe(struct i2c_client *client,
-	const struct i2c_device_id *id)
+static int sensor_eeprom_probe(struct i2c_client *client)
 {
+	const struct i2c_device_id *id = i2c_client_get_device_id(client);
 	struct fimc_is_core *core;
 	static bool probe_retried = false;
 	struct fimc_is_device_eeprom *device;
@@ -117,10 +118,8 @@ probe_defer:
 
 }
 
-static int sensor_eeprom_remove(struct i2c_client *client)
+static void sensor_eeprom_remove(struct i2c_client *client)
 {
-	int ret = 0;
-	return ret;
 }
 
 #ifdef CONFIG_OF
@@ -141,7 +140,7 @@ static const struct i2c_device_id sensor_eeprom_idt[] = {
 	{},
 };
 
-static struct i2c_driver sensor_eeprom_driver = {
+struct i2c_driver sensor_eeprom_driver = {
 	.driver = {
 		.name	= DRIVER_NAME,
 		.owner	= THIS_MODULE,
@@ -154,19 +153,4 @@ static struct i2c_driver sensor_eeprom_driver = {
 	.id_table = sensor_eeprom_idt
 };
 
-static int __init sensor_eeprom_load(void)
-{
-        return i2c_add_driver(&sensor_eeprom_driver);
-}
-
-static void __exit sensor_eeprom_unload(void)
-{
-        i2c_del_driver(&sensor_eeprom_driver);
-}
-
-module_init(sensor_eeprom_load);
-module_exit(sensor_eeprom_unload);
-
 MODULE_AUTHOR("Kyoungho Yun");
-MODULE_DESCRIPTION("Camera eeprom driver");
-MODULE_LICENSE("GPL v2");

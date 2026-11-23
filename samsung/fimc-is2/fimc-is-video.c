@@ -18,25 +18,25 @@
 #include <linux/device.h>
 #include <linux/platform_device.h>
 #include <linux/slab.h>
-#include <video/videonode.h>
-#include <media/exynos_mc.h>
 #include <asm/cacheflush.h>
 #include <asm/pgtable.h>
 #include <linux/firmware.h>
+#include <linux/dma-buf.h>
 #include <linux/dma-mapping.h>
+#include <linux/ion_legacy.h>
 #include <linux/scatterlist.h>
 #include <linux/videodev2.h>
 #include <linux/videodev2_exynos_camera.h>
 #include <linux/v4l2-mediabus.h>
 #include <linux/bug.h>
 #include <linux/syscalls.h>
+#include <linux/compat.h>
 
 #include <media/videobuf2-v4l2.h>
 #include <media/v4l2-ctrls.h>
 #include <media/v4l2-device.h>
 #include <media/v4l2-mem2mem.h>
 #include <media/v4l2-mediabus.h>
-#include <media/exynos_mc.h>
 
 #include "fimc-is-time.h"
 #include "fimc-is-core.h"
@@ -259,8 +259,8 @@ struct fimc_is_fmt fimc_is_formats[] = {
 	}
 };
 
-struct fimc_is_fmt *fimc_is_find_format(u32 pixelformat,
-	u32 mbus_code)
+static struct fimc_is_fmt *fimc_is_find_format(u32 pixelformat,
+					       u32 mbus_code)
 {
 	ulong i;
 	struct fimc_is_fmt *result, *fmt;
@@ -536,7 +536,8 @@ int open_vctx(struct file *file,
 	(*vctx)->queue.id = id;
 	(*vctx)->state = BIT(FIMC_IS_VIDEO_CLOSE);
 
-	file->private_data = *vctx;
+	v4l2_fh_init(&(*vctx)->fh, &video->vd);
+	v4l2_fh_add(&(*vctx)->fh, file);
 
 p_err:
 	return ret;
@@ -548,8 +549,9 @@ int close_vctx(struct file *file,
 {
 	int ret = 0;
 
+	v4l2_fh_del(&vctx->fh, file);
+	v4l2_fh_exit(&vctx->fh);
 	vfree(vctx);
-	file->private_data = NULL;
 	ret = vref_put(video, NULL);
 
 	return ret;
@@ -656,7 +658,7 @@ int fimc_is_queue_setup(struct fimc_is_queue *queue,
 	void *alloc_ctx,
 	unsigned int *num_planes,
 	unsigned int sizes[],
-	void *allocators[])
+	struct device *allocators[])
 {
 	u32 ret = 0;
 	u32 plane;
@@ -690,13 +692,52 @@ int fimc_is_queue_setup(struct fimc_is_queue *queue,
 	return ret;
 }
 
+/*
+ * Done at every queue: with HAL3 an index comes back with another dma-buf,
+ * and vb2 unmaps the kernel mapping of the previous one.
+ */
+static int fimc_is_queue_map_frame(struct fimc_is_queue *queue, struct fimc_is_frame *frame,
+				   struct fimc_is_vb2_buf *vbuf, u32 index)
+{
+	u32 i, ext_size;
+	u32 spare = frame->planes - 1;
+
+	for (i = 0; i < frame->planes; i++) {
+		frame->dvaddr_buffer[i] = (u32)queue->buf_dva[index][i];
+		if (vbuf->kva[i] != 0)
+			frame->kvaddr_buffer[i] = vbuf->ops->plane_kvaddr(vbuf, i);
+	}
+
+	queue->buf_kva[index][spare] = vbuf->ops->plane_kvaddr(vbuf, spare);
+	if (!queue->buf_kva[index][spare])
+		return -EINVAL;
+
+	if (queue->framemgr.id & FRAMEMGR_ID_SHOT) {
+		ext_size = sizeof(struct camera2_shot_ext) - sizeof(struct camera2_shot);
+
+		frame->dvaddr_shot = (u32)queue->buf_dva[index][spare] + ext_size;
+		frame->kvaddr_shot = queue->buf_kva[index][spare] + ext_size;
+		frame->cookie_shot = queue->buf_box[index][spare];
+		frame->shot = (struct camera2_shot *)frame->kvaddr_shot;
+		frame->shot_ext = (struct camera2_shot_ext *)queue->buf_kva[index][spare];
+		frame->shot_size = queue->framecfg.size[spare] - ext_size;
+#ifdef MEASURE_TIME
+		frame->tzone = (struct timeval *)frame->shot_ext->timeZone;
+#endif
+	} else {
+		frame->stream = (struct camera2_stream *)queue->buf_kva[index][spare];
+		/* TODO : Someday need to change the variable type of struct to ulong */
+		frame->stream->address = (u32)queue->buf_kva[index][spare];
+	}
+
+	return 0;
+}
+
 int fimc_is_queue_buffer_queue(struct fimc_is_queue *queue,
 	struct vb2_buffer *vb)
 {
 	u32 ret = 0, i;
 	u32 index;
-	u32 ext_size;
-	u32 spare;
 	struct fimc_is_video *video;
 	struct fimc_is_video_ctx *vctx;
 	struct fimc_is_framemgr *framemgr;
@@ -736,17 +777,19 @@ int fimc_is_queue_buffer_queue(struct fimc_is_queue *queue,
 
 	/* plane address check */
 	for (i = 0; i < frame->planes; i++) {
-		if (frame->dvaddr_buffer[i] != queue->buf_dva[index][i]) {
-			if (video->resourcemgr->hal_version == IS_HAL_VER_3_2 ||
-				queue->framecfg.num_buffers > 1) {
-				frame->dvaddr_buffer[i] = (u32)queue->buf_dva[index][i];
-			} else {
-				mverr("buffer[%d][%d] is changed(%08X != %08lX)", vctx, video, index, i,
-					frame->dvaddr_buffer[i], queue->buf_dva[index][i]);
-				ret = -EINVAL;
-				goto exit;
-			}
+		if (frame->dvaddr_buffer[i] != queue->buf_dva[index][i] &&
+		    video->resourcemgr->hal_version != IS_HAL_VER_3_2 &&
+		    queue->framecfg.num_buffers <= 1) {
+			mverr("buffer[%d][%d] is changed(%08X != %08lX)", vctx, video, index, i,
+			      frame->dvaddr_buffer[i], queue->buf_dva[index][i]);
+			ret = -EINVAL;
+			goto exit;
 		}
+	}
+
+	if (fimc_is_queue_map_frame(queue, frame, vbuf, index)) {
+		mverr("plane_kvaddr is fail(%08X)", vctx, video, framemgr->id);
+		ret = -EINVAL;
 	}
 
 	goto exit;
@@ -760,50 +803,17 @@ set_info:
 
 	frame->num_buffers = queue->framecfg.num_buffers;
 	frame->planes = vb->num_planes;
-	spare = frame->planes - 1;
 
-	for (i = 0; i < frame->planes; i++) {
-		frame->dvaddr_buffer[i] = (u32)queue->buf_dva[index][i];
-		if(vbuf->kva[i] != 0)
-			frame->kvaddr_buffer[i] = vbuf->ops->plane_kvaddr(vbuf, i);
 #ifdef PRINT_BUFADDR
-		mvinfo("%04X %d.%d %08X\n", vctx, video, framemgr->id, index, i, frame->dvaddr_buffer[i]);
+	for (i = 0; i < frame->planes; i++)
+		mvinfo("%04X %d.%d %08lX\n", vctx, video, framemgr->id, index, i,
+		       queue->buf_dva[index][i]);
 #endif
-	}
 
-	if (framemgr->id & FRAMEMGR_ID_SHOT) {
-		ext_size = sizeof(struct camera2_shot_ext) - sizeof(struct camera2_shot);
-
-		/* Create Kvaddr for Metadata */
-		queue->buf_kva[index][spare] = vbuf->ops->plane_kvaddr(vbuf, spare);
-		if (!queue->buf_kva[index][spare]) {
-			mverr("plane_kvaddr is fail(%08X)", vctx, video, framemgr->id);
-			ret = -EINVAL;
-			goto exit;
-		}
-
-		frame->dvaddr_shot = (u32)queue->buf_dva[index][spare] + ext_size;
-		frame->kvaddr_shot = queue->buf_kva[index][spare] + ext_size;
-		frame->cookie_shot = queue->buf_box[index][spare];
-		frame->shot = (struct camera2_shot *)frame->kvaddr_shot;
-		frame->shot_ext = (struct camera2_shot_ext *)queue->buf_kva[index][spare];
-		frame->shot_size = queue->framecfg.size[spare] - ext_size;
-#ifdef MEASURE_TIME
-		frame->tzone = (struct timeval *)frame->shot_ext->timeZone;
-#endif
-	} else {
-		/* Create Kvaddr for frame sync */
-		queue->buf_kva[index][spare] = vbuf->ops->plane_kvaddr(vbuf, spare);
-		if (!queue->buf_kva[index][spare]) {
-			mverr("plane_kvaddr is fail(%08X)", vctx, video, framemgr->id);
-			ret = -EINVAL;
-			goto exit;
-		}
-
-		frame->stream = (struct camera2_stream *)queue->buf_kva[index][spare];
-
-		/* TODO : Someday need to change the variable type of struct to ulong */
-		frame->stream->address = (u32)queue->buf_kva[index][spare];
+	if (fimc_is_queue_map_frame(queue, frame, vbuf, index)) {
+		mverr("plane_kvaddr is fail(%08X)", vctx, video, framemgr->id);
+		ret = -EINVAL;
+		goto exit;
 	}
 
 	set_bit(FRAME_MEM_INIT, &frame->mem_state);
@@ -838,6 +848,31 @@ int fimc_is_buffer_init(struct vb2_buffer *vb)
 	return 0;
 }
 
+/*
+ * ION syncs auto-sync buffers when they are mapped, which vb2 used to do at
+ * every QBUF and now does once.
+ */
+static void fimc_is_queue_autosync(struct vb2_buffer *vb, bool for_device)
+{
+	struct vb2_queue *q = vb->vb2_queue;
+	unsigned int i;
+
+	if (q->memory != VB2_MEMORY_DMABUF)
+		return;
+
+	for (i = 0; i < vb->num_planes; i++) {
+		struct dma_buf *dbuf = vb->planes[i].dbuf;
+
+		if (!dbuf || !ionl_dmabuf_is_autosync(dbuf))
+			continue;
+
+		if (for_device)
+			dma_buf_end_cpu_access(dbuf, q->dma_dir);
+		else if (q->dma_dir != DMA_TO_DEVICE)
+			dma_buf_begin_cpu_access(dbuf, q->dma_dir);
+	}
+}
+
 int fimc_is_queue_prepare(struct vb2_buffer *vb)
 {
 	struct fimc_is_video_ctx *vctx;
@@ -852,6 +887,8 @@ int fimc_is_queue_prepare(struct vb2_buffer *vb)
 	}
 
 	vctx->queue.buf_pre++;
+
+	fimc_is_queue_autosync(vb, true);
 
 	return 0;
 }
@@ -979,12 +1016,17 @@ int fimc_is_video_probe(struct fimc_is_video *video,
 	video->vd.fops		= fops;
 	video->vd.ioctl_ops	= ioctl_ops;
 	video->vd.minor		= -1;
-	video->vd.release	= video_device_release;
+	video->vd.release	= video_device_release_empty;
 	video->vd.lock		= &video->lock;
+	if (vfl_dir == VFL_DIR_RX)
+		video->vd.device_caps = V4L2_CAP_VIDEO_CAPTURE_MPLANE | V4L2_CAP_STREAMING;
+	else
+		video->vd.device_caps = V4L2_CAP_VIDEO_OUTPUT_MPLANE |
+					V4L2_CAP_VIDEO_CAPTURE_MPLANE | V4L2_CAP_STREAMING;
 	video_set_drvdata(&video->vd, video);
 
 	video_id = EXYNOS_VIDEONODE_FIMC_IS + video_number;
-	ret = video_register_device(&video->vd, VFL_TYPE_GRABBER, video_id);
+	ret = video_register_device(&video->vd, VFL_TYPE_VIDEO, video_id);
 	if (ret) {
 		err("Failed to register video device");
 		goto p_err;
@@ -992,6 +1034,107 @@ int fimc_is_video_probe(struct fimc_is_video *video,
 
 p_err:
 	info("[VID] %s(%d) is created\n", video_name, video_id);
+	return ret;
+}
+
+/*
+ * The camera HAL passes the batch size in pix_mp.reserved[0] of VIDIOC_S_FMT,
+ * which the V4L2 core clears before the driver sees the format.
+ */
+static void fimc_is_video_save_fmt_reserved(struct file *file,
+					    unsigned int cmd, void __user *uarg)
+{
+	struct fimc_is_video_ctx *vctx = file->private_data;
+	size_t off;
+	u32 type;
+
+	if (_IOC_TYPE(cmd) != 'V' || _IOC_NR(cmd) != _IOC_NR(VIDIOC_S_FMT))
+		return;
+
+	vctx->fmt_reserved_valid = false;
+
+	if (get_user(type, (u32 __user *)uarg) || !V4L2_TYPE_IS_MULTIPLANAR(type))
+		return;
+
+	off = in_compat_syscall() ? sizeof(u32) : offsetof(struct v4l2_format, fmt);
+	off += offsetof(struct v4l2_pix_format_mplane, reserved);
+	if (copy_from_user(vctx->fmt_reserved, uarg + off, sizeof(vctx->fmt_reserved)))
+		return;
+
+	vctx->fmt_reserved_valid = true;
+}
+
+/*
+ * As video_ioctl2() did for these: copy in, call the handler under the node
+ * lock, copy back. The structs have the same layout for 32-bit callers.
+ */
+long fimc_is_video_ioctl2(struct file *file, unsigned int cmd, unsigned long arg)
+{
+	struct video_device *vdev = video_devdata(file);
+	const struct fimc_is_video_ioctl_ops *xops =
+		container_of(vdev->ioctl_ops, struct fimc_is_video_ioctl_ops, ops);
+	void __user *uarg = (void __user *)arg;
+	union {
+		struct v4l2_control ctrl;
+		struct v4l2_cropcap cropcap;
+		struct v4l2_crop crop;
+	} karg;
+	long ret;
+
+	switch (cmd) {
+	case VIDIOC_G_CTRL:
+	case VIDIOC_S_CTRL:
+	case VIDIOC_CROPCAP:
+	case VIDIOC_G_CROP:
+	case VIDIOC_S_CROP:
+		break;
+	default:
+		fimc_is_video_save_fmt_reserved(file, cmd, uarg);
+		return video_ioctl2(file, cmd, arg);
+	}
+
+	if (copy_from_user(&karg, uarg, _IOC_SIZE(cmd)))
+		return -EFAULT;
+
+	if (vdev->lock && mutex_lock_interruptible(vdev->lock))
+		return -ERESTARTSYS;
+
+	if (!video_is_registered(vdev)) {
+		ret = -ENODEV;
+		goto unlock;
+	}
+
+	ret = -ENOTTY;
+	switch (cmd) {
+	case VIDIOC_G_CTRL:
+		if (xops->vidioc_g_ctrl)
+			ret = xops->vidioc_g_ctrl(file, file->private_data, &karg.ctrl);
+		break;
+	case VIDIOC_S_CTRL:
+		if (xops->vidioc_s_ctrl)
+			ret = xops->vidioc_s_ctrl(file, file->private_data, &karg.ctrl);
+		break;
+	case VIDIOC_CROPCAP:
+		if (xops->vidioc_cropcap)
+			ret = xops->vidioc_cropcap(file, file->private_data, &karg.cropcap);
+		break;
+	case VIDIOC_G_CROP:
+		if (xops->vidioc_g_crop)
+			ret = xops->vidioc_g_crop(file, file->private_data, &karg.crop);
+		break;
+	case VIDIOC_S_CROP:
+		if (xops->vidioc_s_crop)
+			ret = xops->vidioc_s_crop(file, file->private_data, &karg.crop);
+		break;
+	}
+
+unlock:
+	if (vdev->lock)
+		mutex_unlock(vdev->lock);
+
+	if (_IOC_DIR(cmd) & _IOC_READ && copy_to_user(uarg, &karg, _IOC_SIZE(cmd)))
+		ret = -EFAULT;
+
 	return ret;
 }
 
@@ -1251,6 +1394,12 @@ int fimc_is_video_set_format_mplane(struct file *file,
 	video = GET_VIDEO(vctx);
 	queue = GET_QUEUE(vctx);
 
+	if (vctx->fmt_reserved_valid) {
+		memcpy(format->fmt.pix_mp.reserved, vctx->fmt_reserved,
+		       sizeof(vctx->fmt_reserved));
+		vctx->fmt_reserved_valid = false;
+	}
+
 	/* capture video node can skip s_input */
 	if (video->type  == FIMC_IS_VIDEO_TYPE_LEADER)
 		condition = BIT(FIMC_IS_VIDEO_S_INPUT) | BIT(FIMC_IS_VIDEO_S_BUFS);
@@ -1312,7 +1461,7 @@ int fimc_is_video_qbuf(struct fimc_is_video_ctx *vctx,
 		goto p_err;
 	}
 
-	if (buf->index >= vbq->num_buffers) {
+	if (buf->index >= vb2_get_num_buffers(vbq)) {
 		mverr("buffer index%d out of range", vctx, video, buf->index);
 		ret = -EINVAL;
 		goto p_err;
@@ -1324,16 +1473,20 @@ int fimc_is_video_qbuf(struct fimc_is_video_ctx *vctx,
 		goto p_err;
 	}
 
-	vb = vbq->bufs[buf->index];
+	vb = vb2_get_buffer(vbq, buf->index);
 	if (!vb) {
 		mverr("vb is NULL", vctx, video);
 		ret = -EINVAL;
 		goto p_err;
 	}
 
+	/* vb2 clears the cache hints of DMABUF queues */
+	vb_to_fimc_is_vb2_buf(to_vb2_v4l2_buffer(vb))->cache_hints = buf->flags &
+		(V4L2_BUF_FLAG_NO_CACHE_INVALIDATE | V4L2_BUF_FLAG_NO_CACHE_CLEAN);
+
 	queue->buf_req++;
 
-	ret = vb2_qbuf(queue->vbq, buf);
+	ret = vb2_qbuf(queue->vbq, NULL, buf);
 	if (ret) {
 		mverr("vb2_qbuf is fail(index : %d, %d)", vctx, video, buf->index, ret);
 		goto p_err;
@@ -1350,6 +1503,7 @@ int fimc_is_video_dqbuf(struct fimc_is_video_ctx *vctx,
 	int ret = 0;
 	struct fimc_is_video *video;
 	struct fimc_is_queue *queue;
+	struct vb2_buffer *vb;
 
 	BUG_ON(!vctx);
 	BUG_ON(!GET_VIDEO(vctx));
@@ -1388,6 +1542,10 @@ int fimc_is_video_dqbuf(struct fimc_is_video_ctx *vctx,
 		}
 		goto p_err;
 	}
+
+	vb = vb2_get_buffer(queue->vbq, buf->index);
+	if (vb)
+		fimc_is_queue_autosync(vb, false);
 
 #ifdef DBG_IMAGE_DUMP
 	fimc_is_debug_dma_dump(queue, buf->index, video->id, DBG_DMA_DUMP_IMAGE);
@@ -1472,7 +1630,7 @@ int fimc_is_video_prepare(struct file *file,
 		goto p_err;
 	}
 
-	if (buf->index >= vbq->num_buffers) {
+	if (buf->index >= vb2_get_num_buffers(vbq)) {
 		mverr("buffer index%d out of range", vctx, video, buf->index);
 		ret = -EINVAL;
 		goto p_err;
@@ -1484,14 +1642,14 @@ int fimc_is_video_prepare(struct file *file,
 		goto p_err;
 	}
 
-	vb = vbq->bufs[buf->index];
+	vb = vb2_get_buffer(vbq, buf->index);
 	if (!vb) {
 		mverr("vb is NULL", vctx, video);
 		ret = -EINVAL;
 		goto p_err;
 	}
 
-	ret = vb2_prepare_buf(queue->vbq, buf);
+	ret = vb2_prepare_buf(queue->vbq, NULL, buf);
 	if (ret) {
 		mverr("vb2_prepare_buf is fail(index : %d, %d)", vctx, video, buf->index, ret);
 		goto p_err;
@@ -1759,7 +1917,7 @@ int fimc_is_video_buffer_done(struct fimc_is_video_ctx *vctx,
 		goto p_err;
 	}
 
-	vb = queue->vbq->bufs[index];
+	vb = vb2_get_buffer(queue->vbq, index);
 	if (!vb) {
 		mverr("vb is NULL", vctx, video);
 		ret = -EINVAL;

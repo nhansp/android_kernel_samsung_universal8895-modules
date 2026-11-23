@@ -38,7 +38,7 @@
 #include "fimc-is-device-module-base.h"
 #include "interface/fimc-is-interface-library.h"
 
-int sensor_module_init(struct v4l2_subdev *subdev, u32 val)
+int __nocfi sensor_module_init(struct v4l2_subdev *subdev, u32 val)
 {
 	int ret = 0;
 	struct fimc_is_module_enum *module;
@@ -115,9 +115,11 @@ int sensor_module_init(struct v4l2_subdev *subdev, u32 val)
 #if !defined(DISABLE_LIB)
 	register_sensor_itf = (register_sensor_interface)SENSOR_REGISTER_FUNC_ADDR;
 #ifdef ENABLE_FPSIMD_FOR_USER
-	fpsimd_get();
-	ret = register_sensor_itf((void *)&sensor_peri->sensor_interface);
-	fpsimd_put();
+	{
+		fpsimd_get();
+		ret = register_sensor_itf((void *)&sensor_peri->sensor_interface);
+		fpsimd_put();
+	}
 #else
 	ret = register_sensor_itf((void *)&sensor_peri->sensor_interface);
 #endif
@@ -128,9 +130,11 @@ int sensor_module_init(struct v4l2_subdev *subdev, u32 val)
 #ifdef USE_RTA_BINARY
 	register_sensor_itf = (register_sensor_interface)SENSOR_REGISTER_FUNC_ADDR_RTA;
 #ifdef ENABLE_FPSIMD_FOR_USER
-	fpsimd_get();
-	ret = register_sensor_itf((void *)&sensor_peri->sensor_interface);
-	fpsimd_put();
+	{
+		fpsimd_get();
+		ret = register_sensor_itf((void *)&sensor_peri->sensor_interface);
+		fpsimd_put();
+	}
 #else
 	ret = register_sensor_itf((void *)&sensor_peri->sensor_interface);
 #endif
@@ -145,9 +149,11 @@ int sensor_module_init(struct v4l2_subdev *subdev, u32 val)
 
 		register_preprocessor_itf = (register_sensor_interface)PREPROC_REGISTER_FUNC_ADDR;
 #ifdef ENABLE_FPSIMD_FOR_USER
-		fpsimd_get();
-		ret = register_preprocessor_itf((void *)&sensor_peri->preprocessor_inferface);
-		fpsimd_put();
+		{
+			fpsimd_get();
+			ret = register_preprocessor_itf((void *)&sensor_peri->preprocessor_inferface);
+			fpsimd_put();
+		}
 #else
 		ret = register_preprocessor_itf((void *)&sensor_peri->preprocessor_inferface);
 #endif
@@ -253,7 +259,7 @@ p_err:
 	return ret;
 }
 
-int sensor_module_deinit(struct v4l2_subdev *subdev)
+static int sensor_module_deinit(struct v4l2_subdev *subdev)
 {
 	int ret = 0;
 	struct fimc_is_module_enum *module = NULL;
@@ -499,7 +505,8 @@ int sensor_module_g_ctrl(struct v4l2_subdev *subdev, struct v4l2_control *ctrl)
 		}
 		break;
 	case V4L2_CID_ACTUATOR_GET_STATUS:
-		ret = v4l2_subdev_call(sensor_peri->subdev_actuator, core, g_ctrl, ctrl);
+		ret = v4l2_subdev_call(sensor_peri->subdev_actuator, core, ioctl,
+				       FIMC_IS_SUBDEV_G_CTRL, ctrl);
 		if (ret) {
 			err("[SEN:%d] v4l2_subdev_call(g_ctrl, id:%d) is fail(%d)",
 					module->sensor_id, ctrl->id, ret);
@@ -571,6 +578,7 @@ int sensor_module_s_ctrl(struct v4l2_subdev *subdev, struct v4l2_control *ctrl)
 		}
 		break;
 	}
+	fallthrough;
 	case V4L2_CID_SENSOR_SET_DIGITAL_GAIN:
 		/* long_digital_gain and short_digital_gain is same value */
 		ret = fimc_is_sensor_peri_s_digital_gain(device, ctrl->value, ctrl->value);
@@ -589,7 +597,8 @@ int sensor_module_s_ctrl(struct v4l2_subdev *subdev, struct v4l2_control *ctrl)
 				goto p_err;
 			}
 		}
-		ret = v4l2_subdev_call(sensor_peri->subdev_actuator, core, s_ctrl, ctrl);
+		ret = v4l2_subdev_call(sensor_peri->subdev_actuator, core, ioctl,
+				       FIMC_IS_SUBDEV_S_CTRL, ctrl);
 		if (ret < 0) {
 			err("[SEN:%d] v4l2_subdev_call(s_ctrl, id:%d) is fail(%d)",
 					module->sensor_id, ctrl->id, ret);
@@ -598,7 +607,8 @@ int sensor_module_s_ctrl(struct v4l2_subdev *subdev, struct v4l2_control *ctrl)
 		break;
 	case V4L2_CID_FLASH_SET_INTENSITY:
 	case V4L2_CID_FLASH_SET_FIRING_TIME:
-		ret = v4l2_subdev_call(sensor_peri->subdev_flash, core, s_ctrl, ctrl);
+		ret = v4l2_subdev_call(sensor_peri->subdev_flash, core, ioctl,
+				       FIMC_IS_SUBDEV_S_CTRL, ctrl);
 		if (ret) {
 			err("[SEN:%d] v4l2_subdev_call(s_ctrl, id:%d) is fail(%d)",
 					module->sensor_id, ctrl->id, ret);
@@ -707,7 +717,7 @@ int sensor_module_s_stream(struct v4l2_subdev *subdev, int enable)
 }
 
 int sensor_module_s_format(struct v4l2_subdev *subdev,
-	struct v4l2_subdev_pad_config *cfg,
+	struct v4l2_subdev_state *cfg,
 	struct v4l2_subdev_format *fmt)
 {
 	int ret = 0;

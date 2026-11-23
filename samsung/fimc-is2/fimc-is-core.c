@@ -18,8 +18,6 @@
 #include <linux/device.h>
 #include <linux/platform_device.h>
 #include <linux/slab.h>
-#include <video/videonode.h>
-#include <media/exynos_mc.h>
 #include <asm/cacheflush.h>
 #include <asm/pgtable.h>
 #include <linux/firmware.h>
@@ -54,6 +52,7 @@
 #include "include/fimc-is-module.h"
 #include "fimc-is-device-sensor.h"
 #include "sensor/module_framework/fimc-is-device-sensor-peri.h"
+#include "fimc-is-drivers.h"
 
 #ifdef ENABLE_FAULT_HANDLER
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 9, 0))
@@ -84,60 +83,97 @@ struct fimc_is_sysfs_sensor sysfs_sensor;
 #endif
 #endif
 
-static struct vm_struct fimc_is_lib_vm;
-static int __init fimc_is_lib_mem_alloc(char *str)
+/*
+ * The libraries run at their link address, LIB_START, which falls in a hole
+ * of the linear map. The window is mapped once and kept, like the vendor one.
+ */
+struct fimc_is_lib_map_ctx {
+	struct page **pages;
+	int idx;
+};
+
+static bool fimc_is_lib_mapped;
+
+/* lib_rox=0 maps the library code RWX instead of read-only executable */
+bool fimc_is_lib_rox = true;
+module_param_named(lib_rox, fimc_is_lib_rox, bool, 0444);
+
+static int fimc_is_lib_map_pte(pte_t *ptep, unsigned long addr, void *data)
 {
-	ulong addr = 0;
+	struct fimc_is_lib_map_ctx *ctx = data;
 
-	if (kstrtoul(str, 0, (ulong *)&addr) || !addr) {
-		probe_warn("invalid fimc-is library memory address, use default");
-		addr = LIB_START;
-	}
+	if (!pte_none(__ptep_get(ptep)))
+		return -EBUSY;
 
-	if (addr != LIB_START)
-		probe_warn("use different address [reserve-fimc=0x%lx default:0x%lx]",
-				addr, LIB_START);
-
-	fimc_is_lib_vm.phys_addr = memblock_alloc(LIB_SIZE, SZ_4K);
-	fimc_is_lib_vm.addr = (void *)addr;
-	fimc_is_lib_vm.size = LIB_SIZE + PAGE_SIZE;
-
-	vm_area_add_early(&fimc_is_lib_vm);
-
-	probe_info("fimc-is library memory: 0x%lx\n", addr);
-
+	set_pte(ptep, mk_pte(ctx->pages[ctx->idx++], PAGE_KERNEL));
 	return 0;
 }
-__setup("reserve-fimc=", fimc_is_lib_mem_alloc);
 
-static int __init fimc_is_lib_mem_map(void)
+static int fimc_is_lib_unmap_pte(pte_t *ptep, unsigned long addr, void *data)
 {
-	int page_size, i;
-	struct page *page;
-	struct page **pages;
-
-	if (!fimc_is_lib_vm.phys_addr) {
-		probe_err("There is no reserve-fimc= at bootargs.");
-		return -ENOMEM;
-	}
-
-	page_size = fimc_is_lib_vm.size / PAGE_SIZE;
-	pages = kzalloc(sizeof(struct page*) * page_size, GFP_KERNEL);
-	page = phys_to_page(fimc_is_lib_vm.phys_addr);
-
-	for (i = 0; i < page_size; i++)
-		pages[i] = page++;
-
-	if (map_vm_area(&fimc_is_lib_vm, PAGE_KERNEL, pages)) {
-		probe_err("failed to mapping between virt and phys for binary");
-		vunmap(fimc_is_lib_vm.addr);
-		kfree(pages);
-		return -ENOMEM;
-	}
-
-	kfree(pages);
-
+	pte_clear(&init_mm, addr, ptep);
 	return 0;
+}
+
+static int fimc_is_lib_mem_map(void)
+{
+	struct page **pages;
+	struct fimc_is_lib_map_ctx ctx;
+	int nr_pages = LIB_SIZE / PAGE_SIZE + 1;
+	int i, ret;
+
+	if (fimc_is_lib_mapped)
+		return 0;
+
+	/* LIB_START must not alias RAM in the linear map */
+	if (memstart_addr != 0x80000000ULL ||
+	    pfn_valid(PHYS_PFN(__pa(LIB_START))) ||
+	    pfn_valid(PHYS_PFN(__pa(LIB_START + LIB_SIZE)))) {
+		pr_err("fimc-is: library VA 0x%lx not usable (memstart 0x%llx)\n",
+		       LIB_START, (unsigned long long)memstart_addr);
+		return -EBUSY;
+	}
+
+	pages = kmalloc_array(nr_pages, sizeof(struct page *), GFP_KERNEL);
+	if (!pages)
+		return -ENOMEM;
+
+	for (i = 0; i < nr_pages; i++) {
+		pages[i] = alloc_page(GFP_KERNEL | __GFP_ZERO);
+		if (!pages[i]) {
+			ret = -ENOMEM;
+			goto err_free;
+		}
+	}
+
+	ctx.pages = pages;
+	ctx.idx = 0;
+	ret = apply_to_page_range(&init_mm, LIB_START, LIB_SIZE + PAGE_SIZE,
+				  fimc_is_lib_map_pte, &ctx);
+	if (ret) {
+		pr_err("fimc-is: library window map failed: %d\n", ret);
+		if (ctx.idx) {
+			apply_to_existing_page_range(&init_mm, LIB_START,
+						     ctx.idx * PAGE_SIZE,
+						     fimc_is_lib_unmap_pte, NULL);
+			flush_tlb_kernel_range(LIB_START,
+					       LIB_START + ctx.idx * PAGE_SIZE);
+		}
+		goto err_free;
+	}
+
+	pr_debug("fimc-is: library window 0x%lx-0x%lx mapped (%d pages)\n",
+		 LIB_START, LIB_START + LIB_SIZE + PAGE_SIZE, nr_pages);
+
+	fimc_is_lib_mapped = true;
+	kfree(pages);
+	return 0;
+
+err_free:
+	while (--i >= 0)
+		__free_page(pages[i]);
+	kfree(pages);
+	return ret;
 }
 
 #ifdef CONFIG_CPU_THERMAL_IPA
@@ -1072,6 +1108,12 @@ static int fimc_is_probe(struct platform_device *pdev)
 		return -ENOMEM;
 	}
 
+	ret = mm_qos_init(&pdev->dev);
+	if (ret) {
+		kfree(core);
+		return ret;
+	}
+
 	fimc_is_dev = &pdev->dev;
 	dev_set_drvdata(fimc_is_dev, core);
 
@@ -1081,7 +1123,7 @@ static int fimc_is_probe(struct platform_device *pdev)
 		ret = fimc_is_parse_dt(pdev);
 		if (ret) {
 			err("fimc_is_parse_dt is fail(%d)", ret);
-			return ret;
+			goto p_err1;
 		}
 
 		pdata = dev_get_platdata(&pdev->dev);
@@ -1115,7 +1157,7 @@ static int fimc_is_probe(struct platform_device *pdev)
 	}
 
 	core->regs_res = regs_res;
-	core->regs =  ioremap_nocache(mem_res->start, resource_size(mem_res));
+	core->regs =  ioremap(mem_res->start, resource_size(mem_res));
 	if (!core->regs) {
 		probe_err("Failed to remap io region(%p)", core->regs);
 		goto p_err2;
@@ -1439,13 +1481,14 @@ p_err2:
 	release_mem_region(regs_res->start, resource_size(regs_res));
 #endif
 p_err1:
+	fimc_is_dev = NULL;
+	dev_set_drvdata(&pdev->dev, NULL);
 	kfree(core);
 	return ret;
 }
 
-static int fimc_is_remove(struct platform_device *pdev)
+static void fimc_is_remove(struct platform_device *pdev)
 {
-	return 0;
 }
 
 void fimc_is_cleanup(struct fimc_is_core *core)
@@ -1545,13 +1588,13 @@ static const struct dev_pm_ops fimc_is_pm_ops = {
 #ifdef CONFIG_OF
 static const struct of_device_id exynos_fimc_is_match[] = {
 	{
-		.compatible = "samsung,exynos5-fimc-is",
+		.compatible = "samsung,exynos8895-fimc-is",
 	},
 	{},
 };
 MODULE_DEVICE_TABLE(of, exynos_fimc_is_match);
 
-static struct platform_driver fimc_is_driver = {
+struct platform_driver fimc_is_driver = {
 	.probe		= fimc_is_probe,
 	.remove		= fimc_is_remove,
 	.shutdown	= fimc_is_shutdown,
@@ -1564,9 +1607,9 @@ static struct platform_driver fimc_is_driver = {
 };
 
 #else
-static struct platform_driver fimc_is_driver = {
+struct platform_driver fimc_is_driver = {
 	.probe		= fimc_is_probe,
-	.remove 	= __devexit_p(fimc_is_remove),
+	.remove		= fimc_is_remove,
 	.driver = {
 		.name	= FIMC_IS_DRV_NAME,
 		.owner	= THIS_MODULE,
@@ -1575,22 +1618,89 @@ static struct platform_driver fimc_is_driver = {
 };
 #endif
 
+static struct platform_driver * const fimc_is_platform_drivers[] = {
+	&fimc_is_driver,
+	&sensor_module_3h1_driver,
+	&sensor_module_3h1_c3_driver,
+	&sensor_module_3m3_driver,
+	&sensor_module_2l1_driver,
+	&sensor_module_2l2_driver,
+	&sensor_module_imx320_driver,
+	&sensor_module_imx320_c3_driver,
+	&sensor_module_imx333_driver,
+	&sensor_flash_s2mpb02_platform_driver,
+	&sensor_flash_gpio_platform_driver,
+};
+
+static struct spi_driver * const fimc_is_spi_drivers[] = {
+	&fimc_is_spi0_driver,
+	&fimc_is_spi1_driver,
+};
+
+static struct i2c_driver * const fimc_is_i2c_drivers[] = {
+	&fimc_is_i2c0_driver,
+	&sensor_5e6_driver,
+	&cis_3h1_driver,
+	&cis_3m3_driver,
+	&cis_2l1_driver,
+	&cis_2l2_driver,
+	&cis_imx333_driver,
+	&cis_imx320_driver,
+	&actuator_ak7371_driver,
+	&actuator_ak7372_driver,
+	&sensor_eeprom_driver,
+	&ois_rumbaS6_driver,
+};
+
+/* late_initcall drivers of the built-in vendor driver */
+static struct platform_driver * const fimc_is_late_platform_drivers[] = {
+	&fimc_is_preproc_driver,
+	&fimc_is_sensor_driver,
+	&fimc_is_device_preproc_driver,
+};
+
 static int __init fimc_is_init(void)
 {
-	int ret = platform_driver_register(&fimc_is_driver);
-	if (ret)
-		err("platform_driver_register failed: %d\n", ret);
+	int i, j, ret;
 
+	ret = platform_register_drivers(fimc_is_platform_drivers,
+					ARRAY_SIZE(fimc_is_platform_drivers));
+	if (ret)
+		return ret;
+
+	for (i = 0; i < ARRAY_SIZE(fimc_is_spi_drivers); i++) {
+		ret = spi_register_driver(fimc_is_spi_drivers[i]);
+		if (ret)
+			goto err_spi;
+	}
+
+	for (j = 0; j < ARRAY_SIZE(fimc_is_i2c_drivers); j++) {
+		ret = i2c_add_driver(fimc_is_i2c_drivers[j]);
+		if (ret)
+			goto err_i2c;
+	}
+
+	ret = platform_register_drivers(fimc_is_late_platform_drivers,
+					ARRAY_SIZE(fimc_is_late_platform_drivers));
+	if (ret)
+		goto err_i2c;
+
+	return 0;
+
+err_i2c:
+	while (--j >= 0)
+		i2c_del_driver(fimc_is_i2c_drivers[j]);
+err_spi:
+	while (--i >= 0)
+		spi_unregister_driver(fimc_is_spi_drivers[i]);
+	platform_unregister_drivers(fimc_is_platform_drivers,
+				    ARRAY_SIZE(fimc_is_platform_drivers));
 	return ret;
 }
-device_initcall(fimc_is_init);
-
-static void __exit fimc_is_exit(void)
-{
-	platform_driver_unregister(&fimc_is_driver);
-}
-module_exit(fimc_is_exit);
+module_init(fimc_is_init);
 
 MODULE_AUTHOR("Gilyeon im<kilyeon.im@samsung.com>");
 MODULE_DESCRIPTION("Exynos FIMC_IS2 driver");
 MODULE_LICENSE("GPL");
+MODULE_IMPORT_NS("DMA_BUF");
+MODULE_IMPORT_NS("ANDROID_GKI_VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver");

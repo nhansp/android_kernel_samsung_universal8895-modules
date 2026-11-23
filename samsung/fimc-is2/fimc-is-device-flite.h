@@ -25,10 +25,6 @@
 #define FLITE_ENABLE_MASK	0xFFFF
 #define FLITE_ENABLE_SHIFT	0
 
-#define FLITE_NOWAIT_FLAG	1
-#define FLITE_NOWAIT_MASK	0xFFFF0000
-#define FLITE_NOWAIT_SHIFT	16
-
 #define FLITE_OVERFLOW_COUNT	10
 
 #define FLITE_VVALID_TIME_BASE 32 /* ms */
@@ -47,7 +43,9 @@ enum fimc_is_flite_state {
 	FLITE_DUMMY,
 	/* WDMA flag */
 	FLITE_DMA_ENABLE,
-	FLITE_START_STREAM
+	FLITE_START_STREAM,
+	/* the next stream off does not wait for the frame end */
+	FLITE_STOP_NOWAIT
 };
 
 enum fimc_is_flite_buf_done_mode {

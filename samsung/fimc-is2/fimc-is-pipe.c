@@ -302,8 +302,9 @@ static int fimc_is_pipe_callback(struct fimc_is_device_ischain *device,
 	 * and vb2_queue's device addr are different can be happened.
 	 */
 	queue = GET_QUEUE(junction_vctx);
-	if (queue && queue->vbq && queue->vbq->bufs[index])
-		queue->vbq->bufs[index]->state = VB2_BUF_STATE_PREPARED;
+	/* vb2 skips buf_prepare for a buffer marked prepared */
+	if (queue && queue->vbq && vb2_get_buffer(queue->vbq, index))
+		vb2_get_buffer(queue->vbq, index)->prepared = 1;
 	ret = CALL_VOPS(junction_vctx, qbuf, &pipe->buf[PIPE_SLOT_JUNCTION][index]);
 	if (ret) {
 		mperr("[F%d] fimc_is_video_qbuf is fail(%d)",
@@ -547,8 +548,9 @@ static int fimc_is_pipe_dqbuf(struct fimc_is_video_ctx *vctx,
 		 * and vb2_queue's device addr are different can be happened.
 		 */
 		queue = GET_QUEUE(dst_vctx);
-		if (queue && queue->vbq && queue->vbq->bufs[index])
-			queue->vbq->bufs[index]->state = VB2_BUF_STATE_PREPARED;
+		/* vb2 skips buf_prepare for a buffer marked prepared */
+		if (queue && queue->vbq && vb2_get_buffer(queue->vbq, index))
+			vb2_get_buffer(queue->vbq, index)->prepared = 1;
 
 		ret = CALL_VOPS(dst_vctx, qbuf, &pipe->buf[PIPE_SLOT_DST][index]);
 		if (ret)

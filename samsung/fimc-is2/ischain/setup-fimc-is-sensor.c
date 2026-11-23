@@ -30,80 +30,31 @@
 #include <exynos-fimc-is-module.h>
 
 #if defined(CONFIG_SOC_EXYNOS8895)
+/*
+ * The MUX_CIS_CLKn and GATE_IS_CAM_* clocks the vendor code switched here are
+ * gated by hardware (HWACG); their enable and disable never reached a register.
+ */
 static int exynos8895_fimc_is_csi_gate(struct device *dev, u32 instance, bool mask)
 {
-	int ret = 0;
-
 	pr_debug("%s(instance : %d / mask : %d)\n", __func__, instance, mask);
 
-	switch (instance) {
-	case 0:
-		if (mask) {
-			fimc_is_disable(dev, "MUX_CIS_CLK0");
-			fimc_is_disable(dev, "GATE_IS_CAM_CSIS0");
-		} else {
-			fimc_is_enable(dev, "MUX_CIS_CLK0");
-			fimc_is_enable(dev, "GATE_IS_CAM_CSIS0");
-		}
-		break;
-	case 1:
-		if (mask) {
-			fimc_is_disable(dev, "MUX_CIS_CLK1");
-			fimc_is_disable(dev, "GATE_IS_CAM_CSIS1");
-		} else {
-			fimc_is_enable(dev, "MUX_CIS_CLK1");
-			fimc_is_enable(dev, "GATE_IS_CAM_CSIS1");
-		}
-		break;
-	case 2:
-		if (mask) {
-			fimc_is_disable(dev, "MUX_CIS_CLK2");
-			fimc_is_disable(dev, "GATE_IS_CAM_CSIS2");
-		} else {
-			fimc_is_enable(dev, "MUX_CIS_CLK2");
-			fimc_is_enable(dev, "GATE_IS_CAM_CSIS2");
-		}
-		break;
-	case 3:
-		if (mask) {
-			fimc_is_disable(dev, "MUX_CIS_CLK3");
-			fimc_is_disable(dev, "GATE_IS_CAM_CSIS3");
-		} else {
-			fimc_is_enable(dev, "MUX_CIS_CLK3");
-			fimc_is_enable(dev, "GATE_IS_CAM_CSIS3");
-		}
-		break;
-	default:
+	if (instance > 3) {
 		pr_err("(%s) instance is invalid(%d)\n", __func__, instance);
-		ret = -EINVAL;
-		break;
+		return -EINVAL;
 	}
 
-	return ret;
+	return 0;
 }
 
-int exynos8895_fimc_is_sensor_iclk_cfg(struct device *dev,
-	u32 scenario,
+static int exynos8895_fimc_is_sensor_iclk_cfg(struct device *dev,
+					      u32 scenario,
 	u32 channel)
 {
-	fimc_is_enable(dev, "MUX_CIS_CLK0");
-	fimc_is_enable(dev, "MUX_CIS_CLK1");
-	fimc_is_enable(dev, "MUX_CIS_CLK2");
-	fimc_is_enable(dev, "MUX_CIS_CLK3");
-
-	fimc_is_enable(dev, "GATE_IS_CAM_CSIS0");
-	fimc_is_enable(dev, "GATE_IS_CAM_CSIS1");
-	fimc_is_enable(dev, "GATE_IS_CAM_CSIS2");
-	fimc_is_enable(dev, "GATE_IS_CAM_CSIS3");
-
-	fimc_is_enable(dev, "GATE_IS_CAM_CSISX4_DMA");
-	fimc_is_enable(dev, "GATE_IS_CAM_QE_CSISX4");
-
 	return  0;
 }
 
-int exynos8895_fimc_is_sensor_iclk_on(struct device *dev,
-	u32 scenario,
+static int exynos8895_fimc_is_sensor_iclk_on(struct device *dev,
+					     u32 scenario,
 	u32 channel)
 {
 	int ret = 0;
@@ -140,20 +91,17 @@ p_err:
 	return ret;
 }
 
-int exynos8895_fimc_is_sensor_iclk_off(struct device *dev,
-	u32 scenario,
+static int exynos8895_fimc_is_sensor_iclk_off(struct device *dev,
+					      u32 scenario,
 	u32 channel)
 {
 	exynos8895_fimc_is_csi_gate(dev, channel, true);
 
-	fimc_is_disable(dev, "GATE_IS_CAM_QE_CSISX4");
-	fimc_is_disable(dev, "GATE_IS_CAM_CSISX4_DMA");
-
 	return 0;
 }
 
-int exynos8895_fimc_is_sensor_mclk_on(struct device *dev,
-	u32 scenario,
+static int exynos8895_fimc_is_sensor_mclk_on(struct device *dev,
+					     u32 scenario,
 	u32 channel)
 {
 	char sclk_name[30];
@@ -169,8 +117,8 @@ int exynos8895_fimc_is_sensor_mclk_on(struct device *dev,
 	return 0;
 }
 
-int exynos8895_fimc_is_sensor_mclk_off(struct device *dev,
-		u32 scenario,
+static int exynos8895_fimc_is_sensor_mclk_off(struct device *dev,
+					      u32 scenario,
 		u32 channel)
 {
 	char sclk_name[30];

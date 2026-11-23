@@ -20,6 +20,7 @@
 #include <asm/neon.h>
 
 #include "fimc-is-interface-library.h"
+#include "fimc-is-interface-jopp.h"
 #include "fimc-is-interface-vra.h"
 #include "../fimc-is-device-ischain.h"
 #include "fimc-is-vender.h"
@@ -580,7 +581,7 @@ int fimc_is_translate_vra_kva_to_dva(ulong src_addr, u32 *target_addr)
 	return 0;
 }
 
-int fimc_is_translate_taaisp_dva_to_kva(u32 src_addr, ulong *target_addr)
+static int fimc_is_translate_taaisp_dva_to_kva(u32 src_addr, ulong *target_addr)
 {
 	struct fimc_is_lib_support *lib = &gPtr_lib_support;
 	u32 offset;
@@ -602,7 +603,7 @@ int fimc_is_translate_taaisp_dva_to_kva(u32 src_addr, ulong *target_addr)
 	return 0;
 }
 
-int fimc_is_translate_vra_dva_to_kva(u32 src_addr, ulong *target_addr)
+static __maybe_unused int fimc_is_translate_vra_dva_to_kva(u32 src_addr, ulong *target_addr)
 {
 	struct fimc_is_lib_support *lib = &gPtr_lib_support;
 	u32 offset;
@@ -799,7 +800,7 @@ void fimc_is_stop_trigger(void)
 	schedule_work(&gPtr_lib_support.work_stop);
 }
 
-void fimc_is_assert(void)
+static void fimc_is_assert(void)
 {
 	BUG_ON(1);
 }
@@ -807,7 +808,7 @@ void fimc_is_assert(void)
 /*
  * Semaphore
  */
-int fimc_is_sema_init(void **sema, int sema_count)
+static int fimc_is_sema_init(void **sema, int sema_count)
 {
 	if (*sema == NULL) {
 		dbg_lib("sema_init: kzalloc struct semaphore\n");
@@ -822,7 +823,7 @@ int fimc_is_sema_init(void **sema, int sema_count)
 	return 0;
 }
 
-int fimc_is_sema_finish(void *sema)
+static int fimc_is_sema_finish(void *sema)
 {
 	if (sema == NULL) {
 		err_lib("invalid sema");
@@ -836,7 +837,7 @@ int fimc_is_sema_finish(void *sema)
 	return 0;
 }
 
-int fimc_is_sema_up(void *sema)
+static int fimc_is_sema_up(void *sema)
 {
 	if (sema == NULL) {
 		err_lib("invalid sema");
@@ -848,7 +849,7 @@ int fimc_is_sema_up(void *sema)
 	return 0;
 }
 
-int fimc_is_sema_down(void *sema)
+static int fimc_is_sema_down(void *sema)
 {
 	if (sema == NULL) {
 		err_lib("invalid sema");
@@ -863,7 +864,7 @@ int fimc_is_sema_down(void *sema)
 /*
  * Mutex
  */
-int fimc_is_mutex_init(void **mutex)
+static int fimc_is_mutex_init(void **mutex)
 {
 	if (*mutex == NULL)
 		*mutex = kzalloc(sizeof(struct mutex), GFP_KERNEL);
@@ -876,7 +877,7 @@ int fimc_is_mutex_init(void **mutex)
 	return 0;
 }
 
-int fimc_is_mutex_finish(void *mutex_lib)
+static int fimc_is_mutex_finish(void *mutex_lib)
 {
 	struct mutex *_mutex = NULL;
 
@@ -887,7 +888,7 @@ int fimc_is_mutex_finish(void *mutex_lib)
 
 	_mutex = (struct mutex *)mutex_lib;
 
-	if (atomic_read(&_mutex->count) == 0)
+	if (mutex_is_locked(_mutex))
 		mutex_unlock(_mutex);
 
 #ifdef LIB_MEM_TRACK
@@ -897,7 +898,7 @@ int fimc_is_mutex_finish(void *mutex_lib)
 	return 0;
 }
 
-int fimc_is_mutex_lock(void *mutex_lib)
+static int fimc_is_mutex_lock(void *mutex_lib)
 {
 	struct mutex *_mutex = NULL;
 
@@ -912,7 +913,7 @@ int fimc_is_mutex_lock(void *mutex_lib)
 	return 0;
 }
 
-bool fimc_is_mutex_tryLock(void *mutex_lib)
+static bool fimc_is_mutex_tryLock(void *mutex_lib)
 {
 	struct mutex *_mutex = NULL;
 	int locked = 0;
@@ -928,7 +929,7 @@ bool fimc_is_mutex_tryLock(void *mutex_lib)
 	return locked == 1 ? true : false;
 }
 
-int fimc_is_mutex_unlock(void *mutex_lib)
+static int fimc_is_mutex_unlock(void *mutex_lib)
 {
 	struct mutex *_mutex = NULL;
 
@@ -946,7 +947,7 @@ int fimc_is_mutex_unlock(void *mutex_lib)
 /*
  * file read/write
  */
-int fimc_is_fwrite(const char *pfname, void *pdata, int size)
+static __maybe_unused int fimc_is_fwrite(const char *pfname, void *pdata, int size)
 {
 	int ret = 0;
 	u32 flags = 0;
@@ -988,20 +989,40 @@ p_err:
 /*
  * Timer
  */
-int fimc_is_timer_create(void **timer, ulong expires,
+/*
+ * The library holds a struct timer_list * and passes it to the other timer
+ * functions, so timer comes first; the library callback is kept beside it.
+ */
+struct fimc_is_lib_timer {
+	struct timer_list timer;
+	void (*func)(ulong data);
+	ulong data;
+};
+
+/* the callback is library code: FP/SIMD state is saved and it has no CFI hash */
+static void __nocfi fimc_is_lib_timer_fn(struct timer_list *t)
+{
+	struct fimc_is_lib_timer *lt = container_of(t, struct fimc_is_lib_timer, timer);
+
+	fpsimd_get();
+	lt->func(lt->data);
+	fpsimd_put();
+}
+
+static int fimc_is_timer_create(void **timer, ulong expires,
 				void (*func)(ulong),
 				ulong data)
 {
-	struct timer_list *pTimer = NULL;
+	struct fimc_is_lib_timer *pTimer = NULL;
 	if (*timer == NULL)
-		*timer = kzalloc(sizeof(struct timer_list), GFP_KERNEL);
+		*timer = kzalloc(sizeof(struct fimc_is_lib_timer), GFP_KERNEL);
 
 	pTimer = *timer;
 
-	init_timer(pTimer);
-	pTimer->expires = jiffies + expires;
+	timer_setup(&pTimer->timer, fimc_is_lib_timer_fn, 0);
+	pTimer->timer.expires = jiffies + expires;
 	pTimer->data = (ulong)data;
-	pTimer->function = func;
+	pTimer->func = func;
 
 #ifdef LIB_MEM_TRACK
 	add_alloc_track(MT_TYPE_TIMER, (ulong)*timer, sizeof(struct timer_list));
@@ -1009,7 +1030,7 @@ int fimc_is_timer_create(void **timer, ulong expires,
 	return 0;
 }
 
-int fimc_is_timer_delete(void *timer)
+static int fimc_is_timer_delete(void *timer)
 {
 	if (timer == NULL) {
 		err_lib("invalid timer");
@@ -1027,7 +1048,7 @@ int fimc_is_timer_delete(void *timer)
 	return 0;
 }
 
-int fimc_is_timer_reset(void *timer, ulong expires)
+static int fimc_is_timer_reset(void *timer, ulong expires)
 {
 	if (timer == NULL) {
 		err_lib("invalid timer");
@@ -1039,13 +1060,13 @@ int fimc_is_timer_reset(void *timer, ulong expires)
 	return 0;
 }
 
-int fimc_is_timer_query(void *timer, ulong timerValue)
+static int fimc_is_timer_query(void *timer, ulong timerValue)
 {
 	/* TODO: will be IMPLEMENTED */
 	return 0;
 }
 
-int fimc_is_timer_enable(void *timer)
+static int fimc_is_timer_enable(void *timer)
 {
 	if (timer == NULL) {
 		err_lib("invalid timer");
@@ -1057,7 +1078,7 @@ int fimc_is_timer_enable(void *timer)
 	return 0;
 }
 
-int fimc_is_timer_disable(void *timer)
+static int fimc_is_timer_disable(void *timer)
 {
 	if (timer == NULL) {
 		err_lib("invalid timer");
@@ -1083,7 +1104,7 @@ int fimc_is_timer_disable(void *timer)
 #define valid_3aaisp_intr_index(intr_index) \
 	(0 <= intr_index && intr_index < INTR_HWIP_MAX)
 
-int fimc_is_register_interrupt(struct hwip_intr_handler info)
+static int fimc_is_register_interrupt(struct hwip_intr_handler info)
 {
 	struct fimc_is_lib_support *lib = &gPtr_lib_support;
 	struct hwip_intr_handler *pHandler = NULL;
@@ -1144,7 +1165,7 @@ int fimc_is_register_interrupt(struct hwip_intr_handler info)
 	return ret;
 }
 
-int fimc_is_unregister_interrupt(u32 intr_id, u32 chain_id)
+static int fimc_is_unregister_interrupt(u32 intr_id, u32 chain_id)
 {
 	struct fimc_is_lib_support *lib = &gPtr_lib_support;
 	struct hwip_intr_handler *pHandler;
@@ -1199,7 +1220,7 @@ int fimc_is_unregister_interrupt(u32 intr_id, u32 chain_id)
 	return ret;
 }
 
-static irqreturn_t  fimc_is_general_interrupt_isr (int irq, void *data)
+static irqreturn_t __nocfi fimc_is_general_interrupt_isr(int irq, void *data)
 {
 	struct general_intr_handler *intr_handler = (struct general_intr_handler *)data;
 
@@ -1214,7 +1235,7 @@ static irqreturn_t  fimc_is_general_interrupt_isr (int irq, void *data)
 	return IRQ_HANDLED;
 }
 
-int fimc_is_register_general_interrupt(struct general_intr_handler info)
+static int fimc_is_register_general_interrupt(struct general_intr_handler info)
 {
 	struct fimc_is_lib_support *lib = &gPtr_lib_support;
 	int ret = 0;
@@ -1240,7 +1261,7 @@ int fimc_is_register_general_interrupt(struct general_intr_handler info)
 	return ret;
 }
 
-int fimc_is_unregister_general_interrupt(struct general_intr_handler info)
+static int fimc_is_unregister_general_interrupt(struct general_intr_handler info)
 {
 	struct fimc_is_lib_support *lib = &gPtr_lib_support;
 
@@ -1257,19 +1278,19 @@ int fimc_is_unregister_general_interrupt(struct general_intr_handler info)
 }
 
 
-int fimc_is_enable_interrupt(u32 interrupt_id)
+static int fimc_is_enable_interrupt(u32 interrupt_id)
 {
 	/* TODO */
 	return 0;
 }
 
-int fimc_is_disable_interrupt(u32 interrupt_id)
+static int fimc_is_disable_interrupt(u32 interrupt_id)
 {
 	/* TODO */
 	return 0;
 }
 
-int fimc_is_clear_interrupt(u32 interrupt_id)
+static int fimc_is_clear_interrupt(u32 interrupt_id)
 {
 	/* TODO */
 	return 0;
@@ -1279,7 +1300,7 @@ int fimc_is_clear_interrupt(u32 interrupt_id)
  * Spinlock
  */
 static spinlock_t svc_slock;
-ulong fimc_is_svc_spin_lock_save(void)
+static ulong fimc_is_svc_spin_lock_save(void)
 {
 	ulong flags = 0;
 
@@ -1288,7 +1309,7 @@ ulong fimc_is_svc_spin_lock_save(void)
 	return flags;
 }
 
-void fimc_is_svc_spin_unlock_restore(ulong flags)
+static void fimc_is_svc_spin_unlock_restore(ulong flags)
 {
 	spin_unlock_irqrestore(&svc_slock, flags);
 }
@@ -1399,14 +1420,14 @@ int fimc_is_spin_unlock_irqrestore(void *slock_lib, ulong flag)
 	return 0;
 }
 
-int fimc_is_get_nsec(uint64_t *time)
+static __maybe_unused int fimc_is_get_nsec(uint64_t *time)
 {
 	*time = (uint64_t)local_clock();
 
 	return 0;
 }
 
-int fimc_is_get_usec(uint64_t *time)
+static int fimc_is_get_usec(uint64_t *time)
 {
 	unsigned long long t;
 
@@ -1419,17 +1440,17 @@ int fimc_is_get_usec(uint64_t *time)
 /*
  * Sleep
  */
-void fimc_is_sleep(u32 msec)
+static void fimc_is_sleep(u32 msec)
 {
 	msleep(msec);
 }
 
-void fimc_is_usleep(ulong usec)
+static void fimc_is_usleep(ulong usec)
 {
 	usleep_range(usec, usec);
 }
 
-void fimc_is_udelay(ulong usec)
+static void fimc_is_udelay(ulong usec)
 {
 	udelay(usec);
 }
@@ -1488,7 +1509,7 @@ void fimc_is_vra_cache_flush(ulong kvaddr, u32 size)
 		DMA_TO_DEVICE);
 }
 
-ulong get_reg_addr(u32 id)
+static ulong get_reg_addr(u32 id)
 {
 	struct fimc_is_lib_support *lib = &gPtr_lib_support;
 	ulong reg_addr = 0;
@@ -1535,7 +1556,7 @@ ulong get_reg_addr(u32 id)
 	return reg_addr;
 }
 
-static void lib_task_work(struct kthread_work *work)
+static void __nocfi lib_task_work(struct kthread_work *work)
 {
 	struct fimc_is_task_work *cur_work;
 
@@ -1549,8 +1570,8 @@ static void lib_task_work(struct kthread_work *work)
 	cur_work->func(cur_work->params);
 }
 
-bool lib_task_trigger(struct fimc_is_lib_support *this,
-	int priority, void *func, void *params)
+static bool lib_task_trigger(struct fimc_is_lib_support *this,
+			     int priority, void *func, void *params)
 {
 	struct fimc_is_lib_task *lib_task = NULL;
 	u32 index = 0;
@@ -1570,7 +1591,7 @@ bool lib_task_trigger(struct fimc_is_lib_support *this,
 	return queue_kthread_work(&lib_task->worker, &lib_task->work[index].work);
 }
 
-int fimc_is_lib_check_priority(u32 type, int priority)
+static int fimc_is_lib_check_priority(u32 type, int priority)
 {
 	switch (type) {
 	case TASK_TYPE_DDK:
@@ -1590,7 +1611,7 @@ int fimc_is_lib_check_priority(u32 type, int priority)
 	return 0;
 }
 
-bool fimc_is_add_task(int priority, void *func, void *param)
+static bool fimc_is_add_task(int priority, void *func, void *param)
 {
 	BUG_ON(!func);
 
@@ -1602,7 +1623,7 @@ bool fimc_is_add_task(int priority, void *func, void *param)
 	return lib_task_trigger(&gPtr_lib_support, priority, func, param);
 }
 
-bool fimc_is_add_task_rta(int priority, void *func, void *param)
+static bool fimc_is_add_task_rta(int priority, void *func, void *param)
 {
 	BUG_ON(!func);
 
@@ -1614,7 +1635,7 @@ bool fimc_is_add_task_rta(int priority, void *func, void *param)
 	return lib_task_trigger(&gPtr_lib_support, priority, func, param);
 }
 
-int lib_get_task_priority(int task_index)
+static int lib_get_task_priority(int task_index)
 {
 	int priority = FIMC_IS_MAX_PRIO - 1;
 
@@ -1644,7 +1665,7 @@ int lib_get_task_priority(int task_index)
 	return priority;
 }
 
-u32 lib_get_task_affinity(int task_index)
+static u32 lib_get_task_affinity(int task_index)
 {
 	u32 cpu = 0;
 
@@ -1671,7 +1692,7 @@ u32 lib_get_task_affinity(int task_index)
 	return cpu;
 }
 
-int lib_support_init(void)
+static int lib_support_init(void)
 {
 	int ret = 0;
 	struct fimc_is_lib_support *lib = &gPtr_lib_support;
@@ -1706,17 +1727,14 @@ int fimc_is_init_ddk_thread(void)
 		spin_lock_init(&lib->task_taaisp[i].work_lock);
 		init_kthread_worker(&lib->task_taaisp[i].worker);
 		snprintf(name, sizeof(name), "lib_%d_worker", i);
-		lib->task_taaisp[i].task = kthread_run(kthread_worker_fn,
-							&lib->task_taaisp[i].worker,
+		lib->task_taaisp[i].task = kthread_run(fimc_is_neon_kthread_fn,
+						       &lib->task_taaisp[i].worker,
 							name);
 		if (IS_ERR(lib->task_taaisp[i].task)) {
 			err_lib("failed to create library task_handler(%d), err(%ld)",
 				i, PTR_ERR(lib->task_taaisp[i].task));
 			return PTR_ERR(lib->task_taaisp[i].task);
 		}
-#ifdef ENABLE_FPSIMD_FOR_USER
-		fpsimd_set_task_using(lib->task_taaisp[i].task);
-#endif
 		/* TODO: consider task priority group worker */
 		param.sched_priority = lib_get_task_priority(i);
 		ret = sched_setscheduler_nocheck(lib->task_taaisp[i].task, SCHED_FIFO, &param);
@@ -1760,9 +1778,9 @@ void fimc_is_flush_ddk_thread(void)
 
 			ret = kthread_stop(lib->task_taaisp[i].task);
 			if (ret) {
-				err_lib("kthread_stop fail (%d): state(%ld), exit_code(%d), exit_state(%d)",
+				err_lib("kthread_stop fail (%d): state(%u), exit_code(%d), exit_state(%d)",
 					ret,
-					lib->task_taaisp[i].task->state,
+					READ_ONCE(lib->task_taaisp[i].task->__state),
 					lib->task_taaisp[i].task->exit_code,
 					lib->task_taaisp[i].task->exit_state);
 			}
@@ -1774,7 +1792,7 @@ void fimc_is_flush_ddk_thread(void)
 	}
 }
 
-void fimc_is_lib_flush_task_handler(int priority)
+static void fimc_is_lib_flush_task_handler(int priority)
 {
 	struct fimc_is_lib_support *lib = &gPtr_lib_support;
 	int task_index = priority - TASK_PRIORITY_BASE - 1;
@@ -1813,72 +1831,120 @@ bool fimc_is_lib_in_interrupt(void)
 		return false;
 }
 
-void set_os_system_funcs(os_system_func_t *funcs)
+FIMC_IS_JOPP_ENTRY(fimc_is_log_write_console);
+FIMC_IS_JOPP_ENTRY(fimc_is_alloc_reserved_buffer);
+FIMC_IS_JOPP_ENTRY(fimc_is_free_reserved_buffer);
+FIMC_IS_JOPP_ENTRY(fimc_is_assert);
+FIMC_IS_JOPP_ENTRY(fimc_is_sema_init);
+FIMC_IS_JOPP_ENTRY(fimc_is_sema_finish);
+FIMC_IS_JOPP_ENTRY(fimc_is_sema_up);
+FIMC_IS_JOPP_ENTRY(fimc_is_sema_down);
+FIMC_IS_JOPP_ENTRY(fimc_is_mutex_init);
+FIMC_IS_JOPP_ENTRY(fimc_is_mutex_finish);
+FIMC_IS_JOPP_ENTRY(fimc_is_mutex_lock);
+FIMC_IS_JOPP_ENTRY(fimc_is_mutex_tryLock);
+FIMC_IS_JOPP_ENTRY(fimc_is_mutex_unlock);
+FIMC_IS_JOPP_ENTRY(fimc_is_timer_create);
+FIMC_IS_JOPP_ENTRY(fimc_is_timer_delete);
+FIMC_IS_JOPP_ENTRY(fimc_is_timer_reset);
+FIMC_IS_JOPP_ENTRY(fimc_is_timer_query);
+FIMC_IS_JOPP_ENTRY(fimc_is_timer_enable);
+FIMC_IS_JOPP_ENTRY(fimc_is_timer_disable);
+FIMC_IS_JOPP_ENTRY(fimc_is_register_interrupt);
+FIMC_IS_JOPP_ENTRY(fimc_is_unregister_interrupt);
+FIMC_IS_JOPP_ENTRY(fimc_is_enable_interrupt);
+FIMC_IS_JOPP_ENTRY(fimc_is_disable_interrupt);
+FIMC_IS_JOPP_ENTRY(fimc_is_clear_interrupt);
+FIMC_IS_JOPP_ENTRY(fimc_is_svc_spin_lock_save);
+FIMC_IS_JOPP_ENTRY(fimc_is_svc_spin_unlock_restore);
+FIMC_IS_JOPP_ENTRY(get_random_u32);
+FIMC_IS_JOPP_ENTRY(fimc_is_add_task);
+FIMC_IS_JOPP_ENTRY(fimc_is_get_usec);
+FIMC_IS_JOPP_ENTRY(fimc_is_log_write);
+FIMC_IS_JOPP_ENTRY(fimc_is_translate_taaisp_kva_to_dva);
+FIMC_IS_JOPP_ENTRY(fimc_is_translate_taaisp_dva_to_kva);
+FIMC_IS_JOPP_ENTRY(fimc_is_sleep);
+FIMC_IS_JOPP_ENTRY(fimc_is_taaisp_cache_invalid);
+FIMC_IS_JOPP_ENTRY(fimc_is_alloc_reserved_taaisp_dma_buffer);
+FIMC_IS_JOPP_ENTRY(fimc_is_free_reserved_taaisp_dma_buffer);
+FIMC_IS_JOPP_ENTRY(fimc_is_spin_lock_init);
+FIMC_IS_JOPP_ENTRY(fimc_is_spin_lock_finish);
+FIMC_IS_JOPP_ENTRY(fimc_is_spin_lock);
+FIMC_IS_JOPP_ENTRY(fimc_is_spin_unlock);
+FIMC_IS_JOPP_ENTRY(fimc_is_spin_lock_irq);
+FIMC_IS_JOPP_ENTRY(fimc_is_spin_unlock_irq);
+FIMC_IS_JOPP_ENTRY(fimc_is_spin_lock_irqsave);
+FIMC_IS_JOPP_ENTRY(fimc_is_spin_unlock_irqrestore);
+FIMC_IS_JOPP_ENTRY(get_reg_addr);
+FIMC_IS_JOPP_ENTRY(fimc_is_lib_in_interrupt);
+FIMC_IS_JOPP_ENTRY(fimc_is_lib_flush_task_handler);
+
+static void set_os_system_funcs(os_system_func_t *funcs)
 {
-	funcs[0] = (os_system_func_t)fimc_is_log_write_console;
+	funcs[0] = (os_system_func_t)FIMC_IS_JOPP_ADDR(fimc_is_log_write_console);
 
-	funcs[1] = (os_system_func_t)fimc_is_alloc_reserved_buffer;
-	funcs[2] = (os_system_func_t)fimc_is_free_reserved_buffer;
+	funcs[1] = (os_system_func_t)FIMC_IS_JOPP_ADDR(fimc_is_alloc_reserved_buffer);
+	funcs[2] = (os_system_func_t)FIMC_IS_JOPP_ADDR(fimc_is_free_reserved_buffer);
 
-	funcs[3] = (os_system_func_t)fimc_is_assert;
+	funcs[3] = (os_system_func_t)FIMC_IS_JOPP_ADDR(fimc_is_assert);
 
-	funcs[4] = (os_system_func_t)fimc_is_sema_init;
-	funcs[5] = (os_system_func_t)fimc_is_sema_finish;
-	funcs[6] = (os_system_func_t)fimc_is_sema_up;
-	funcs[7] = (os_system_func_t)fimc_is_sema_down;
+	funcs[4] = (os_system_func_t)FIMC_IS_JOPP_ADDR(fimc_is_sema_init);
+	funcs[5] = (os_system_func_t)FIMC_IS_JOPP_ADDR(fimc_is_sema_finish);
+	funcs[6] = (os_system_func_t)FIMC_IS_JOPP_ADDR(fimc_is_sema_up);
+	funcs[7] = (os_system_func_t)FIMC_IS_JOPP_ADDR(fimc_is_sema_down);
 
-	funcs[8] = (os_system_func_t)fimc_is_mutex_init;
-	funcs[9] = (os_system_func_t)fimc_is_mutex_finish;
-	funcs[10] = (os_system_func_t)fimc_is_mutex_lock;
-	funcs[11] = (os_system_func_t)fimc_is_mutex_tryLock;
-	funcs[12] = (os_system_func_t)fimc_is_mutex_unlock;
+	funcs[8] = (os_system_func_t)FIMC_IS_JOPP_ADDR(fimc_is_mutex_init);
+	funcs[9] = (os_system_func_t)FIMC_IS_JOPP_ADDR(fimc_is_mutex_finish);
+	funcs[10] = (os_system_func_t)FIMC_IS_JOPP_ADDR(fimc_is_mutex_lock);
+	funcs[11] = (os_system_func_t)FIMC_IS_JOPP_ADDR(fimc_is_mutex_tryLock);
+	funcs[12] = (os_system_func_t)FIMC_IS_JOPP_ADDR(fimc_is_mutex_unlock);
 
-	funcs[13] = (os_system_func_t)fimc_is_timer_create;
-	funcs[14] = (os_system_func_t)fimc_is_timer_delete;
-	funcs[15] = (os_system_func_t)fimc_is_timer_reset;
-	funcs[16] = (os_system_func_t)fimc_is_timer_query;
-	funcs[17] = (os_system_func_t)fimc_is_timer_enable;
-	funcs[18] = (os_system_func_t)fimc_is_timer_disable;
+	funcs[13] = (os_system_func_t)FIMC_IS_JOPP_ADDR(fimc_is_timer_create);
+	funcs[14] = (os_system_func_t)FIMC_IS_JOPP_ADDR(fimc_is_timer_delete);
+	funcs[15] = (os_system_func_t)FIMC_IS_JOPP_ADDR(fimc_is_timer_reset);
+	funcs[16] = (os_system_func_t)FIMC_IS_JOPP_ADDR(fimc_is_timer_query);
+	funcs[17] = (os_system_func_t)FIMC_IS_JOPP_ADDR(fimc_is_timer_enable);
+	funcs[18] = (os_system_func_t)FIMC_IS_JOPP_ADDR(fimc_is_timer_disable);
 
-	funcs[19] = (os_system_func_t)fimc_is_register_interrupt;
-	funcs[20] = (os_system_func_t)fimc_is_unregister_interrupt;
-	funcs[21] = (os_system_func_t)fimc_is_enable_interrupt;
-	funcs[22] = (os_system_func_t)fimc_is_disable_interrupt;
-	funcs[23] = (os_system_func_t)fimc_is_clear_interrupt;
+	funcs[19] = (os_system_func_t)FIMC_IS_JOPP_ADDR(fimc_is_register_interrupt);
+	funcs[20] = (os_system_func_t)FIMC_IS_JOPP_ADDR(fimc_is_unregister_interrupt);
+	funcs[21] = (os_system_func_t)FIMC_IS_JOPP_ADDR(fimc_is_enable_interrupt);
+	funcs[22] = (os_system_func_t)FIMC_IS_JOPP_ADDR(fimc_is_disable_interrupt);
+	funcs[23] = (os_system_func_t)FIMC_IS_JOPP_ADDR(fimc_is_clear_interrupt);
 
-	funcs[24] = (os_system_func_t)fimc_is_svc_spin_lock_save;
-	funcs[25] = (os_system_func_t)fimc_is_svc_spin_unlock_restore;
-	funcs[26] = (os_system_func_t)get_random_int;
-	funcs[27] = (os_system_func_t)fimc_is_add_task;
+	funcs[24] = (os_system_func_t)FIMC_IS_JOPP_ADDR(fimc_is_svc_spin_lock_save);
+	funcs[25] = (os_system_func_t)FIMC_IS_JOPP_ADDR(fimc_is_svc_spin_unlock_restore);
+	funcs[26] = (os_system_func_t)FIMC_IS_JOPP_ADDR(get_random_u32);
+	funcs[27] = (os_system_func_t)FIMC_IS_JOPP_ADDR(fimc_is_add_task);
 
-	funcs[28] = (os_system_func_t)fimc_is_get_usec;
-	funcs[29] = (os_system_func_t)fimc_is_log_write;
+	funcs[28] = (os_system_func_t)FIMC_IS_JOPP_ADDR(fimc_is_get_usec);
+	funcs[29] = (os_system_func_t)FIMC_IS_JOPP_ADDR(fimc_is_log_write);
 
-	funcs[30] = (os_system_func_t)fimc_is_translate_taaisp_kva_to_dva;
-	funcs[31] = (os_system_func_t)fimc_is_translate_taaisp_dva_to_kva;
-	funcs[32] = (os_system_func_t)fimc_is_sleep;
-	funcs[33] = (os_system_func_t)fimc_is_taaisp_cache_invalid;
-	funcs[34] = (os_system_func_t)fimc_is_alloc_reserved_taaisp_dma_buffer;
-	funcs[35] = (os_system_func_t)fimc_is_free_reserved_taaisp_dma_buffer;
+	funcs[30] = (os_system_func_t)FIMC_IS_JOPP_ADDR(fimc_is_translate_taaisp_kva_to_dva);
+	funcs[31] = (os_system_func_t)FIMC_IS_JOPP_ADDR(fimc_is_translate_taaisp_dva_to_kva);
+	funcs[32] = (os_system_func_t)FIMC_IS_JOPP_ADDR(fimc_is_sleep);
+	funcs[33] = (os_system_func_t)FIMC_IS_JOPP_ADDR(fimc_is_taaisp_cache_invalid);
+	funcs[34] = (os_system_func_t)FIMC_IS_JOPP_ADDR(fimc_is_alloc_reserved_taaisp_dma_buffer);
+	funcs[35] = (os_system_func_t)FIMC_IS_JOPP_ADDR(fimc_is_free_reserved_taaisp_dma_buffer);
 
-	funcs[36] = (os_system_func_t)fimc_is_spin_lock_init;
-	funcs[37] = (os_system_func_t)fimc_is_spin_lock_finish;
-	funcs[38] = (os_system_func_t)fimc_is_spin_lock;
-	funcs[39] = (os_system_func_t)fimc_is_spin_unlock;
-	funcs[40] = (os_system_func_t)fimc_is_spin_lock_irq;
-	funcs[41] = (os_system_func_t)fimc_is_spin_unlock_irq;
-	funcs[42] = (os_system_func_t)fimc_is_spin_lock_irqsave;
-	funcs[43] = (os_system_func_t)fimc_is_spin_unlock_irqrestore;
-	funcs[44] = (os_system_func_t)fimc_is_alloc_reserved_buffer;
-	funcs[45] = (os_system_func_t)fimc_is_free_reserved_buffer;
-	funcs[46] = (os_system_func_t)get_reg_addr;
+	funcs[36] = (os_system_func_t)FIMC_IS_JOPP_ADDR(fimc_is_spin_lock_init);
+	funcs[37] = (os_system_func_t)FIMC_IS_JOPP_ADDR(fimc_is_spin_lock_finish);
+	funcs[38] = (os_system_func_t)FIMC_IS_JOPP_ADDR(fimc_is_spin_lock);
+	funcs[39] = (os_system_func_t)FIMC_IS_JOPP_ADDR(fimc_is_spin_unlock);
+	funcs[40] = (os_system_func_t)FIMC_IS_JOPP_ADDR(fimc_is_spin_lock_irq);
+	funcs[41] = (os_system_func_t)FIMC_IS_JOPP_ADDR(fimc_is_spin_unlock_irq);
+	funcs[42] = (os_system_func_t)FIMC_IS_JOPP_ADDR(fimc_is_spin_lock_irqsave);
+	funcs[43] = (os_system_func_t)FIMC_IS_JOPP_ADDR(fimc_is_spin_unlock_irqrestore);
+	funcs[44] = (os_system_func_t)FIMC_IS_JOPP_ADDR(fimc_is_alloc_reserved_buffer);
+	funcs[45] = (os_system_func_t)FIMC_IS_JOPP_ADDR(fimc_is_free_reserved_buffer);
+	funcs[46] = (os_system_func_t)FIMC_IS_JOPP_ADDR(get_reg_addr);
 
-	funcs[47] = (os_system_func_t)fimc_is_lib_in_interrupt;
-	funcs[48] = (os_system_func_t)fimc_is_lib_flush_task_handler;
+	funcs[47] = (os_system_func_t)FIMC_IS_JOPP_ADDR(fimc_is_lib_in_interrupt);
+	funcs[48] = (os_system_func_t)FIMC_IS_JOPP_ADDR(fimc_is_lib_flush_task_handler);
 }
 
 #ifdef USE_RTA_BINARY
-void fimc_is_get_version(char **ddk, char **rta, char **setfile, char **companion)
+static void fimc_is_get_version(char **ddk, char **rta, char **setfile, char **companion)
 {
 	char *p;
 
@@ -1903,80 +1969,85 @@ void fimc_is_get_version(char **ddk, char **rta, char **setfile, char **companio
 		info("%s ddk:%s rta:%s setfile:%s companion:%s", __func__, *ddk, *rta, *setfile, *companion);
 }
 
-void set_os_system_funcs_for_rta(os_system_func_t *funcs)
+#if !defined(CONFIG_SAMSUNG_PRODUCT_SHIP)
+FIMC_IS_JOPP_ENTRY(fimc_is_fwrite);
+#endif
+FIMC_IS_JOPP_ENTRY(fimc_is_register_general_interrupt);
+FIMC_IS_JOPP_ENTRY(fimc_is_unregister_general_interrupt);
+FIMC_IS_JOPP_ENTRY(fimc_is_add_task_rta);
+FIMC_IS_JOPP_ENTRY(fimc_is_udelay);
+FIMC_IS_JOPP_ENTRY(fimc_is_usleep);
+FIMC_IS_JOPP_ENTRY(fimc_is_get_version);
+
+static void set_os_system_funcs_for_rta(os_system_func_t *funcs)
 {
 	/* Index 0 => log, assert */
-	funcs[0] = (os_system_func_t)fimc_is_log_write;
-	funcs[1] = (os_system_func_t)fimc_is_log_write_console;
-	funcs[2] = (os_system_func_t)fimc_is_assert;
+	funcs[0] = (os_system_func_t)FIMC_IS_JOPP_ADDR(fimc_is_log_write);
+	funcs[1] = (os_system_func_t)FIMC_IS_JOPP_ADDR(fimc_is_log_write_console);
+	funcs[2] = (os_system_func_t)FIMC_IS_JOPP_ADDR(fimc_is_assert);
 
 #if defined(CONFIG_SAMSUNG_PRODUCT_SHIP)
 	funcs[9] = NULL;
 #else
-	funcs[9] = (os_system_func_t)fimc_is_fwrite;
+	funcs[9] = (os_system_func_t)FIMC_IS_JOPP_ADDR(fimc_is_fwrite);
 #endif
 
 	/* Index 10 => memory : alloc/free */
-	funcs[10] = (os_system_func_t)fimc_is_alloc_reserved_buffer;
-	funcs[11] = (os_system_func_t)fimc_is_free_reserved_buffer;
+	funcs[10] = (os_system_func_t)FIMC_IS_JOPP_ADDR(fimc_is_alloc_reserved_buffer);
+	funcs[11] = (os_system_func_t)FIMC_IS_JOPP_ADDR(fimc_is_free_reserved_buffer);
 
 	/* Index 20 => memory : misc */
 
 	/* Index 30 => interrupt */
-	funcs[30] = (os_system_func_t)fimc_is_register_general_interrupt;
-	funcs[31] = (os_system_func_t)fimc_is_unregister_general_interrupt;
+	funcs[30] = (os_system_func_t)FIMC_IS_JOPP_ADDR(fimc_is_register_general_interrupt);
+	funcs[31] = (os_system_func_t)FIMC_IS_JOPP_ADDR(fimc_is_unregister_general_interrupt);
 
 	/* Index 40 => task */
-	funcs[40] = (os_system_func_t)fimc_is_add_task_rta;
+	funcs[40] = (os_system_func_t)FIMC_IS_JOPP_ADDR(fimc_is_add_task_rta);
 
 	/* Index 50 => timer, delay, sleep */
-	funcs[50] = (os_system_func_t)fimc_is_timer_create;
-	funcs[51] = (os_system_func_t)fimc_is_timer_delete;
-	funcs[52] = (os_system_func_t)fimc_is_timer_reset;
-	funcs[53] = (os_system_func_t)fimc_is_timer_query;
-	funcs[54] = (os_system_func_t)fimc_is_timer_enable;
-	funcs[55] = (os_system_func_t)fimc_is_timer_disable;
-	funcs[56] = (os_system_func_t)fimc_is_udelay;
-	funcs[57] = (os_system_func_t)fimc_is_usleep;
-	funcs[58] = (os_system_func_t)fimc_is_sleep;
+	funcs[50] = (os_system_func_t)FIMC_IS_JOPP_ADDR(fimc_is_timer_create);
+	funcs[51] = (os_system_func_t)FIMC_IS_JOPP_ADDR(fimc_is_timer_delete);
+	funcs[52] = (os_system_func_t)FIMC_IS_JOPP_ADDR(fimc_is_timer_reset);
+	funcs[53] = (os_system_func_t)FIMC_IS_JOPP_ADDR(fimc_is_timer_query);
+	funcs[54] = (os_system_func_t)FIMC_IS_JOPP_ADDR(fimc_is_timer_enable);
+	funcs[55] = (os_system_func_t)FIMC_IS_JOPP_ADDR(fimc_is_timer_disable);
+	funcs[56] = (os_system_func_t)FIMC_IS_JOPP_ADDR(fimc_is_udelay);
+	funcs[57] = (os_system_func_t)FIMC_IS_JOPP_ADDR(fimc_is_usleep);
+	funcs[58] = (os_system_func_t)FIMC_IS_JOPP_ADDR(fimc_is_sleep);
 
 	/* Index 60 => locking : semaphore */
-	funcs[60] = (os_system_func_t)fimc_is_sema_init;
-	funcs[61] = (os_system_func_t)fimc_is_sema_finish;
-	funcs[62] = (os_system_func_t)fimc_is_sema_up;
-	funcs[63] = (os_system_func_t)fimc_is_sema_down;
+	funcs[60] = (os_system_func_t)FIMC_IS_JOPP_ADDR(fimc_is_sema_init);
+	funcs[61] = (os_system_func_t)FIMC_IS_JOPP_ADDR(fimc_is_sema_finish);
+	funcs[62] = (os_system_func_t)FIMC_IS_JOPP_ADDR(fimc_is_sema_up);
+	funcs[63] = (os_system_func_t)FIMC_IS_JOPP_ADDR(fimc_is_sema_down);
 
 	/* Index 70 => locking : mutex */
 
 	/* Index 80 => locking : spinlock */
 
 	/* Index 90 => misc */
-	funcs[90] = (os_system_func_t)fimc_is_get_usec;
-	funcs[91] = (os_system_func_t)fimc_is_get_version;
+	funcs[90] = (os_system_func_t)FIMC_IS_JOPP_ADDR(fimc_is_get_usec);
+	funcs[91] = (os_system_func_t)FIMC_IS_JOPP_ADDR(fimc_is_get_version);
 }
 #endif
 
-static int fimc_is_memory_page_range(pte_t *ptep, pgtable_t token, unsigned long addr,
-			void *data)
+/* set_memory_*() only takes vmalloc areas, so the window PTEs are rewritten */
+static int fimc_is_lib_prot_pte(pte_t *ptep, unsigned long addr, void *data)
 {
-	struct fimc_is_memory_change_data *cdata = data;
-	pte_t pte = *ptep;
+	pgprot_t prot = *(pgprot_t *)data;
 
-	pte = clear_pte_bit(pte, cdata->clear_mask);
-	pte = set_pte_bit(pte, cdata->set_mask);
-
-	set_pte(ptep, pte);
+	set_pte(ptep, pfn_pte(pte_pfn(__ptep_get(ptep)), prot));
 	return 0;
 }
 
 static int fimc_is_memory_attribute_change(ulong addr, int numpages,
-		pgprot_t set_mask, pgprot_t clear_mask)
+		pgprot_t prot)
 {
 	ulong start = addr;
 	ulong size = PAGE_SIZE * numpages;
 	ulong end = start + size;
 	int ret;
-	struct fimc_is_memory_change_data data;
 
 	if (!IS_ALIGNED(addr, PAGE_SIZE)) {
 		start &= PAGE_MASK;
@@ -1984,11 +2055,8 @@ static int fimc_is_memory_attribute_change(ulong addr, int numpages,
 		WARN_ON_ONCE(1);
 	}
 
-	data.set_mask = set_mask;
-	data.clear_mask = clear_mask;
-
-	ret = apply_to_page_range(&init_mm, start, size, fimc_is_memory_page_range,
-					&data);
+	ret = apply_to_existing_page_range(&init_mm, start, size,
+					   fimc_is_lib_prot_pte, &prot);
 
 	flush_tlb_kernel_range(start, end);
 
@@ -2005,38 +2073,21 @@ int fimc_is_memory_attribute_nxrw(struct fimc_is_memory_attribute *attribute)
 	}
 
 	ret = fimc_is_memory_attribute_change(attribute->vaddr,
-			attribute->numpages,
-			__pgprot(PTE_PXN),
-			__pgprot(0));
+			attribute->numpages, PAGE_KERNEL);
 	if (ret) {
-		err_lib("memory attribute change fail [PTE_PX -> PTE_PXN]\n");
+		err_lib("memory attribute change fail [ROX -> NX RW]\n");
 		return ret;
-	}
-
-	ret = fimc_is_memory_attribute_change(attribute->vaddr,
-			attribute->numpages,
-			__pgprot(PTE_WRITE),
-			__pgprot(PTE_RDONLY));
-	if (ret) {
-		err_lib("memory attribute change fail [PTE_RDONLY -> PTE_WRITE]\n");
-		goto memory_excutable;
 	}
 
 	attribute->state = PTE_WRITE;
 
 	return 0;
-
-memory_excutable:
-	fimc_is_memory_attribute_change(attribute->vaddr,
-			attribute->numpages,
-			__pgprot(0),
-			__pgprot(PTE_PXN));
-
-	return -ENOMEM;
 }
 
 int fimc_is_memory_attribute_rox(struct fimc_is_memory_attribute *attribute)
 {
+	ulong start = attribute->vaddr;
+	ulong end = start + PAGE_SIZE * attribute->numpages;
 	int ret;
 
 	if (attribute->state != PTE_WRITE) {
@@ -2046,21 +2097,12 @@ int fimc_is_memory_attribute_rox(struct fimc_is_memory_attribute *attribute)
 
 	ret = fimc_is_memory_attribute_change(attribute->vaddr,
 			attribute->numpages,
-			__pgprot(PTE_RDONLY),
-			__pgprot(PTE_WRITE));
+			fimc_is_lib_rox ? PAGE_KERNEL_ROX : PAGE_KERNEL_EXEC);
 	if (ret) {
-		err_lib("memory attribute change fail [PTE_WRITE -> PTE_RDONLY]\n");
+		err_lib("memory attribute change fail [NX RW -> ROX]\n");
 		return ret;
 	}
-
-	ret = fimc_is_memory_attribute_change(attribute->vaddr,
-			attribute->numpages,
-			__pgprot(0),
-			__pgprot(PTE_PXN));
-	if (ret) {
-		err_lib("memory attribute change fail [PTE_PXN -> PTE_PX]\n");
-		return ret;
-	}
+	caches_clean_inval_pou(start, end);
 
 	attribute->state = PTE_RDONLY;
 
@@ -2069,7 +2111,7 @@ int fimc_is_memory_attribute_rox(struct fimc_is_memory_attribute *attribute)
 
 #define INDEX_VRA_BIN	0
 #define INDEX_ISP_BIN	1
-int fimc_is_load_ddk_bin(int loadType)
+static int __nocfi fimc_is_load_ddk_bin(int loadType)
 {
 	int ret = 0;
 	char bin_type[4] = {0};
@@ -2135,7 +2177,7 @@ int fimc_is_load_ddk_bin(int loadType)
 			was_loaded_by(&bin) ? "built-in" : "user-provided");
 		if (bin.size <= DDK_LIB_SIZE) {
 			memcpy((void *)lib_addr, bin.data, bin.size);
-			__flush_dcache_area((void *)lib_addr, bin.size);
+			dcache_clean_inval_poc(lib_addr, lib_addr + bin.size);
 #if defined(CONFIG_RKP)
 			//if (!(gPtr_lib_support.binary_code_load_flg & BINARY_LOAD_DDK_DONE)) {
 				flush_cache_all();
@@ -2212,7 +2254,7 @@ fail:
 	return ret;
 }
 
-int fimc_is_load_vra_bin(int loadType)
+static int fimc_is_load_vra_bin(int loadType)
 {
 #ifdef USE_ONE_BINARY
 	/* VRA binary loading was included in ddk binary */
@@ -2277,7 +2319,7 @@ fail:
 #endif
 }
 
-int fimc_is_load_rta_bin(int loadType)
+static int __nocfi fimc_is_load_rta_bin(int loadType)
 {
 	int ret = 0;
 #ifdef USE_RTA_BINARY
@@ -2320,7 +2362,7 @@ int fimc_is_load_rta_bin(int loadType)
 			was_loaded_by(&bin) ? "built-in" : "user-provided");
 		if (bin.size <= RTA_LIB_SIZE) {
 			memcpy((void *)lib_rta, bin.data, bin.size);
-			__flush_dcache_area((void *)lib_rta, bin.size);
+			dcache_clean_inval_poc(lib_rta, lib_rta + bin.size);
 #if defined(CONFIG_RKP)
 			//if (!(gPtr_lib_support.binary_code_load_flg & BINARY_LOAD_RTA_DONE)) {
 				flush_cache_all();

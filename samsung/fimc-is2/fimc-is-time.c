@@ -76,18 +76,18 @@ void fimc_is_jitter(u64 timestamp)
 
 u64 fimc_is_get_timestamp(void)
 {
-	struct timespec curtime;
+	struct timespec64 curtime;
 
-	ktime_get_ts(&curtime);
+	ktime_get_ts64(&curtime);
 
 	return (u64)curtime.tv_sec*1000000000 + curtime.tv_nsec;
 }
 
 u64 fimc_is_get_timestamp_boot(void)
 {
-	struct timespec curtime;
+	struct timespec64 curtime;
 
-	curtime = ktime_to_timespec(ktime_get_boottime());
+	curtime = ktime_to_timespec64(ktime_get_boottime());
 
 	return (u64)curtime.tv_sec*1000000000 + curtime.tv_nsec;
 }

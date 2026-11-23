@@ -16,9 +16,6 @@
 #include <linux/errno.h>
 #include <linux/platform_device.h>
 #include <linux/io.h>
-#if defined(CONFIG_SECURE_CAMERA_USE)
-#include <linux/smc.h>
-#endif
 #include <linux/videodev2.h>
 #include <linux/videodev2_exynos_camera.h>
 
@@ -107,17 +104,8 @@ struct fimc_is_clk_gate clk_gate_vra;
 
 void __iomem *hwfc_rst;
 
-void fimc_is_enter_lib_isr(void)
-{
-	kernel_neon_begin();
-}
 
-void fimc_is_exit_lib_isr(void)
-{
-	kernel_neon_end();
-}
-
-void fimc_is_hw_group_init(struct fimc_is_group *group)
+static void fimc_is_hw_group_init(struct fimc_is_group *group)
 {
 	group->subdev[ENTRY_SENSOR] = NULL;
 	group->subdev[ENTRY_SSVC0] = NULL;
@@ -425,10 +413,10 @@ void fimc_is_hw_ischain_qe_cfg(void)
 	void __iomem *qe_3aa_regs;
 	void __iomem *qe_isphq_regs;
 
-	qe_3aaw_regs = ioremap_nocache(QE_3AAW_BASE_ADDR, 0x80);
-	qe_isplp_regs = ioremap_nocache(QE_ISPLP_BASE_ADDR, 0x80);
-	qe_3aa_regs = ioremap_nocache(QE_3AA_BASE_ADDR, 0x80);
-	qe_isphq_regs = ioremap_nocache(QE_ISPHQ_BASE_ADDR, 0x80);
+	qe_3aaw_regs = ioremap(QE_3AAW_BASE_ADDR, 0x80);
+	qe_isplp_regs = ioremap(QE_ISPLP_BASE_ADDR, 0x80);
+	qe_3aa_regs = ioremap(QE_3AA_BASE_ADDR, 0x80);
+	qe_isphq_regs = ioremap(QE_ISPHQ_BASE_ADDR, 0x80);
 
 	writel(0x00004000, qe_3aaw_regs + 0x20);
 	writel(0x00000010, qe_3aaw_regs + 0x24);
@@ -521,14 +509,14 @@ int fimc_is_hw_ischain_cfg(void *ischain_data)
 	if (core->secure_state != FIMC_IS_STATE_SECURED)
 #endif
 	{
-		cam_regs   = ioremap_nocache(SYSREG_CAM_BASE_ADDR, 0x10000);
+		cam_regs   = ioremap(SYSREG_CAM_BASE_ADDR, 0x10000);
 	}
 #if defined(CONFIG_SECURE_CAMERA_USE)
 	if (test_bit(FIMC_IS_ISCHAIN_POWER_ON, &device->state))
 #endif
 	{
-		isplp_regs = ioremap_nocache(SYSREG_ISPLP_BASE_ADDR, 0x10000);
-		isphq_regs = ioremap_nocache(SYSREG_ISPHQ_BASE_ADDR, 0x10000);
+		isplp_regs = ioremap(SYSREG_ISPLP_BASE_ADDR, 0x10000);
+		isphq_regs = ioremap(SYSREG_ISPHQ_BASE_ADDR, 0x10000);
 	}
 #if defined(CONFIG_SECURE_CAMERA_USE)
 	if (core->secure_state != FIMC_IS_STATE_SECURED)
@@ -776,7 +764,7 @@ int fimc_is_hw_ischain_cfg(void *ischain_data)
 	return ret;
 }
 
-static irqreturn_t interface_3aa_isr1(int irq, void *data)
+static irqreturn_t __nocfi interface_3aa_isr1(int irq, void *data)
 {
 	struct fimc_is_interface_hwip *itf_3aa = NULL;
 	struct hwip_intr_handler *intr_3aa = NULL;
@@ -795,7 +783,7 @@ static irqreturn_t interface_3aa_isr1(int irq, void *data)
 	return IRQ_HANDLED;
 }
 
-static irqreturn_t interface_3aa_isr2(int irq, void *data)
+static irqreturn_t __nocfi interface_3aa_isr2(int irq, void *data)
 {
 	struct fimc_is_interface_hwip *itf_3aa = NULL;
 	struct hwip_intr_handler *intr_3aa = NULL;
@@ -814,7 +802,7 @@ static irqreturn_t interface_3aa_isr2(int irq, void *data)
 	return IRQ_HANDLED;
 }
 
-static irqreturn_t interface_isp_isr1(int irq, void *data)
+static irqreturn_t __nocfi interface_isp_isr1(int irq, void *data)
 {
 	struct fimc_is_interface_hwip *itf_isp = NULL;
 	struct hwip_intr_handler *intr_isp = NULL;
@@ -833,7 +821,7 @@ static irqreturn_t interface_isp_isr1(int irq, void *data)
 	return IRQ_HANDLED;
 }
 
-static irqreturn_t interface_isp_isr2(int irq, void *data)
+static irqreturn_t __nocfi interface_isp_isr2(int irq, void *data)
 {
 	struct fimc_is_interface_hwip *itf_isp = NULL;
 	struct hwip_intr_handler *intr_isp = NULL;
@@ -852,7 +840,7 @@ static irqreturn_t interface_isp_isr2(int irq, void *data)
 	return IRQ_HANDLED;
 }
 
-static irqreturn_t interface_tpu_isr1(int irq, void *data)
+static irqreturn_t __nocfi interface_tpu_isr1(int irq, void *data)
 {
 	struct fimc_is_interface_hwip *itf_tpu = NULL;
 	struct hwip_intr_handler *intr_tpu = NULL;
@@ -871,7 +859,7 @@ static irqreturn_t interface_tpu_isr1(int irq, void *data)
 	return IRQ_HANDLED;
 }
 
-static irqreturn_t interface_tpu_isr2(int irq, void *data)
+static irqreturn_t __nocfi interface_tpu_isr2(int irq, void *data)
 {
 	struct fimc_is_interface_hwip *itf_tpu = NULL;
 	struct hwip_intr_handler *intr_tpu = NULL;
@@ -890,7 +878,7 @@ static irqreturn_t interface_tpu_isr2(int irq, void *data)
 	return IRQ_HANDLED;
 }
 
-static irqreturn_t interface_scaler_isr(int irq, void *data)
+static irqreturn_t __nocfi interface_scaler_isr(int irq, void *data)
 {
 	struct fimc_is_interface_hwip *itf_scaler = NULL;
 	struct hwip_intr_handler *intr_scaler = NULL;
@@ -906,7 +894,7 @@ static irqreturn_t interface_scaler_isr(int irq, void *data)
 	return IRQ_HANDLED;
 }
 
-static irqreturn_t interface_vra_isr1(int irq, void *data)
+static irqreturn_t __nocfi interface_vra_isr1(int irq, void *data)
 {
 	struct fimc_is_interface_hwip *itf_vra = NULL;
 	struct hwip_intr_handler *intr_vra = NULL;
@@ -925,7 +913,7 @@ static irqreturn_t interface_vra_isr1(int irq, void *data)
 	return IRQ_HANDLED;
 }
 
-static irqreturn_t interface_vra_isr2(int irq, void *data)
+static irqreturn_t __nocfi interface_vra_isr2(int irq, void *data)
 {
 	struct fimc_is_interface_hwip *itf_vra = NULL;
 	struct hwip_intr_handler *intr_vra = NULL;
@@ -1046,7 +1034,7 @@ static int fimc_is_hw_get_clk_gate(struct fimc_is_hw_ip *hw_ip, int hw_id)
 	switch (hw_id) {
 	case DEV_HW_3AA0:
 		clk_gate = &clk_gate_3aa0;
-		clk_gate->regs = ioremap_nocache(0x13030084, 0x4);
+		clk_gate->regs = ioremap(0x13030084, 0x4);
 		if (!clk_gate->regs) {
 			probe_err("Failed to remap clk_gate regs\n");
 			ret = -ENOMEM;
@@ -1059,7 +1047,7 @@ static int fimc_is_hw_get_clk_gate(struct fimc_is_hw_ip *hw_ip, int hw_id)
 		break;
 	case DEV_HW_3AA1:
 		clk_gate = &clk_gate_3aa1;
-		clk_gate->regs = ioremap_nocache(0x13130094, 0x4);
+		clk_gate->regs = ioremap(0x13130094, 0x4);
 		if (!clk_gate->regs) {
 			probe_err("Failed to remap clk_gate regs\n");
 			ret = -ENOMEM;
@@ -1072,7 +1060,7 @@ static int fimc_is_hw_get_clk_gate(struct fimc_is_hw_ip *hw_ip, int hw_id)
 		break;
 	case DEV_HW_ISP0:
 		clk_gate = &clk_gate_isp0;
-		clk_gate->regs = ioremap_nocache(0x13040094, 0x4);
+		clk_gate->regs = ioremap(0x13040094, 0x4);
 		if (!clk_gate->regs) {
 			probe_err("Failed to remap clk_gate regs\n");
 			ret = -ENOMEM;
@@ -1085,7 +1073,7 @@ static int fimc_is_hw_get_clk_gate(struct fimc_is_hw_ip *hw_ip, int hw_id)
 		break;
 	case DEV_HW_ISP1:
 		clk_gate = &clk_gate_isp1;
-		clk_gate->regs = ioremap_nocache(0x13140094, 0x4);
+		clk_gate->regs = ioremap(0x13140094, 0x4);
 		if (!clk_gate->regs) {
 			probe_err("Failed to remap clk_gate regs\n");
 			ret = -ENOMEM;
@@ -1102,7 +1090,7 @@ static int fimc_is_hw_get_clk_gate(struct fimc_is_hw_ip *hw_ip, int hw_id)
 		break;
 	case DEV_HW_TPU0:
 		clk_gate = &clk_gate_tpu0;
-		clk_gate->regs = ioremap_nocache(0x12c40094, 0x4);
+		clk_gate->regs = ioremap(0x12c40094, 0x4);
 		if (!clk_gate->regs) {
 			probe_err("Failed to remap clk_gate regs\n");
 			ret = -ENOMEM;
@@ -1115,7 +1103,7 @@ static int fimc_is_hw_get_clk_gate(struct fimc_is_hw_ip *hw_ip, int hw_id)
 		break;
 	case DEV_HW_TPU1:
 		clk_gate = &clk_gate_tpu1;
-		clk_gate->regs = ioremap_nocache(0x12c90094, 0x4);
+		clk_gate->regs = ioremap(0x12c90094, 0x4);
 		if (!clk_gate->regs) {
 			probe_err("Failed to remap clk_gate regs\n");
 			ret = -ENOMEM;
@@ -1162,7 +1150,7 @@ int fimc_is_hw_get_address(void *itfc_data, void *pdev_data, int hw_id)
 
 		itf_hwip->hw_ip->regs_start = mem_res->start;
 		itf_hwip->hw_ip->regs_end = mem_res->end;
-		itf_hwip->hw_ip->regs = ioremap_nocache(mem_res->start, resource_size(mem_res));
+		itf_hwip->hw_ip->regs = ioremap(mem_res->start, resource_size(mem_res));
 		if (!itf_hwip->hw_ip->regs) {
 			dev_err(&pdev->dev, "Failed to remap io region\n");
 			return -EINVAL;
@@ -1179,7 +1167,7 @@ int fimc_is_hw_get_address(void *itfc_data, void *pdev_data, int hw_id)
 
 		itf_hwip->hw_ip->regs_start = mem_res->start;
 		itf_hwip->hw_ip->regs_end = mem_res->end;
-		itf_hwip->hw_ip->regs = ioremap_nocache(mem_res->start, resource_size(mem_res));
+		itf_hwip->hw_ip->regs = ioremap(mem_res->start, resource_size(mem_res));
 		if (!itf_hwip->hw_ip->regs) {
 			dev_err(&pdev->dev, "Failed to remap io region\n");
 			return -EINVAL;
@@ -1196,7 +1184,7 @@ int fimc_is_hw_get_address(void *itfc_data, void *pdev_data, int hw_id)
 
 		itf_hwip->hw_ip->regs_start = mem_res->start;
 		itf_hwip->hw_ip->regs_end = mem_res->end;
-		itf_hwip->hw_ip->regs = ioremap_nocache(mem_res->start, resource_size(mem_res));
+		itf_hwip->hw_ip->regs = ioremap(mem_res->start, resource_size(mem_res));
 		if (!itf_hwip->hw_ip->regs) {
 			dev_err(&pdev->dev, "Failed to remap io region\n");
 			return -EINVAL;
@@ -1212,7 +1200,7 @@ int fimc_is_hw_get_address(void *itfc_data, void *pdev_data, int hw_id)
 		}
 		itf_hwip->hw_ip->regs_start = mem_res->start;
 		itf_hwip->hw_ip->regs_end = mem_res->end;
-		itf_hwip->hw_ip->regs = ioremap_nocache(mem_res->start, resource_size(mem_res));
+		itf_hwip->hw_ip->regs = ioremap(mem_res->start, resource_size(mem_res));
 		if (!itf_hwip->hw_ip->regs) {
 			dev_err(&pdev->dev, "Failed to remap io region\n");
 			return -EINVAL;
@@ -1229,7 +1217,7 @@ int fimc_is_hw_get_address(void *itfc_data, void *pdev_data, int hw_id)
 
 		itf_hwip->hw_ip->regs_start = mem_res->start;
 		itf_hwip->hw_ip->regs_end = mem_res->end;
-		itf_hwip->hw_ip->regs = ioremap_nocache(mem_res->start, resource_size(mem_res));
+		itf_hwip->hw_ip->regs = ioremap(mem_res->start, resource_size(mem_res));
 		if (!itf_hwip->hw_ip->regs) {
 			dev_err(&pdev->dev, "Failed to remap io region\n");
 			return -EINVAL;
@@ -1246,7 +1234,7 @@ int fimc_is_hw_get_address(void *itfc_data, void *pdev_data, int hw_id)
 
 		itf_hwip->hw_ip->regs_start = mem_res->start;
 		itf_hwip->hw_ip->regs_end = mem_res->end;
-		itf_hwip->hw_ip->regs = ioremap_nocache(mem_res->start, resource_size(mem_res));
+		itf_hwip->hw_ip->regs = ioremap(mem_res->start, resource_size(mem_res));
 		if (!itf_hwip->hw_ip->regs) {
 			dev_err(&pdev->dev, "Failed to remap io region\n");
 			return -EINVAL;
@@ -1263,7 +1251,7 @@ int fimc_is_hw_get_address(void *itfc_data, void *pdev_data, int hw_id)
 
 		itf_hwip->hw_ip->regs_start = mem_res->start;
 		itf_hwip->hw_ip->regs_end = mem_res->end;
-		itf_hwip->hw_ip->regs = ioremap_nocache(mem_res->start, resource_size(mem_res));
+		itf_hwip->hw_ip->regs = ioremap(mem_res->start, resource_size(mem_res));
 		if (!itf_hwip->hw_ip->regs) {
 			dev_err(&pdev->dev, "Failed to remap io region\n");
 			return -EINVAL;
@@ -1280,7 +1268,7 @@ int fimc_is_hw_get_address(void *itfc_data, void *pdev_data, int hw_id)
 
 		itf_hwip->hw_ip->regs_start = mem_res->start;
 		itf_hwip->hw_ip->regs_end = mem_res->end;
-		itf_hwip->hw_ip->regs = ioremap_nocache(mem_res->start, resource_size(mem_res));
+		itf_hwip->hw_ip->regs = ioremap(mem_res->start, resource_size(mem_res));
 		if (!itf_hwip->hw_ip->regs) {
 			dev_err(&pdev->dev, "Failed to remap io region\n");
 			return -EINVAL;
@@ -1297,7 +1285,7 @@ int fimc_is_hw_get_address(void *itfc_data, void *pdev_data, int hw_id)
 
 		itf_hwip->hw_ip->regs_start = mem_res->start;
 		itf_hwip->hw_ip->regs_end = mem_res->end;
-		itf_hwip->hw_ip->regs = ioremap_nocache(mem_res->start, resource_size(mem_res));
+		itf_hwip->hw_ip->regs = ioremap(mem_res->start, resource_size(mem_res));
 		if (!itf_hwip->hw_ip->regs) {
 			dev_err(&pdev->dev, "Failed to remap io region\n");
 			return -EINVAL;
@@ -1313,7 +1301,7 @@ int fimc_is_hw_get_address(void *itfc_data, void *pdev_data, int hw_id)
 
 		itf_hwip->hw_ip->regs_b_start = mem_res->start;
 		itf_hwip->hw_ip->regs_b_end = mem_res->end;
-		itf_hwip->hw_ip->regs_b = ioremap_nocache(mem_res->start, resource_size(mem_res));
+		itf_hwip->hw_ip->regs_b = ioremap(mem_res->start, resource_size(mem_res));
 		if (!itf_hwip->hw_ip->regs_b) {
 			dev_err(&pdev->dev, "Failed to remap io region\n");
 			return -EINVAL;
@@ -1330,7 +1318,7 @@ int fimc_is_hw_get_address(void *itfc_data, void *pdev_data, int hw_id)
 
 		itf_hwip->hw_ip->regs_start = mem_res->start;
 		itf_hwip->hw_ip->regs_end = mem_res->end;
-		itf_hwip->hw_ip->regs = ioremap_nocache(mem_res->start, resource_size(mem_res));
+		itf_hwip->hw_ip->regs = ioremap(mem_res->start, resource_size(mem_res));
 		if (!itf_hwip->hw_ip->regs) {
 			dev_err(&pdev->dev, "Failed to remap io region\n");
 			return -EINVAL;
@@ -1347,7 +1335,7 @@ int fimc_is_hw_get_address(void *itfc_data, void *pdev_data, int hw_id)
 
 		itf_hwip->hw_ip->regs_start = mem_res->start;
 		itf_hwip->hw_ip->regs_end = mem_res->end;
-		itf_hwip->hw_ip->regs = ioremap_nocache(mem_res->start, resource_size(mem_res));
+		itf_hwip->hw_ip->regs = ioremap(mem_res->start, resource_size(mem_res));
 		if (!itf_hwip->hw_ip->regs) {
 			dev_err(&pdev->dev, "Failed to remap io region\n");
 			return -EINVAL;
@@ -1771,8 +1759,8 @@ int fimc_is_hw_request_irq(void *itfc_data, int hw_id)
 	return ret;
 }
 
-void set_hw_tpu_bypass(void __iomem *base_addr, int hw_id,
-	const struct fimc_is_reg *reg, const struct fimc_is_field *field, u32 bypass)
+static void set_hw_tpu_bypass(void __iomem *base_addr, int hw_id,
+			      const struct fimc_is_reg *reg, const struct fimc_is_field *field, u32 bypass)
 {
 	u32 field_val = 0;
 	u32 cam_val = 0;
@@ -1966,7 +1954,7 @@ void __iomem *fimc_is_hw_get_sysreg(ulong core_regs)
 	if (core_regs)
 		err_itfc("%s: core_regs(%p)\n", __func__, (void *)core_regs);
 
-	return ioremap_nocache(SYSREG_CAM_BASE_ADDR, 0x10000);
+	return ioremap(SYSREG_CAM_BASE_ADDR, 0x10000);
 }
 
 u32 fimc_is_hw_g_state(void __iomem *regs, u32 hw_id)
@@ -1986,7 +1974,7 @@ u32 fimc_is_hw_g_state(void __iomem *regs, u32 hw_id)
 		sfr_offset = 0x0; /* global_enable */
 		reg_val = readl(regs + sfr_offset);
 		info_itfc("[ID:%d]%s: [0x%04X:0x%08X]\n", hw_id, __func__, sfr_offset, reg_val);
-		/* fall through */
+		fallthrough;
 	case DEV_HW_TPU0:
 	case DEV_HW_TPU1:
 		sfr_offset = 0x24; /* idleness_status */

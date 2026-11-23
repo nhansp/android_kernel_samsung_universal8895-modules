@@ -20,6 +20,7 @@
 
 #include "fimc-is-i2c.h"
 #include "fimc-is-core.h"
+#include "fimc-is-drivers.h"
 
 #if defined(CONFIG_I2C) || defined(CONFIG_I2C_MODULE)
 int fimc_is_i2c_s_pin(struct i2c_client *client, int state)
@@ -64,8 +65,7 @@ int fimc_is_i2c_s_pin(struct i2c_client *client, int state)
 	return ret;
 }
 
-static int fimc_is_i2c0_probe(struct i2c_client *client,
-				  const struct i2c_device_id *id)
+static int fimc_is_i2c0_probe(struct i2c_client *client)
 {
 	struct fimc_is_core *core;
 
@@ -86,9 +86,8 @@ static int fimc_is_i2c0_probe(struct i2c_client *client,
 	return 0;
 }
 
-static int fimc_is_i2c0_remove(struct i2c_client *client)
+static void fimc_is_i2c0_remove(struct i2c_client *client)
 {
-	return 0;
 }
 
 #ifdef CONFIG_OF
@@ -105,7 +104,7 @@ static const struct i2c_device_id fimc_is_i2c0_id[] = {
 };
 MODULE_DEVICE_TABLE(i2c, fimc_is_i2c0_id);
 
-static struct i2c_driver fimc_is_i2c0_driver = {
+struct i2c_driver fimc_is_i2c0_driver = {
 	.driver = {
 		.name = "fimc_is_i2c0",
 		.owner = THIS_MODULE,
@@ -117,8 +116,4 @@ static struct i2c_driver fimc_is_i2c0_driver = {
 	.remove = fimc_is_i2c0_remove,
 	.id_table = fimc_is_i2c0_id,
 };
-module_i2c_driver(fimc_is_i2c0_driver);
 #endif /* CONFIG_I2C || CONFIG_I2C_MODULE */
-
-MODULE_DESCRIPTION("FIMC-IS I2C driver");
-MODULE_LICENSE("GPL");

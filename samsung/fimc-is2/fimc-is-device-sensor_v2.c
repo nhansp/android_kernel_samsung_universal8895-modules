@@ -18,8 +18,6 @@
 #include <linux/device.h>
 #include <linux/platform_device.h>
 #include <linux/slab.h>
-#include <video/videonode.h>
-#include <media/exynos_mc.h>
 #include <asm/cacheflush.h>
 #include <asm/pgtable.h>
 #include <linux/firmware.h>
@@ -31,7 +29,7 @@
 #include <linux/bug.h>
 #include <linux/i2c.h>
 #if defined(CONFIG_SECURE_CAMERA_USE)
-#include <linux/smc.h>
+#include <soc/samsung/exynos8895-smc.h>
 #endif
 
 #include "fimc-is-core.h"
@@ -53,6 +51,7 @@
 #include "fimc-is-vender.h"
 #include "fimc-is-vender-specific.h"
 #include "fimc-is-i2c.h"
+#include "fimc-is-drivers.h"
 
 #if CONFIG_SOC_EXYNOS8895
 extern struct pm_qos_request exynos_isp_qos_int_cam;
@@ -474,7 +473,7 @@ p_err:
 	return ret;
 }
 
-int fimc_is_sensor_iclk_off(struct fimc_is_device_sensor *device)
+static int fimc_is_sensor_iclk_off(struct fimc_is_device_sensor *device)
 {
 	int ret = 0;
 	struct exynos_platform_fimc_is_sensor *pdata;
@@ -778,6 +777,13 @@ static void fimc_is_sensor_dtp(unsigned long data)
 	set_bit(FIMC_IS_SENSOR_BACK_NOWAIT_STOP, &device->state);
 
 }
+
+static void fimc_is_sensor_dtp_timer(struct timer_list *t)
+{
+	struct fimc_is_device_sensor *device = timer_container_of(device, t, dtp_timer);
+
+	fimc_is_sensor_dtp((unsigned long)device);
+}
 #endif
 
 static int fimc_is_sensor_start(struct fimc_is_device_sensor *device)
@@ -1052,7 +1058,8 @@ static int fimc_is_sensor_notify_by_fstr(struct fimc_is_device_sensor *device, v
 
 			if (test_bit(FIMC_IS_SUBDEV_INTERNAL_USE, &dma_subdev->state)) {
 				ctrl.id = V4L2_CID_IS_G_VC1_FRAMEPTR + (i - 1);
-				ret = v4l2_subdev_call(device->subdev_csi, core, g_ctrl, &ctrl);
+				ret = v4l2_subdev_call(device->subdev_csi, core, ioctl,
+						       FIMC_IS_SUBDEV_G_CTRL, &ctrl);
 				if (ret) {
 					err("csi_g_ctrl fail");
 					return -EINVAL;
@@ -1304,7 +1311,7 @@ static void fimc_is_sensor_instanton(struct work_struct *data)
 
 #ifdef ENABLE_DTP
 	if (device->dtp_check) {
-		setup_timer(&device->dtp_timer, fimc_is_sensor_dtp, (unsigned long)device);
+		timer_setup(&device->dtp_timer, fimc_is_sensor_dtp_timer, 0);
 		mod_timer(&device->dtp_timer, jiffies +  msecs_to_jiffies(300));
 		info("DTP checking...\n");
 	}
@@ -1443,7 +1450,8 @@ static int fimc_is_sensor_probe(struct platform_device *pdev)
 	device->dtp_check = false;
 #endif
 
-	ret = fimc_is_mem_init(&device->mem, device->pdev);
+	/* buffers are mapped through fimc_is, the master of the camera SysMMUs */
+	ret = fimc_is_mem_init(&device->mem, core->pdev);
 	if (ret) {
 		merr("fimc_is_mem_probe is fail(%d)", device, ret);
 		goto p_err;
@@ -1536,6 +1544,19 @@ static int fimc_is_sensor_probe(struct platform_device *pdev)
 	if (test_bit(SUBDEV_SSVC3_INTERNAL_USE, &device->pdata->internal_state))
 		set_bit(FIMC_IS_SUBDEV_INTERNAL_USE, &device->ssvc3.state);
 
+	/*
+	 * DMA goes through fimc_is, the master of the camera SysMMUs, so it must
+	 * be resumed with this device. Not RPM_ACTIVE: the sensor is suspended here.
+	 */
+	if (!device_link_add(&pdev->dev, &core->pdev->dev,
+			     DL_FLAG_PM_RUNTIME | DL_FLAG_AUTOREMOVE_CONSUMER)) {
+		ret = -EINVAL;
+		goto p_err;
+	}
+
+	/* device_link_add() resumed fimc_is and nothing else will idle it */
+	pm_runtime_idle(&core->pdev->dev);
+
 	set_bit(FIMC_IS_SENSOR_PROBE, &device->state);
 
 p_err:
@@ -1543,13 +1564,10 @@ p_err:
 	return ret;
 }
 
-static int fimc_is_sensor_remove(struct platform_device *pdev)
+static void fimc_is_sensor_remove(struct platform_device *pdev)
 {
-	int ret = 0;
 
 	info("%s\n", __func__);
-
-	return ret;
 }
 
 int fimc_is_sensor_open(struct fimc_is_device_sensor *device,
@@ -1998,7 +2016,7 @@ int fimc_is_sensor_s_input(struct fimc_is_device_sensor *device,
 				goto p_err;
 			}
 
-			ret = exynos_smc(MC_SECURE_CAMERA_SYSREG_PROT, 1, 0, 0);
+			ret = (int)exynos8895_smc(MC_SECURE_CAMERA_SYSREG_PROT, 1, 0, 0);
 			if (ret) {
 				core->secure_state = FIMC_IS_STATE_UNSECURE;
 				mutex_unlock(&core->secure_state_lock);
@@ -2012,7 +2030,7 @@ int fimc_is_sensor_s_input(struct fimc_is_device_sensor *device,
 		}
 		mutex_unlock(&core->secure_state_lock);
 
-		ret = exynos_smc(MC_SECURE_CAMERA_PREPARE, 0, 0, 0);
+		ret = (int)exynos8895_smc(MC_SECURE_CAMERA_PREPARE, 0, 0, 0);
 		if(ret != 0) {
 			merr("[SMC] MC_SECURE_CAMERA_PREPARE fail(%d)\n", device, ret);
 			goto p_err;
@@ -2148,7 +2166,7 @@ p_err:
 #if defined(CONFIG_SECURE_CAMERA_USE)
 	if (ret && (device->pdata->scenario == SENSOR_SCENARIO_SECURE)) {
 		if (device->smc_state == FIMC_IS_SENSOR_SMC_PREPARE) {
-			ret = exynos_smc(MC_SECURE_CAMERA_UNPREPARE, 0, 0, 0);
+			ret = (int)exynos8895_smc(MC_SECURE_CAMERA_UNPREPARE, 0, 0, 0);
 			if (ret != 0) {
 				merr("[SMC] MC_SECURE_CAMERA_UNPREPARE fail(%d)\n", device, ret);
 			} else {
@@ -2162,7 +2180,7 @@ p_err:
 		if (core->secure_state == FIMC_IS_STATE_SECURED) {
 			mdbgd_sensor("configure ischain to unsecure\n", device);
 
-			ret = exynos_smc(MC_SECURE_CAMERA_SYSREG_PROT, 0, 0, 0);
+			ret = (int)exynos8895_smc(MC_SECURE_CAMERA_SYSREG_PROT, 0, 0, 0);
 			if (ret) {
 				merr("[SMC] failed to unsecure fimc-is: (%d)",
 									device, ret);
@@ -2194,7 +2212,9 @@ static int fimc_is_sensor_s_format(void *qdevice,
 	struct v4l2_subdev *subdev_module;
 	struct v4l2_subdev *subdev_csi;
 	struct v4l2_subdev *subdev_flite;
-	struct v4l2_subdev_format subdev_format;
+	struct v4l2_subdev_format subdev_format = {
+		.which = V4L2_SUBDEV_FORMAT_ACTIVE,
+	};
 	struct fimc_is_fmt *format;
 	u32 width;
 	u32 height;
@@ -2330,14 +2350,14 @@ int fimc_is_sensor_s_framerate(struct fimc_is_device_sensor *device,
 		goto p_err;
 	}
 
-	ret = v4l2_subdev_call(subdev_csi, video, s_parm, param);
+	ret = v4l2_subdev_call(subdev_csi, core, ioctl, FIMC_IS_SUBDEV_S_PARM, param);
 	if (ret) {
 		merr("v4l2_csi_call(s_param) is fail(%d)", device, ret);
 		goto p_err;
 	}
 
 	if (test_bit(FIMC_IS_SENSOR_DRIVING, &device->state)) {
-		ret = v4l2_subdev_call(subdev_module, video, s_parm, param);
+		ret = v4l2_subdev_call(subdev_module, core, ioctl, FIMC_IS_SUBDEV_S_PARM, param);
 		if (ret) {
 			merr("v4l2_module_call(s_param) is fail(%d)", device, ret);
 			goto p_err;
@@ -2367,7 +2387,7 @@ int fimc_is_sensor_s_ctrl(struct fimc_is_device_sensor *device,
 
 	subdev_module = device->subdev_module;
 
-	ret = v4l2_subdev_call(subdev_module, core, s_ctrl, ctrl);
+	ret = v4l2_subdev_call(subdev_module, core, ioctl, FIMC_IS_SUBDEV_S_CTRL, ctrl);
 	if (ret) {
 		err("s_ctrl is fail(%d)", ret);
 		goto p_err;
@@ -2604,7 +2624,7 @@ int fimc_is_sensor_g_ctrl(struct fimc_is_device_sensor *device,
 
 	subdev_module = device->subdev_module;
 
-	ret = v4l2_subdev_call(subdev_module, core, g_ctrl, ctrl);
+	ret = v4l2_subdev_call(subdev_module, core, ioctl, FIMC_IS_SUBDEV_G_CTRL, ctrl);
 	if (ret) {
 		err("g_ctrl is fail(%d)", ret);
 		goto p_err;
@@ -3005,9 +3025,16 @@ static int fimc_is_sensor_back_stop(void *qdevice,
 		goto p_err;
 	}
 
+	/*
+	 * Pass "no wait" beside the call: the V4L2 core treats any non-zero
+	 * s_stream argument as a start request.
+	 */
 	if (test_bit(FIMC_IS_SENSOR_BACK_NOWAIT_STOP, &device->state)) {
+		struct fimc_is_device_flite *flite = v4l2_get_subdevdata(subdev_flite);
+
 		mwarn("fimc_is_flite_stop, no waiting...", device);
-		enable = FLITE_NOWAIT_FLAG << FLITE_NOWAIT_SHIFT;
+		if (flite)
+			set_bit(FLITE_STOP_NOWAIT, &flite->state);
 	}
 
 	ret = v4l2_subdev_call(subdev_flite, video, s_stream, enable);
@@ -3036,7 +3063,7 @@ p_err:
 	return ret;
 }
 
-int fimc_is_sensor_standby_flush(struct fimc_is_device_sensor *device)
+static int fimc_is_sensor_standby_flush(struct fimc_is_device_sensor *device)
 {
 	struct fimc_is_group *group, *child;
 	int ret = 0;
@@ -3208,7 +3235,7 @@ int fimc_is_sensor_front_stop(struct fimc_is_device_sensor *device)
 
 #if defined(CONFIG_SECURE_CAMERA_USE)
 	if (device->pdata->scenario == SENSOR_SCENARIO_SECURE) {
-		ret = exynos_smc(MC_SECURE_CAMERA_UNPREPARE, 0, 0, 0);
+		ret = (int)exynos8895_smc(MC_SECURE_CAMERA_UNPREPARE, 0, 0, 0);
 		if(ret != 0) {
 			merr("[SMC] MC_SECURE_CAMERA_UNPREPARE fail(%d)\n", device, ret);
 		} else {
@@ -3221,7 +3248,7 @@ int fimc_is_sensor_front_stop(struct fimc_is_device_sensor *device)
 		if (core->secure_state == FIMC_IS_STATE_SECURED) {
 			mdbgd_sensor("configure ischain to unsecure\n", device);
 
-			ret = exynos_smc(MC_SECURE_CAMERA_SYSREG_PROT, 0, 0, 0);
+			ret = (int)exynos8895_smc(MC_SECURE_CAMERA_SYSREG_PROT, 0, 0, 0);
 			if (ret) {
 				merr("[SMC] failed to unsecure fimc-is: (%d)",
 									device, ret);
@@ -3263,7 +3290,7 @@ p_err:
 #if defined(CONFIG_SECURE_CAMERA_USE)
 	if (device->pdata->scenario == SENSOR_SCENARIO_SECURE) {
 		if (device->smc_state == FIMC_IS_SENSOR_SMC_PREPARE) {
-			smc_ret = exynos_smc(MC_SECURE_CAMERA_UNPREPARE, 0, 0, 0);
+			smc_ret = (int)exynos8895_smc(MC_SECURE_CAMERA_UNPREPARE, 0, 0, 0);
 			if (smc_ret != 0) {
 				merr("[SMC] MC_SECURE_CAMERA_UNPREPARE fail(%d)\n", device, smc_ret);
 			} else {
@@ -3278,7 +3305,7 @@ p_err:
 		if (core->secure_state == FIMC_IS_STATE_SECURED) {
 			mdbgd_sensor("configure ischain to unsecure\n", device);
 
-			smc_ret = exynos_smc(MC_SECURE_CAMERA_SYSREG_PROT, 0, 0, 0);
+			smc_ret = (int)exynos8895_smc(MC_SECURE_CAMERA_SYSREG_PROT, 0, 0, 0);
 			if (smc_ret) {
 				merr("[SMC] failed to unsecure fimc-is: (%d)",
 									device, smc_ret);
@@ -3680,13 +3707,13 @@ static const struct dev_pm_ops fimc_is_sensor_pm_ops = {
 #ifdef CONFIG_OF
 static const struct of_device_id exynos_fimc_is_sensor_match[] = {
 	{
-		.compatible = "samsung,exynos5-fimc-is-sensor",
+		.compatible = "samsung,exynos8895-fimc-is-sensor",
 	},
 	{},
 };
 MODULE_DEVICE_TABLE(of, exynos_fimc_is_sensor_match);
 
-static struct platform_driver fimc_is_sensor_driver = {
+struct platform_driver fimc_is_sensor_driver = {
 	.probe		= fimc_is_sensor_probe,
 	.remove		= fimc_is_sensor_remove,
 	.driver = {
@@ -3707,9 +3734,9 @@ static struct platform_device_id fimc_is_sensor_driver_ids[] = {
 };
 MODULE_DEVICE_TABLE(platform, fimc_is_sensor_driver_ids);
 
-static struct platform_driver fimc_is_sensor_driver = {
+struct platform_driver fimc_is_sensor_driver = {
 	.probe		= fimc_is_sensor_probe,
-	.remove		= __devexit_p(fimc_is_sensor_remove),
+	.remove		= fimc_is_sensor_remove,
 	.id_table	= fimc_is_sensor_driver_ids,
 	.driver	  = {
 		.name	= FIMC_IS_SENSOR_DEV_NAME,
@@ -3719,22 +3746,4 @@ static struct platform_driver fimc_is_sensor_driver = {
 };
 #endif
 
-static int __init fimc_is_sensor_init(void)
-{
-	int ret = platform_driver_register(&fimc_is_sensor_driver);
-	if (ret)
-		err("platform_driver_register failed: %d\n", ret);
-
-	return ret;
-}
-late_initcall(fimc_is_sensor_init);
-
-static void __exit fimc_is_sensor_exit(void)
-{
-	platform_driver_unregister(&fimc_is_sensor_driver);
-}
-module_exit(fimc_is_sensor_exit);
-
 MODULE_AUTHOR("Teahyung Kim<tkon.kim@samsung.com>");
-MODULE_DESCRIPTION("Exynos FIMC_IS_SENSOR driver");
-MODULE_LICENSE("GPL");

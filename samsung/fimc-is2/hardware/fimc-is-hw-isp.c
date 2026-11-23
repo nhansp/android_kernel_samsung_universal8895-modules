@@ -85,8 +85,8 @@ int fimc_is_hw_isp_open(struct fimc_is_hw_ip *hw_ip, u32 instance, u32 *size)
 	return ret;
 }
 
-int fimc_is_hw_isp_init(struct fimc_is_hw_ip *hw_ip, struct fimc_is_group *group,
-	bool flag, u32 module_id)
+int __nocfi fimc_is_hw_isp_init(struct fimc_is_hw_ip *hw_ip, struct fimc_is_group *group,
+				bool flag, u32 module_id)
 {
 	int ret = 0;
 	u32 instance = 0;
@@ -251,8 +251,8 @@ int fimc_is_hw_isp_disable(struct fimc_is_hw_ip *hw_ip, u32 instance, ulong hw_m
 	return ret;
 }
 
-int fimc_is_hw_isp_set_yuv_range(struct fimc_is_hw_ip *hw_ip,
-	struct isp_param_set *param_set, u32 fcount, ulong hw_map)
+static int fimc_is_hw_isp_set_yuv_range(struct fimc_is_hw_ip *hw_ip,
+					struct isp_param_set *param_set, u32 fcount, ulong hw_map)
 {
 	int ret = 0;
 	struct fimc_is_hw_ip *hw_ip_mcsc = NULL;

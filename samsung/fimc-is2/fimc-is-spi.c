@@ -22,6 +22,7 @@
 #include "fimc-is-core.h"
 #include "fimc-is-dt.h"
 #include "fimc-is-regs.h"
+#include "fimc-is-drivers.h"
 
 #define STREAM_TO_U16(var16, p)	{(var16) = ((u16)(*((u8 *)p+1)) + \
 				((u8)(*((u8 *)p) << 8))); }
@@ -218,9 +219,8 @@ p_err:
 	return ret;
 }
 
-static int fimc_is_spi_remove(struct spi_device *spi)
+static void fimc_is_spi_remove(struct spi_device *spi)
 {
-	return 0;
 }
 
 static const struct of_device_id exynos_fimc_is_spi_match[] = {
@@ -234,7 +234,7 @@ static const struct of_device_id exynos_fimc_is_spi_match[] = {
 };
 MODULE_DEVICE_TABLE(of, exynos_fimc_is_spi_match);
 
-static struct spi_driver fimc_is_spi0_driver = {
+struct spi_driver fimc_is_spi0_driver = {
 	.driver = {
 		.name = "fimc_is_spi0",
 		.bus = &spi_bus_type,
@@ -245,9 +245,7 @@ static struct spi_driver fimc_is_spi0_driver = {
 	.remove	= fimc_is_spi_remove,
 };
 
-module_spi_driver(fimc_is_spi0_driver);
-
-static struct spi_driver fimc_is_spi1_driver = {
+struct spi_driver fimc_is_spi1_driver = {
 	.driver = {
 		.name = "fimc_is_spi1",
 		.bus = &spi_bus_type,
@@ -257,8 +255,4 @@ static struct spi_driver fimc_is_spi1_driver = {
 	.probe	= fimc_is_spi_probe,
 	.remove = fimc_is_spi_remove,
 };
-
-module_spi_driver(fimc_is_spi1_driver);
 #endif
-MODULE_DESCRIPTION("FIMC-IS SPI driver");
-MODULE_LICENSE("GPL");

@@ -11,6 +11,8 @@
  */
 
 #include "fimc-is-sec-define.h"
+#include <linux/fs_struct.h>
+#include <linux/namei.h>
 #include "fimc-is-vender-specific.h"
 #include "fimc-is-interface-library.h"
 
@@ -274,7 +276,7 @@ bool fimc_is_sec_fw_module_compare(char *fw_ver1, char *fw_ver2)
 	return true;
 }
 
-bool fimc_is_sec_fw_module_compare_for_dump(char *fw_ver1, char *fw_ver2)
+static bool fimc_is_sec_fw_module_compare_for_dump(char *fw_ver1, char *fw_ver2)
 {
 	if (fw_ver1[FW_CORE_VER] != fw_ver2[FW_CORE_VER]
 		|| fw_ver1[FW_PIXEL_SIZE] != fw_ver2[FW_PIXEL_SIZE]
@@ -351,7 +353,7 @@ bool fimc_is_sec_check_from_ver(struct fimc_is_core *core, int position)
 	}
 }
 
-bool fimc_is_sec_check_front_cal_crc32(char *buf)
+static bool fimc_is_sec_check_front_cal_crc32(char *buf)
 {
 	u32 *buf32 = NULL;
 	u32 checksum;
@@ -485,7 +487,7 @@ out:
 	return crc32_check_front;
 }
 
-bool fimc_is_sec_check_rear_cal_crc32(char *buf)
+static bool fimc_is_sec_check_rear_cal_crc32(char *buf)
 {
 	u32 *buf32 = NULL;
 	u32 checksum;
@@ -764,7 +766,7 @@ bool fimc_is_sec_check_front_otp_crc32(char *buf)
 #endif
 
 #ifdef CAMERA_MODULE_DUALIZE
-bool fimc_is_sec_check_setfile_crc32(char *buf)
+static bool fimc_is_sec_check_setfile_crc32(char *buf)
 {
 	u32 *buf32 = NULL;
 	u32 checksum;
@@ -797,7 +799,7 @@ bool fimc_is_sec_check_setfile_crc32(char *buf)
 	return crc32_setfile_check;
 }
 #ifdef CAMERA_MODULE_REAR2_SETF_DUMP
-bool fimc_is_sec_check_setfile2_crc32(char *buf)
+static bool fimc_is_sec_check_setfile2_crc32(char *buf)
 {
 	u32 *buf32 = NULL;
 	u32 checksum;
@@ -828,7 +830,7 @@ bool fimc_is_sec_check_setfile2_crc32(char *buf)
 #endif
 
 #ifdef CAMERA_MODULE_FRONT_SETF_DUMP
-bool fimc_is_sec_check_front_setfile_crc32(char *buf)
+static bool fimc_is_sec_check_front_setfile_crc32(char *buf)
 {
 	u32 *buf32 = NULL;
 	u32 checksum;
@@ -861,7 +863,7 @@ bool fimc_is_sec_check_front_setfile_crc32(char *buf)
 }
 #endif
 #ifdef CAMERA_MODULE_HIFI_TUNNINGF_DUMP
-bool fimc_is_sec_check_hifi_tunningfile_crc32(char *buf)
+static bool fimc_is_sec_check_hifi_tunningfile_crc32(char *buf)
 {
 	u32 *buf32 = NULL;
 	u32 checksum;
@@ -894,7 +896,7 @@ bool fimc_is_sec_check_hifi_tunningfile_crc32(char *buf)
 #endif
 
 #ifdef CONFIG_COMPANION_USE
-bool fimc_is_sec_check_companion_fw_crc32(char *buf)
+static bool fimc_is_sec_check_companion_fw_crc32(char *buf)
 {
 	u32 *buf32 = NULL;
 	u32 checksum;
@@ -927,32 +929,51 @@ bool fimc_is_sec_check_companion_fw_crc32(char *buf)
 }
 #endif
 
+/* in place of the sys_umask(), sys_unlink() and sys_rmdir() calls of the vendor code */
+static int fimc_is_sec_umask(int mask)
+{
+	return xchg(&current->fs->umask, mask & 0777);
+}
+
+static long fimc_is_sec_unlink(const char *name, bool dir)
+{
+	struct path parent;
+	struct dentry *dentry;
+	long ret;
+
+	dentry = start_removing_path(name, &parent);
+	if (IS_ERR(dentry))
+		return PTR_ERR(dentry);
+	if (dir)
+		ret = vfs_rmdir(&nop_mnt_idmap, d_inode(parent.dentry), dentry);
+	else
+		ret = vfs_unlink(&nop_mnt_idmap, d_inode(parent.dentry), dentry, NULL);
+	end_removing_path(&parent, dentry);
+
+	return ret;
+}
+
 void remove_dump_fw_file(void)
 {
-	mm_segment_t old_fs;
 	int old_mask;
 	long ret;
 	char fw_path[100];
 
-	old_fs = get_fs();
-	set_fs(KERNEL_DS);
-
-	old_mask = sys_umask(0);
+	old_mask = fimc_is_sec_umask(0);
 
 	/* RTA binary */
 	snprintf(fw_path, sizeof(fw_path), "%s%s", FIMC_IS_FW_DUMP_PATH, sysfs_finfo.load_rta_fw_name);
 
-	ret = sys_unlink(fw_path);
+	ret = fimc_is_sec_unlink(fw_path, false);
 	info("sys_unlink (%s) %ld", fw_path, ret);
 
 	/* DDK binary */
 	snprintf(fw_path, sizeof(fw_path), "%s%s", FIMC_IS_FW_DUMP_PATH, sysfs_finfo.load_fw_name);
 
-	ret = sys_unlink(fw_path);
+	ret = fimc_is_sec_unlink(fw_path, false);
 	info("sys_unlink (%s) %ld", fw_path, ret);
 
-	sys_umask(old_mask);
-	set_fs(old_fs);
+	fimc_is_sec_umask(old_mask);
 
 	is_dumped_fw_loading_needed = false;
 	is_dumped_c1_fw_loading_needed = false;
@@ -961,45 +982,32 @@ void remove_dump_fw_file(void)
 ssize_t write_data_to_file(char *name, char *buf, size_t count, loff_t *pos)
 {
 	struct file *fp;
-	mm_segment_t old_fs;
 	ssize_t tx = -ENOENT;
-	int fd, old_mask;
+	int old_mask;
 
-	old_fs = get_fs();
-	set_fs(KERNEL_DS);
-
-	old_mask = sys_umask(0);
+	old_mask = fimc_is_sec_umask(0);
 
 	if (force_caldata_dump) {
-		sys_rmdir(name);
-		fd = sys_open(name, O_WRONLY | O_CREAT | O_TRUNC | O_SYNC, 0666);
+		fimc_is_sec_unlink(name, true);
+		fp = filp_open(name, O_WRONLY | O_CREAT | O_TRUNC | O_SYNC, 0666);
 	} else {
-		fd = sys_open(name, O_WRONLY | O_CREAT | O_TRUNC | O_SYNC, 0664);
+		fp = filp_open(name, O_WRONLY | O_CREAT | O_TRUNC | O_SYNC, 0664);
 	}
-	if (fd < 0) {
+	if (IS_ERR(fp)) {
 		err("open file error: %s", name);
-		sys_umask(old_mask);
-		set_fs(old_fs);
+		fimc_is_sec_umask(old_mask);
 		return -EINVAL;
 	}
 
-	fp = fget(fd);
-	if (fp) {
-		tx = vfs_write(fp, buf, count, pos);
-		if (tx != count) {
-			err("fail to write %s. ret %zd", name, tx);
-			tx = -ENOENT;
-		}
-
-		vfs_fsync(fp, 0);
-		fput(fp);
-	} else {
-		err("fail to get file *: %s", name);
+	tx = kernel_write(fp, buf, count, pos);
+	if (tx != count) {
+		err("fail to write %s. ret %zd", name, tx);
+		tx = -ENOENT;
 	}
 
-	sys_close(fd);
-	sys_umask(old_mask);
-	set_fs(old_fs);
+	vfs_fsync(fp, 0);
+	filp_close(fp, NULL);
+	fimc_is_sec_umask(old_mask);
 
 	return tx;
 }
@@ -1007,53 +1015,39 @@ ssize_t write_data_to_file(char *name, char *buf, size_t count, loff_t *pos)
 ssize_t read_data_from_file(char *name, char *buf, size_t count, loff_t *pos)
 {
 	struct file *fp;
-	mm_segment_t old_fs;
-	ssize_t tx;
-	int fd;
 
-	old_fs = get_fs();
-	set_fs(KERNEL_DS);
-
-	fd = sys_open(name, O_RDONLY, 0664);
-	if (fd < 0) {
-		if (-ENOENT == fd)
+	fp = filp_open(name, O_RDONLY, 0664);
+	if (IS_ERR(fp)) {
+		if (-ENOENT == PTR_ERR(fp))
 			info("%s: file(%s) not exist!\n", __func__, name);
 		else
-			info("%s: error %d, failed to open %s\n", __func__, fd, name);
+			info("%s: error %ld, failed to open %s\n", __func__, PTR_ERR(fp), name);
 
-		set_fs(old_fs);
 		return -EINVAL;
 	}
-	fp = fget(fd);
-	if (fp) {
-		tx = vfs_read(fp, buf, count, pos);
-		fput(fp);
-	}
-	sys_close(fd);
-	set_fs(old_fs);
+	kernel_read(fp, buf, count, pos);
+	filp_close(fp, NULL);
 
 	return count;
 }
 
 bool fimc_is_sec_file_exist(char *name)
 {
-	mm_segment_t old_fs;
+	struct path path;
 	bool exist = true;
 	int ret;
 
-	old_fs = get_fs();
-	set_fs(KERNEL_DS);
-
-	ret = sys_access(name, 0);
+	ret = kern_path(name, LOOKUP_FOLLOW, &path);
 	if (ret) {
 		exist = false;
 		if (-ENOENT == ret)
 			info("%s: file(%s) not exist!\n", __func__, name);
 		else
 			info("%s: error %d, failed to access %s\n", __func__, ret, name);
+	} else {
+		path_put(&path);
 	}
 
-	set_fs(old_fs);
 	return exist;
 }
 
@@ -1362,7 +1356,8 @@ static int fimc_is_get_cal_data(void)
  *
  * @ return: true, false or error value
  */
-int fimc_is_sec_ldo_enabled(struct device *dev, char *name) {
+static int fimc_is_sec_ldo_enabled(struct device *dev, char *name)
+{
 	struct regulator *regulator = NULL;
 	int enabled = 0;
 
@@ -1513,7 +1508,7 @@ p_err:
 }
 
 #if defined(CONFIG_CAMERA_EEPROM_SUPPORT_REAR) || defined(CONFIG_CAMERA_EEPROM_SUPPORT_FRONT)
-int fimc_is_i2c_read(struct i2c_client *client, void *buf, u32 addr, size_t size)
+static int fimc_is_i2c_read(struct i2c_client *client, void *buf, u32 addr, size_t size)
 {
 	const u32 addr_size = 2, max_retry = 2;
 	u8 addr_buf[addr_size];
@@ -1561,7 +1556,7 @@ int fimc_is_i2c_read(struct i2c_client *client, void *buf, u32 addr, size_t size
 	return 0;
 }
 
-int fimc_is_i2c_write(struct i2c_client *client, u16 addr, u8 data)
+static __maybe_unused int fimc_is_i2c_write(struct i2c_client *client, u16 addr, u8 data)
 {
 	const u32 write_buf_size = 3, max_retry = 2;
 	u8 write_buf[write_buf_size];
@@ -1623,7 +1618,7 @@ static int fimc_is_i2c_config(struct i2c_client *client, bool onoff)
 	return 0;
 }
 
-int fimc_is_sec_check_reload(struct fimc_is_core *core)
+static int fimc_is_sec_check_reload(struct fimc_is_core *core)
 {
 	struct file *reload_key_fp = NULL;
 	struct file *supend_resume_key_fp = NULL;
@@ -1661,7 +1656,7 @@ int fimc_is_sec_check_reload(struct fimc_is_core *core)
 	return 0;
 }
 
-void fimc_is_sec_cal_dump(void)
+static void fimc_is_sec_cal_dump(void)
 {
 	struct file *key_fp = NULL;
 	struct file *dump_fp = NULL;
@@ -1708,7 +1703,7 @@ key_err:
 	set_fs(old_fs);
 }
 
-int fimc_is_sec_read_eeprom_header(struct device *dev, int position)
+static __maybe_unused int fimc_is_sec_read_eeprom_header(struct device *dev, int position)
 {
 	int ret = 0;
 	struct fimc_is_core *core = dev_get_drvdata(fimc_is_dev);
@@ -1764,7 +1759,7 @@ int fimc_is_sec_read_eeprom_header(struct device *dev, int position)
 	return ret;
 }
 
-int fimc_is_sec_readcal_eeprom(struct device *dev, int position)
+static int fimc_is_sec_readcal_eeprom(struct device *dev, int position)
 {
 	int ret = 0;
 	char *buf = NULL;
@@ -2431,7 +2426,7 @@ exit:
 #endif
 
 #if !defined(CONFIG_CAMERA_EEPROM_SUPPORT_REAR)
-int fimc_is_sec_read_from_header(struct device *dev)
+static int fimc_is_sec_read_from_header(struct device *dev)
 {
 	int ret = 0;
 	struct fimc_is_core *core = dev_get_drvdata(fimc_is_dev);
@@ -2449,7 +2444,7 @@ int fimc_is_sec_read_from_header(struct device *dev)
 	return ret;
 }
 
-int fimc_is_sec_check_status(struct fimc_is_core *core)
+static int fimc_is_sec_check_status(struct fimc_is_core *core)
 {
 	int retry_read = 50;
 	u8 temp[5] = {0x0, };
@@ -2471,7 +2466,7 @@ int fimc_is_sec_check_status(struct fimc_is_core *core)
 }
 
 #ifdef CAMERA_MODULE_DUALIZE
-int fimc_is_sec_read_fw_from_sdcard(char *name, unsigned long *size)
+static int fimc_is_sec_read_fw_from_sdcard(char *name, unsigned long *size)
 {
 	struct file *fw_fp = NULL;
 	mm_segment_t old_fs;
@@ -2511,7 +2506,7 @@ fw_err:
 	return ret;
 }
 
-u32 fimc_is_sec_get_fw_crc32(char *buf, size_t size)
+static u32 fimc_is_sec_get_fw_crc32(char *buf, size_t size)
 {
 	u32 *buf32 = NULL;
 	u32 checksum;
@@ -2522,7 +2517,7 @@ u32 fimc_is_sec_get_fw_crc32(char *buf, size_t size)
 	return checksum;
 }
 
-int fimc_is_sec_change_from_header(struct fimc_is_core *core)
+static int fimc_is_sec_change_from_header(struct fimc_is_core *core)
 {
 	int ret = 0;
 	u8 crc_value[4];
@@ -2610,7 +2605,7 @@ exit:
 	return ret;
 }
 
-int fimc_is_sec_write_fw_to_from(struct fimc_is_core *core, char *name, bool first_section)
+static int fimc_is_sec_write_fw_to_from(struct fimc_is_core *core, char *name, bool first_section)
 {
 	int ret = 0;
 	unsigned long i = 0;
@@ -4000,7 +3995,7 @@ exit:
 #endif
 
 #ifdef CAMERA_MODULE_DUALIZE
-void fimc_is_sec_get_rta_bin_addr(void)
+static void fimc_is_sec_get_rta_bin_addr(void)
 {
 	if (sysfs_finfo_front.header_ver[FW_SENSOR_MAKER] == FW_SENSOR_MAKER_SLSI) {
 		sysfs_finfo.rta_bin_start_addr = *((u32 *)&cal_buf[FROM_HEADER_RTA_BINARY_LY_START_ADDR]);
@@ -4019,7 +4014,7 @@ void fimc_is_sec_get_rta_bin_addr(void)
 	info("rta fw size = %ld\n", sysfs_finfo.rta_fw_size);
 }
 
-void fimc_is_sec_get_companion_bin_addr(void)
+static void fimc_is_sec_get_companion_bin_addr(void)
 {
 	if (sysfs_finfo_front.header_ver[FW_SENSOR_MAKER] == FW_SENSOR_MAKER_SLSI) {
 		sysfs_finfo.concord_bin_start_addr = *((u32 *)&cal_buf[FROM_HEADER_CONCORD_BINARY_LY_START_ADDR]);
@@ -4037,7 +4032,7 @@ void fimc_is_sec_get_companion_bin_addr(void)
 	info("comp_fw_size = %ld\n", sysfs_finfo.comp_fw_size);
 }
 
-void fimc_is_sec_get_rear_setfile_addr(void)
+static void fimc_is_sec_get_rear_setfile_addr(void)
 {
 	if (sysfs_finfo.header_ver[FW_SENSOR_MAKER] == FW_SENSOR_MAKER_SLSI ||
 		sysfs_finfo.header_ver[FW_SENSOR_MAKER] == FW_SENSOR_MAKER_SLSI_SONY) {
@@ -4074,7 +4069,7 @@ void fimc_is_sec_get_rear_setfile_addr(void)
 }
 
 #ifdef CAMERA_MODULE_REAR2_SETF_DUMP
-void fimc_is_sec_get_rear2_setfile_addr(void)
+static void fimc_is_sec_get_rear2_setfile_addr(void)
 {
 	if (sysfs_finfo.header_ver[FW_SENSOR_MAKER] == FW_SENSOR_MAKER_SLSI ||
 		sysfs_finfo.header_ver[FW_SENSOR_MAKER] == FW_SENSOR_MAKER_SLSI_SONY) {
@@ -4093,7 +4088,7 @@ void fimc_is_sec_get_rear2_setfile_addr(void)
 }
 #endif
 
-void fimc_is_sec_get_front_setfile_addr(void)
+static void fimc_is_sec_get_front_setfile_addr(void)
 {
 	if (sysfs_finfo_front.header_ver[FW_SENSOR_MAKER] == FW_SENSOR_MAKER_SLSI) {
 		sysfs_finfo.front_setfile_start_addr = *((u32 *)&cal_buf[FROM_HEADER_ISP_FRONT_SETFILE_LL_START_ADDR]);
@@ -4111,7 +4106,7 @@ void fimc_is_sec_get_front_setfile_addr(void)
 	info("front setfile_size = %ld\n", sysfs_finfo.front_setfile_size);
 }
 
-void fimc_is_sec_get_hifi_tunningfile_addr(void)
+static void fimc_is_sec_get_hifi_tunningfile_addr(void)
 {
 	if (sysfs_finfo.header_ver[FW_SENSOR_MAKER] == FW_SENSOR_MAKER_SLSI ||
 		sysfs_finfo.header_ver[FW_SENSOR_MAKER] == FW_SENSOR_MAKER_SLSI_SONY ) {
@@ -4128,7 +4123,7 @@ void fimc_is_sec_get_hifi_tunningfile_addr(void)
 }
 
 #ifdef CAMERA_MODULE_FRONT_SETF_DUMP
-int fimc_is_sec_get_front_setf_name(struct fimc_is_core *core)
+static int fimc_is_sec_get_front_setf_name(struct fimc_is_core *core)
 {
 	int ret = 0;
 	struct fimc_is_module_enum *module = NULL;
@@ -4159,7 +4154,7 @@ p_err:
 #endif
 
 #ifdef USE_RTA_BINARY
-int fimc_is_sec_readfw_rta(struct fimc_is_core *core)
+static int fimc_is_sec_readfw_rta(struct fimc_is_core *core)
 {
 	int ret = 0;
 	loff_t pos = 0;
@@ -4350,7 +4345,7 @@ exit:
 	return ret;
 }
 #ifdef CAMERA_MODULE_REAR2_SETF_DUMP
-int fimc_is_sec_read_setfile2(struct fimc_is_core *core)
+static int fimc_is_sec_read_setfile2(struct fimc_is_core *core)
 {
 	int ret = 0;
 	loff_t pos = 0;
@@ -4413,7 +4408,7 @@ exit:
 #endif
 
 #ifdef CAMERA_MODULE_FRONT_SETF_DUMP
-int fimc_is_sec_read_front_setfile(struct fimc_is_core *core)
+static int fimc_is_sec_read_front_setfile(struct fimc_is_core *core)
 {
 	int ret = 0;
 	loff_t pos = 0;
@@ -4478,7 +4473,7 @@ exit:
 #endif
 
 #ifdef CAMERA_MODULE_HIFI_TUNNINGF_DUMP
-int fimc_is_sec_read_hifi_tunning_file(struct fimc_is_core *core)
+static int fimc_is_sec_read_hifi_tunning_file(struct fimc_is_core *core)
 {
 	int ret = 0;
 	loff_t pos = 0;
@@ -4777,7 +4772,7 @@ int fimc_is_sec_core_voltage_select(struct device *dev, char *header_ver)
 }
 
 #ifdef CONFIG_COMPANION_USE
-int fimc_is_sec_get_c3_fw_version(char *phone_c1_fw_version, char *dump_c1_fw_version)
+static int fimc_is_sec_get_c3_fw_version(char *phone_c1_fw_version, char *dump_c1_fw_version)
 {
 	int ret;
 	struct file *fp = NULL;
@@ -5272,7 +5267,7 @@ int fimc_is_sec_fw_find(struct fimc_is_core *core)
 	return 0;
 }
 
-int fimc_is_sec_fw_find_front(struct fimc_is_core *core)
+static int fimc_is_sec_fw_find_front(struct fimc_is_core *core)
 {
 	struct fimc_is_vender_specific *specific = core->vender.private_data;
 #ifndef CAMERA_FRONT_EEPROM_CHECK_SKIP

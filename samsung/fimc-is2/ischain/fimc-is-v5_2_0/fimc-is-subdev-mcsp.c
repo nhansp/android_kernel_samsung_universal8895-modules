@@ -22,7 +22,7 @@
 #include "fimc-is-hw-dvfs.h"
 
 #ifdef ENABLE_HWFC
-#include "../../../smfc/smfc-sync.h"
+#include "fimc-is-drivers.h"
 #endif
 
 static int fimc_is_ischain_mxp_cfg(struct fimc_is_subdev *subdev,

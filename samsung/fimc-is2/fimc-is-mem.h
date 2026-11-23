@@ -14,11 +14,9 @@
 
 #include <linux/platform_device.h>
 #include <media/videobuf2-v4l2.h>
-#if defined(CONFIG_VIDEOBUF2_CMA_PHYS)
-#include <media/videobuf2-cma-phys.h>
-#elif defined(CONFIG_VIDEOBUF2_ION)
-#include <media/videobuf2-ion.h>
-#endif
+#include <media/videobuf2-dma-contig.h>
+#include <linux/dma-mapping.h>
+#include <linux/dma-buf.h>
 
 struct fimc_is_vb2_buf;
 struct fimc_is_vb2_buf_ops {
@@ -37,6 +35,8 @@ struct fimc_is_vb2_buf {
 	struct vb2_v4l2_buffer		vb;
 	ulong				kva[VIDEO_MAX_PLANES];
 	dma_addr_t			dva[VIDEO_MAX_PLANES];
+	/* V4L2_BUF_FLAG_NO_CACHE_* of the last QBUF (vb2 drops them for DMABUF) */
+	u32				cache_hints;
 
 	const struct fimc_is_vb2_buf_ops *ops;
 };
@@ -98,8 +98,8 @@ struct fimc_is_mem_ops {
 };
 
 struct fimc_is_mem {
-	struct vb2_alloc_ctx				*default_ctx;
-	struct vb2_alloc_ctx				*phcontig_ctx;
+	void						*default_ctx;
+	void						*phcontig_ctx;
 	const struct fimc_is_mem_ops			*fimc_is_mem_ops;
 	const struct vb2_mem_ops			*vb2_mem_ops;
 	const struct fimc_is_vb2_buf_ops		*fimc_is_vb2_buf_ops;

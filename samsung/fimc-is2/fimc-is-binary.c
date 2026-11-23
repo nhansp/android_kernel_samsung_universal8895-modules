@@ -17,11 +17,17 @@
 
 #include "fimc-is-binary.h"
 
+/* vmalloc() is a macro, the loader needs a function to point at */
+void *fimc_is_vmalloc(unsigned long size)
+{
+	return vmalloc(size);
+}
+
 static noinline_for_stack long get_file_size(struct file *file)
 {
 	struct kstat st;
 
-	if (vfs_getattr(&file->f_path, &st))
+	if (vfs_getattr(&file->f_path, &st, STATX_BASIC_STATS, AT_STATX_SYNC_AS_STAT))
 		return -1;
 	if (!S_ISREG(st.mode))
 		return -1;
@@ -36,6 +42,7 @@ static int read_file_contents(struct file *fp, struct fimc_is_binary *bin)
 	long size;
 	char *buf;
 	int ret;
+	loff_t pos;
 
 	size = get_file_size(fp);
 	if (size <= 0)
@@ -60,7 +67,8 @@ static int read_file_contents(struct file *fp, struct fimc_is_binary *bin)
 			return -ENOMEM;
 	}
 
-	ret = kernel_read(fp, 0, buf, size);
+	pos = 0;
+	ret = kernel_read(fp, buf, size, &pos);
 	if (ret != size) {
 		if (!bin->data)
 			bin->free(buf);
@@ -77,12 +85,13 @@ static int write_file_contents(struct file *fp, struct fimc_is_binary *bin)
 {
 	ssize_t ret;
 	ssize_t count;
-	loff_t pos = 0;
+	loff_t pos = 0, wpos;
 	char *buf = (char *)bin->data;
 
 	do {
 		count = min_t(ssize_t, PAGE_SIZE, bin->size - pos);
-		ret = kernel_write(fp, buf, count, pos);
+		wpos = pos;
+		ret = kernel_write(fp, buf, count, &wpos);
 		if (ret > 0) {
 			pos += ret;
 			buf += ret;
@@ -157,7 +166,7 @@ void setup_binary_loader(struct fimc_is_binary *bin,
 		bin->free = free;
 	} else {
 		/* set vmalloc/vfree as a default */
-		bin->alloc = &vmalloc;
+		bin->alloc = &fimc_is_vmalloc;
 		bin->free =  &vfree;
 	}
 
@@ -185,7 +194,7 @@ int request_binary(struct fimc_is_binary *bin, const char *path,
 
 	/* whether the loader is customized or not */
 	if (bin->customized != (unsigned long)bin) {
-		bin->alloc = &vmalloc;
+		bin->alloc = &fimc_is_vmalloc;
 		bin->free =  &vfree;
 	} else {
 		retry_cnt = bin->retry_cnt;

@@ -794,7 +794,7 @@ void fimc_is_scaler_set_v_init_phase_offset(void __iomem *base_addr, u32 output_
 	}
 }
 
-void fimc_is_scaler_set_poly_scaler_h_coef(void __iomem *base_addr, u32 output_id, u32 h_sel)
+static void fimc_is_scaler_set_poly_scaler_h_coef(void __iomem *base_addr, u32 output_id, u32 h_sel)
 {
 	switch (output_id) {
 	case MCSC_OUTPUT0:
@@ -1212,7 +1212,7 @@ void fimc_is_scaler_set_poly_scaler_h_coef(void __iomem *base_addr, u32 output_i
 	}
 }
 
-void fimc_is_scaler_set_poly_scaler_v_coef(void __iomem *base_addr, u32 output_id, u32 v_sel)
+static void fimc_is_scaler_set_poly_scaler_v_coef(void __iomem *base_addr, u32 output_id, u32 v_sel)
 {
 	switch (output_id) {
 	case MCSC_OUTPUT0:

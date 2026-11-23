@@ -16,6 +16,7 @@
 #include "fimc-is-device-ischain.h"
 #include "fimc-is-control-sensor.h"
 #include "fimc-is-device-sensor-peri.h"
+#include "fimc-is-interface-jopp.h"
 
 static int preproc_itf_set_af(struct fimc_is_preprocessor_interface *itf, SENCMD_CompanionSetAfInfoStr_73C3 *param)
 {
@@ -376,7 +377,7 @@ p_err:
 	return ret;
 }
 
-int preproc_itf_get_ae_gains(struct fimc_is_preprocessor_interface *itf, u32 **preproc_auto_exposure)
+static int preproc_itf_get_ae_gains(struct fimc_is_preprocessor_interface *itf, u32 **preproc_auto_exposure)
 {
 	struct fimc_is_device_sensor_peri *sensor_peri;
         cis_shared_data *cis_data = NULL;
@@ -392,6 +393,23 @@ int preproc_itf_get_ae_gains(struct fimc_is_preprocessor_interface *itf, u32 **p
         return ret;
 }
 
+FIMC_IS_JOPP_ENTRY(preproc_itf_set_af);
+FIMC_IS_JOPP_ENTRY(preproc_itf_enable_block);
+FIMC_IS_JOPP_ENTRY(preproc_itf_set_lsc_3aa);
+FIMC_IS_JOPP_ENTRY(preproc_itf_set_wdr_ae);
+FIMC_IS_JOPP_ENTRY(preproc_itf_set_motion);
+FIMC_IS_JOPP_ENTRY(preproc_itf_set_bypass);
+FIMC_IS_JOPP_ENTRY(preproc_itf_set_seamless_mode);
+FIMC_IS_JOPP_ENTRY(preproc_itf_set_drc);
+FIMC_IS_JOPP_ENTRY(preproc_itf_set_ir);
+FIMC_IS_JOPP_ENTRY(preproc_itf_set_roi);
+FIMC_IS_JOPP_ENTRY(preproc_itf_set_power_mode);
+FIMC_IS_JOPP_ENTRY(preproc_itf_change_config);
+FIMC_IS_JOPP_ENTRY(preproc_itf_read_af_stat);
+FIMC_IS_JOPP_ENTRY(preproc_itf_read_af_reg);
+FIMC_IS_JOPP_ENTRY(preproc_itf_get_ae_gains);
+FIMC_IS_JOPP_ENTRY(preproc_itf_set_hist_roi);
+
 int init_preprocessor_interface(struct fimc_is_preprocessor_interface *itf)
 {
 	int ret = 0;
@@ -400,22 +418,22 @@ int init_preprocessor_interface(struct fimc_is_preprocessor_interface *itf)
 
 	itf->magic = PREPROCESSOR_INTERFACE_MAGIC;
 
-	itf->preproc_itf_ops.set_af = preproc_itf_set_af;
-	itf->preproc_itf_ops.enable_block = preproc_itf_enable_block;
-	itf->preproc_itf_ops.set_lsc_3aa = preproc_itf_set_lsc_3aa;
-	itf->preproc_itf_ops.set_wdr_ae = preproc_itf_set_wdr_ae;
-	itf->preproc_itf_ops.set_motion = preproc_itf_set_motion;
-	itf->preproc_itf_ops.set_bypass = preproc_itf_set_bypass;
-	itf->preproc_itf_ops.set_seamless_mode = preproc_itf_set_seamless_mode;
-	itf->preproc_itf_ops.set_drc = preproc_itf_set_drc;
-	itf->preproc_itf_ops.set_ir = preproc_itf_set_ir;
-	itf->preproc_itf_ops.set_roi = preproc_itf_set_roi;
-	itf->preproc_itf_ops.set_power_mode = preproc_itf_set_power_mode;
-	itf->preproc_itf_ops.change_config = preproc_itf_change_config;
-	itf->preproc_itf_ops.read_af_stat = preproc_itf_read_af_stat;
-	itf->preproc_itf_ops.read_af_reg = preproc_itf_read_af_reg;
-    	itf->preproc_itf_ops.get_ae_gains = preproc_itf_get_ae_gains;
-	itf->preproc_itf_ops.set_hist_roi= preproc_itf_set_hist_roi;
+	itf->preproc_itf_ops.set_af = FIMC_IS_JOPP(preproc_itf_set_af);
+	itf->preproc_itf_ops.enable_block = FIMC_IS_JOPP(preproc_itf_enable_block);
+	itf->preproc_itf_ops.set_lsc_3aa = FIMC_IS_JOPP(preproc_itf_set_lsc_3aa);
+	itf->preproc_itf_ops.set_wdr_ae = FIMC_IS_JOPP(preproc_itf_set_wdr_ae);
+	itf->preproc_itf_ops.set_motion = FIMC_IS_JOPP(preproc_itf_set_motion);
+	itf->preproc_itf_ops.set_bypass = FIMC_IS_JOPP(preproc_itf_set_bypass);
+	itf->preproc_itf_ops.set_seamless_mode = FIMC_IS_JOPP(preproc_itf_set_seamless_mode);
+	itf->preproc_itf_ops.set_drc = FIMC_IS_JOPP(preproc_itf_set_drc);
+	itf->preproc_itf_ops.set_ir = FIMC_IS_JOPP(preproc_itf_set_ir);
+	itf->preproc_itf_ops.set_roi = FIMC_IS_JOPP(preproc_itf_set_roi);
+	itf->preproc_itf_ops.set_power_mode = FIMC_IS_JOPP(preproc_itf_set_power_mode);
+	itf->preproc_itf_ops.change_config = FIMC_IS_JOPP(preproc_itf_change_config);
+	itf->preproc_itf_ops.read_af_stat = FIMC_IS_JOPP(preproc_itf_read_af_stat);
+	itf->preproc_itf_ops.read_af_reg = FIMC_IS_JOPP(preproc_itf_read_af_reg);
+	itf->preproc_itf_ops.get_ae_gains = FIMC_IS_JOPP(preproc_itf_get_ae_gains);
+	itf->preproc_itf_ops.set_hist_roi = FIMC_IS_JOPP(preproc_itf_set_hist_roi);
 	return ret;
 }
 

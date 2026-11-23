@@ -18,8 +18,6 @@
 #include <linux/device.h>
 #include <linux/platform_device.h>
 #include <linux/slab.h>
-#include <video/videonode.h>
-#include <media/exynos_mc.h>
 #include <asm/cacheflush.h>
 #include <asm/pgtable.h>
 #include <linux/firmware.h>
@@ -501,8 +499,8 @@ int fimc_is_gframe_cancel(struct fimc_is_groupmgr *groupmgr,
 	return ret;
 }
 
-void * fimc_is_gframe_rewind(struct fimc_is_groupmgr *groupmgr,
-	struct fimc_is_group *group, u32 target_fcount)
+static void *fimc_is_gframe_rewind(struct fimc_is_groupmgr *groupmgr,
+				   struct fimc_is_group *group, u32 target_fcount)
 {
 	struct fimc_is_group_framemgr *gframemgr;
 	struct fimc_is_group_frame *gframe, *temp;
@@ -537,8 +535,8 @@ void * fimc_is_gframe_rewind(struct fimc_is_groupmgr *groupmgr,
 	return gframe;
 }
 
-int fimc_is_gframe_flush_all(struct fimc_is_groupmgr *groupmgr,
-	struct fimc_is_group *group)
+static int fimc_is_gframe_flush_all(struct fimc_is_groupmgr *groupmgr,
+				    struct fimc_is_group *group)
 {
 	int ret = 0;
 	unsigned long flag;
@@ -564,8 +562,8 @@ int fimc_is_gframe_flush_all(struct fimc_is_groupmgr *groupmgr,
 	return ret;
 }
 
-int fimc_is_gframe_flush(struct fimc_is_groupmgr *groupmgr,
-	struct fimc_is_group *group, int remain)
+static __maybe_unused int fimc_is_gframe_flush(struct fimc_is_groupmgr *groupmgr,
+					       struct fimc_is_group *group, int remain)
 {
 	int ret = 0;
 	unsigned long flag;
@@ -995,7 +993,7 @@ static int fimc_is_group_task_start(struct fimc_is_groupmgr *groupmgr,
 
 	init_kthread_worker(&gtask->worker);
 	snprintf(name, sizeof(name), "fimc_is_gw%d", gtask->id);
-	gtask->task = kthread_run(kthread_worker_fn, &gtask->worker, name);
+	gtask->task = kthread_run(fimc_is_neon_kthread_fn, &gtask->worker, name);
 	if (IS_ERR(gtask->task)) {
 		err("failed to create group_task%d, err(%ld)\n",
 			gtask->id, PTR_ERR(gtask->task));
@@ -1010,9 +1008,6 @@ static int fimc_is_group_task_start(struct fimc_is_groupmgr *groupmgr,
 	}
 
 #ifndef ENABLE_IS_CORE
-#ifdef ENABLE_FPSIMD_FOR_USER
-	fpsimd_set_task_using(gtask->task);
-#endif
 #ifdef SET_CPU_AFFINITY
 	ret = set_cpus_allowed_ptr(gtask->task, cpumask_of(2));
 #endif
@@ -1928,7 +1923,7 @@ p_err:
 	return ret;
 }
 
-void set_group_shots(struct fimc_is_group *group, u32 hal_version, u32 framerate)
+static void set_group_shots(struct fimc_is_group *group, u32 hal_version, u32 framerate)
 {
 #ifdef ENABLE_IS_CORE
 	if (hal_version == IS_HAL_VER_3_2) {
@@ -2081,8 +2076,8 @@ p_err:
 	return ret;
 }
 
-void wait_subdev_flush_work(struct fimc_is_device_ischain *device,
-	struct fimc_is_group *group, u32 entry)
+static void wait_subdev_flush_work(struct fimc_is_device_ischain *device,
+				   struct fimc_is_group *group, u32 entry)
 {
 #ifdef ENABLE_IS_CORE
 	return;

@@ -25,7 +25,7 @@ static void flite_hw_enable_bns(u32 __iomem *base_reg, bool enable)
 
 	/* enable */
 	cfg = readl(base_reg + TO_WORD_OFFSET(FLITE_REG_BINNINGON));
-	cfg |= FLITE_REG_BINNINGON_CLKGATE_ON(enable);
+	cfg |= FLITE_REG_BINNINGON_CLKGATE_ON((u32)enable);
 	cfg |= FLITE_REG_BINNINGON_EN(enable);
 	writel(cfg, base_reg + TO_WORD_OFFSET(FLITE_REG_BINNINGON));
 }

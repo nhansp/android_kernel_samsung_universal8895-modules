@@ -656,7 +656,7 @@ bool csi_hw_g_output_cur_dma_enable(u32 __iomem *base_reg, u32 vc)
 	return dma_enable;
 }
 
-void csi_hw_set_start_addr(u32 __iomem *base_reg, u32 number, u32 addr)
+static __maybe_unused void csi_hw_set_start_addr(u32 __iomem *base_reg, u32 number, u32 addr)
 {
 	u32 __iomem *target_reg;
 

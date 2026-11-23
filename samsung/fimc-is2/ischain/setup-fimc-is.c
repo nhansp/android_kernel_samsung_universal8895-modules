@@ -37,82 +37,21 @@ struct platform_device; /* don't need the contents */
 #define REGISTER_CLK(name) {name, NULL}
 
 #if defined(CONFIG_SOC_EXYNOS8895)
+/*
+ * The vendor list also had the GATE_* and MUX_CIS_CLKn clocks, which are gated
+ * by hardware (HWACG): their enable and disable never reached a register.
+ */
 struct fimc_is_clk fimc_is_clk_list[] = {
-	REGISTER_CLK("GATE_ISP_EWGEN_ISPHQ"),
-	REGISTER_CLK("GATE_IS_ISPHQ_3AA"),
-	REGISTER_CLK("GATE_IS_ISPHQ_ISPHQ"),
-	REGISTER_CLK("GATE_IS_ISPHQ_QE_3AA"),
-	REGISTER_CLK("GATE_IS_ISPHQ_QE_ISPHQ"),
-	REGISTER_CLK("GATE_ISPHQ_CMU_ISPHQ"),
-	REGISTER_CLK("GATE_PMU_ISPHQ"),
-	REGISTER_CLK("GATE_SYSREG_ISPHQ"),
 	REGISTER_CLK("UMUX_CLKCMU_ISPHQ_BUS"),
-
-	REGISTER_CLK("GATE_ISP_EWGEN_ISPLP"),
-	REGISTER_CLK("GATE_IS_ISPLP_3AAW"),
-	REGISTER_CLK("GATE_IS_ISPLP_ISPLP"),
-	REGISTER_CLK("GATE_IS_ISPLP_QE_3AAW"),
-	REGISTER_CLK("GATE_IS_ISPLP_QE_ISPLP"),
-	REGISTER_CLK("GATE_IS_ISPLP_SMMU_ISPLP"),
-	REGISTER_CLK("GATE_IS_ISPLP_BCM_ISPLP"),
-	REGISTER_CLK("GATE_BTM_ISPLP"),
-	REGISTER_CLK("GATE_ISPLP_CMU_ISPLP"),
-	REGISTER_CLK("GATE_PMU_ISPLP"),
-	REGISTER_CLK("GATE_SYSREG_ISPLP"),
 	REGISTER_CLK("UMUX_CLKCMU_ISPLP_BUS"),
-
-	REGISTER_CLK("GATE_ISP_EWGEN_CAM"),
-	REGISTER_CLK("GATE_IS_CAM_CSIS0"),
-	REGISTER_CLK("GATE_IS_CAM_CSIS1"),
-	REGISTER_CLK("GATE_IS_CAM_CSIS2"),
-	REGISTER_CLK("GATE_IS_CAM_CSIS3"),
-	REGISTER_CLK("GATE_IS_CAM_MC_SCALER"),
-	REGISTER_CLK("GATE_IS_CAM_CSISX4_DMA"),
-	REGISTER_CLK("GATE_IS_CAM_SYSMMU_CAM0"),
-	REGISTER_CLK("GATE_IS_CAM_SYSMMU_CAM1"),
-	REGISTER_CLK("GATE_IS_CAM_BCM_CAM0"),
-	REGISTER_CLK("GATE_IS_CAM_BCM_CAM1"),
-	REGISTER_CLK("GATE_IS_CAM_TPU0"),
-	REGISTER_CLK("GATE_IS_CAM_VRA"),
-	REGISTER_CLK("GATE_IS_CAM_QE_TPU0"),
-	REGISTER_CLK("GATE_IS_CAM_QE_VRA"),
-	REGISTER_CLK("GATE_IS_CAM_BNS"),
-	REGISTER_CLK("GATE_IS_CAM_QE_CSISX4"),
-	REGISTER_CLK("GATE_IS_CAM_QE_TPU1"),
-	REGISTER_CLK("GATE_IS_CAM_TPU1"),
-	REGISTER_CLK("GATE_BTM_CAMD0"),
-	REGISTER_CLK("GATE_BTM_CAMD1"),
-	REGISTER_CLK("GATE_CAM_CMU_CAM"),
-	REGISTER_CLK("GATE_PMU_CAM"),
-	REGISTER_CLK("GATE_SYSREG_CAM"),
 	REGISTER_CLK("UMUX_CLKCMU_CAM_BUS"),
 	REGISTER_CLK("UMUX_CLKCMU_CAM_TPU0"),
 	REGISTER_CLK("UMUX_CLKCMU_CAM_VRA"),
 	REGISTER_CLK("UMUX_CLKCMU_CAM_TPU1"),
-
-	REGISTER_CLK("GATE_DCP"),
-	REGISTER_CLK("GATE_BTM_DCAM"),
-	REGISTER_CLK("GATE_DCAM_CMU_DCAM"),
-	REGISTER_CLK("GATE_PMU_DCAM"),
-	REGISTER_CLK("GATE_BCM_DCAM"),
-	REGISTER_CLK("GATE_SYSREG_DCAM"),
 	REGISTER_CLK("UMUX_CLKCMU_DCAM_BUS"),
 	REGISTER_CLK("UMUX_CLKCMU_DCAM_IMGD"),
-
-	REGISTER_CLK("GATE_SRDZ"),
-	REGISTER_CLK("GATE_BTM_SRDZ"),
-	REGISTER_CLK("GATE_PMU_SRDZ"),
-	REGISTER_CLK("GATE_BCM_SRDZ"),
-	REGISTER_CLK("GATE_SMMU_SRDZ"),
-	REGISTER_CLK("GATE_SRDZ_CMU_SRDZ"),
-	REGISTER_CLK("GATE_SYSREG_SRDZ"),
 	REGISTER_CLK("UMUX_CLKCMU_SRDZ_BUS"),
 	REGISTER_CLK("UMUX_CLKCMU_SRDZ_IMGD"),
-
-	REGISTER_CLK("MUX_CIS_CLK0"),
-	REGISTER_CLK("MUX_CIS_CLK1"),
-	REGISTER_CLK("MUX_CIS_CLK2"),
-	REGISTER_CLK("MUX_CIS_CLK3"),
 
 	REGISTER_CLK("CIS_CLK0"),
 	REGISTER_CLK("CIS_CLK1"),
@@ -499,17 +438,17 @@ static void exynos8895_fimc_is_print_clk_reg(void)
 
 }
 
-int exynos8895_fimc_is_clk_gate(u32 clk_gate_id, bool is_on)
+static int exynos8895_fimc_is_clk_gate(u32 clk_gate_id, bool is_on)
 {
 	return 0;
 }
 
-int exynos8895_fimc_is_uart_gate(struct device *dev, bool mask)
+static __maybe_unused int exynos8895_fimc_is_uart_gate(struct device *dev, bool mask)
 {
 	return 0;
 }
 
-int exynos8895_fimc_is_get_clk(struct device *dev)
+static int exynos8895_fimc_is_get_clk(struct device *dev)
 {
 	struct clk *clk;
 	int i;
@@ -528,12 +467,12 @@ int exynos8895_fimc_is_get_clk(struct device *dev)
 	return 0;
 }
 
-int exynos8895_fimc_is_cfg_clk(struct device *dev)
+static int exynos8895_fimc_is_cfg_clk(struct device *dev)
 {
 	return 0;
 }
 
-int exynos8895_fimc_is_clk_on(struct device *dev)
+static int exynos8895_fimc_is_clk_on(struct device *dev)
 {
 	int ret = 0;
 	struct exynos_platform_fimc_is *pdata;
@@ -547,81 +486,20 @@ int exynos8895_fimc_is_clk_on(struct device *dev)
 		}
 	}
 
-	fimc_is_enable(dev, "GATE_ISP_EWGEN_ISPHQ");
-	fimc_is_enable(dev, "GATE_IS_ISPHQ_3AA");
-	fimc_is_enable(dev, "GATE_IS_ISPHQ_ISPHQ");
-	fimc_is_enable(dev, "GATE_IS_ISPHQ_QE_3AA");
-	fimc_is_enable(dev, "GATE_IS_ISPHQ_QE_ISPHQ");
-	fimc_is_enable(dev, "GATE_ISPHQ_CMU_ISPHQ");
-	fimc_is_enable(dev, "GATE_PMU_ISPHQ");
-	fimc_is_enable(dev, "GATE_SYSREG_ISPHQ");
 	fimc_is_enable(dev, "UMUX_CLKCMU_ISPHQ_BUS");
 
-	fimc_is_enable(dev, "GATE_ISP_EWGEN_ISPLP");
-	fimc_is_enable(dev, "GATE_IS_ISPLP_3AAW");
-	fimc_is_enable(dev, "GATE_IS_ISPLP_ISPLP");
-	fimc_is_enable(dev, "GATE_IS_ISPLP_QE_3AAW");
-	fimc_is_enable(dev, "GATE_IS_ISPLP_QE_ISPLP");
-	fimc_is_enable(dev, "GATE_IS_ISPLP_SMMU_ISPLP");
-	fimc_is_enable(dev, "GATE_IS_ISPLP_BCM_ISPLP");
-	fimc_is_enable(dev, "GATE_BTM_ISPLP");
-	fimc_is_enable(dev, "GATE_ISPLP_CMU_ISPLP");
-	fimc_is_enable(dev, "GATE_PMU_ISPLP");
-	fimc_is_enable(dev, "GATE_SYSREG_ISPLP");
 	fimc_is_enable(dev, "UMUX_CLKCMU_ISPLP_BUS");
 
-	fimc_is_enable(dev, "GATE_ISP_EWGEN_CAM");
-	fimc_is_enable(dev, "GATE_IS_CAM_CSIS0");
-	fimc_is_enable(dev, "GATE_IS_CAM_CSIS1");
-	fimc_is_enable(dev, "GATE_IS_CAM_CSIS2");
-	fimc_is_enable(dev, "GATE_IS_CAM_CSIS3");
-	fimc_is_enable(dev, "GATE_IS_CAM_MC_SCALER");
-	fimc_is_enable(dev, "GATE_IS_CAM_CSISX4_DMA");
-	fimc_is_enable(dev, "GATE_IS_CAM_SYSMMU_CAM0");
-	fimc_is_enable(dev, "GATE_IS_CAM_SYSMMU_CAM1");
-	fimc_is_enable(dev, "GATE_IS_CAM_BCM_CAM0");
-	fimc_is_enable(dev, "GATE_IS_CAM_BCM_CAM1");
-	fimc_is_enable(dev, "GATE_IS_CAM_TPU0");
-	fimc_is_enable(dev, "GATE_IS_CAM_VRA");
-	fimc_is_enable(dev, "GATE_IS_CAM_QE_TPU0");
-	fimc_is_enable(dev, "GATE_IS_CAM_QE_VRA");
-	fimc_is_enable(dev, "GATE_IS_CAM_BNS");
-	fimc_is_enable(dev, "GATE_IS_CAM_QE_CSISX4");
-	fimc_is_enable(dev, "GATE_IS_CAM_QE_TPU1");
-	fimc_is_enable(dev, "GATE_IS_CAM_TPU1");
-	fimc_is_enable(dev, "GATE_BTM_CAMD0");
-	fimc_is_enable(dev, "GATE_BTM_CAMD1");
-	fimc_is_enable(dev, "GATE_CAM_CMU_CAM");
-	fimc_is_enable(dev, "GATE_PMU_CAM");
-	fimc_is_enable(dev, "GATE_SYSREG_CAM");
 	fimc_is_enable(dev, "UMUX_CLKCMU_CAM_BUS");
 	fimc_is_enable(dev, "UMUX_CLKCMU_CAM_TPU0");
 	fimc_is_enable(dev, "UMUX_CLKCMU_CAM_VRA");
 	fimc_is_enable(dev, "UMUX_CLKCMU_CAM_TPU1");
 
-	fimc_is_enable(dev, "GATE_DCP");
-	fimc_is_enable(dev, "GATE_BTM_DCAM");
-	fimc_is_enable(dev, "GATE_DCAM_CMU_DCAM");
-	fimc_is_enable(dev, "GATE_PMU_DCAM");
-	fimc_is_enable(dev, "GATE_BCM_DCAM");
-	fimc_is_enable(dev, "GATE_SYSREG_DCAM");
 	fimc_is_enable(dev, "UMUX_CLKCMU_DCAM_BUS");
 	fimc_is_enable(dev, "UMUX_CLKCMU_DCAM_IMGD");
 
-	fimc_is_enable(dev, "GATE_SRDZ");
-	fimc_is_enable(dev, "GATE_BTM_SRDZ");
-	fimc_is_enable(dev, "GATE_PMU_SRDZ");
-	fimc_is_enable(dev, "GATE_BCM_SRDZ");
-	fimc_is_enable(dev, "GATE_SMMU_SRDZ");
-	fimc_is_enable(dev, "GATE_SRDZ_CMU_SRDZ");
-	fimc_is_enable(dev, "GATE_SYSREG_SRDZ");
 	fimc_is_enable(dev, "UMUX_CLKCMU_SRDZ_BUS");
 	fimc_is_enable(dev, "UMUX_CLKCMU_SRDZ_IMGD");
-
-	fimc_is_enable(dev, "MUX_CIS_CLK0");
-	fimc_is_enable(dev, "MUX_CIS_CLK1");
-	fimc_is_enable(dev, "MUX_CIS_CLK2");
-	fimc_is_enable(dev, "MUX_CIS_CLK3");
 
 	fimc_is_enable(dev, "CIS_CLK0");
 	fimc_is_enable(dev, "CIS_CLK1");
@@ -638,7 +516,7 @@ p_err:
 	return 0;
 }
 
-int exynos8895_fimc_is_clk_off(struct device *dev)
+static int exynos8895_fimc_is_clk_off(struct device *dev)
 {
 	int ret = 0;
 	struct exynos_platform_fimc_is *pdata;
@@ -650,81 +528,20 @@ int exynos8895_fimc_is_clk_off(struct device *dev)
 		goto p_err;
 	}
 
-	fimc_is_disable(dev, "GATE_ISP_EWGEN_ISPHQ");
-	fimc_is_disable(dev, "GATE_IS_ISPHQ_3AA");
-	fimc_is_disable(dev, "GATE_IS_ISPHQ_ISPHQ");
-	fimc_is_disable(dev, "GATE_IS_ISPHQ_QE_3AA");
-	fimc_is_disable(dev, "GATE_IS_ISPHQ_QE_ISPHQ");
-	fimc_is_disable(dev, "GATE_ISPHQ_CMU_ISPHQ");
-	fimc_is_disable(dev, "GATE_PMU_ISPHQ");
-	fimc_is_disable(dev, "GATE_SYSREG_ISPHQ");
 	fimc_is_disable(dev, "UMUX_CLKCMU_ISPHQ_BUS");
 
-	fimc_is_disable(dev, "GATE_ISP_EWGEN_ISPLP");
-	fimc_is_disable(dev, "GATE_IS_ISPLP_3AAW");
-	fimc_is_disable(dev, "GATE_IS_ISPLP_ISPLP");
-	fimc_is_disable(dev, "GATE_IS_ISPLP_QE_3AAW");
-	fimc_is_disable(dev, "GATE_IS_ISPLP_QE_ISPLP");
-	fimc_is_disable(dev, "GATE_IS_ISPLP_SMMU_ISPLP");
-	fimc_is_disable(dev, "GATE_IS_ISPLP_BCM_ISPLP");
-	fimc_is_disable(dev, "GATE_BTM_ISPLP");
-	fimc_is_disable(dev, "GATE_ISPLP_CMU_ISPLP");
-	fimc_is_disable(dev, "GATE_PMU_ISPLP");
-	fimc_is_disable(dev, "GATE_SYSREG_ISPLP");
 	fimc_is_disable(dev, "UMUX_CLKCMU_ISPLP_BUS");
 
-	fimc_is_disable(dev, "GATE_ISP_EWGEN_CAM");
-	fimc_is_disable(dev, "GATE_IS_CAM_CSIS0");
-	fimc_is_disable(dev, "GATE_IS_CAM_CSIS1");
-	fimc_is_disable(dev, "GATE_IS_CAM_CSIS2");
-	fimc_is_disable(dev, "GATE_IS_CAM_CSIS3");
-	fimc_is_disable(dev, "GATE_IS_CAM_MC_SCALER");
-	fimc_is_disable(dev, "GATE_IS_CAM_CSISX4_DMA");
-	fimc_is_disable(dev, "GATE_IS_CAM_SYSMMU_CAM0");
-	fimc_is_disable(dev, "GATE_IS_CAM_SYSMMU_CAM1");
-	fimc_is_disable(dev, "GATE_IS_CAM_BCM_CAM0");
-	fimc_is_disable(dev, "GATE_IS_CAM_BCM_CAM1");
-	fimc_is_disable(dev, "GATE_IS_CAM_TPU0");
-	fimc_is_disable(dev, "GATE_IS_CAM_VRA");
-	fimc_is_disable(dev, "GATE_IS_CAM_QE_TPU0");
-	fimc_is_disable(dev, "GATE_IS_CAM_QE_VRA");
-	fimc_is_disable(dev, "GATE_IS_CAM_BNS");
-	fimc_is_disable(dev, "GATE_IS_CAM_QE_CSISX4");
-	fimc_is_disable(dev, "GATE_IS_CAM_QE_TPU1");
-	fimc_is_disable(dev, "GATE_IS_CAM_TPU1");
-	fimc_is_disable(dev, "GATE_BTM_CAMD0");
-	fimc_is_disable(dev, "GATE_BTM_CAMD1");
-	fimc_is_disable(dev, "GATE_CAM_CMU_CAM");
-	fimc_is_disable(dev, "GATE_PMU_CAM");
-	fimc_is_disable(dev, "GATE_SYSREG_CAM");
 	fimc_is_disable(dev, "UMUX_CLKCMU_CAM_BUS");
 	fimc_is_disable(dev, "UMUX_CLKCMU_CAM_TPU0");
 	fimc_is_disable(dev, "UMUX_CLKCMU_CAM_VRA");
 	fimc_is_disable(dev, "UMUX_CLKCMU_CAM_TPU1");
 
-	fimc_is_disable(dev, "GATE_DCP");
-	fimc_is_disable(dev, "GATE_BTM_DCAM");
-	fimc_is_disable(dev, "GATE_DCAM_CMU_DCAM");
-	fimc_is_disable(dev, "GATE_PMU_DCAM");
-	fimc_is_disable(dev, "GATE_BCM_DCAM");
-	fimc_is_disable(dev, "GATE_SYSREG_DCAM");
 	fimc_is_disable(dev, "UMUX_CLKCMU_DCAM_BUS");
 	fimc_is_disable(dev, "UMUX_CLKCMU_DCAM_IMGD");
 
-	fimc_is_disable(dev, "GATE_SRDZ");
-	fimc_is_disable(dev, "GATE_BTM_SRDZ");
-	fimc_is_disable(dev, "GATE_PMU_SRDZ");
-	fimc_is_disable(dev, "GATE_BCM_SRDZ");
-	fimc_is_disable(dev, "GATE_SMMU_SRDZ");
-	fimc_is_disable(dev, "GATE_SRDZ_CMU_SRDZ");
-	fimc_is_disable(dev, "GATE_SYSREG_SRDZ");
 	fimc_is_disable(dev, "UMUX_CLKCMU_SRDZ_BUS");
 	fimc_is_disable(dev, "UMUX_CLKCMU_SRDZ_IMGD");
-
-	fimc_is_disable(dev, "MUX_CIS_CLK0");
-	fimc_is_disable(dev, "MUX_CIS_CLK1");
-	fimc_is_disable(dev, "MUX_CIS_CLK2");
-	fimc_is_disable(dev, "MUX_CIS_CLK3");
 
 	fimc_is_disable(dev, "CIS_CLK0");
 	fimc_is_disable(dev, "CIS_CLK1");
@@ -2029,8 +1846,8 @@ int exynos_fimc_is_print_clk(struct device *dev)
 	return 0;
 }
 
-int exynos_fimc_is_set_user_clk_gate(u32 group_id, bool is_on,
-	u32 user_scenario_id,
+static __maybe_unused int exynos_fimc_is_set_user_clk_gate(u32 group_id, bool is_on,
+							   u32 user_scenario_id,
 	unsigned long msk_state,
 	struct exynos_fimc_is_clk_gate_info *gate_info)
 {

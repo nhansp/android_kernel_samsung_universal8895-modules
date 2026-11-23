@@ -37,6 +37,7 @@
 #include "fimc-is-dt.h"
 
 #include "fimc-is-device-module-base.h"
+#include "fimc-is-drivers.h"
 
 #define S5K3H1_PDAF_MAXWIDTH	0 /* MAX witdh size */
 #define S5K3H1_PDAF_MAXHEIGHT	0 /* MAX height size */
@@ -93,14 +94,26 @@ static struct fimc_is_vci vci_module_3h1_c3[] = {
 	}
 };
 
+static long core_ops_fimc_is_ioctl(struct v4l2_subdev *sd, unsigned int cmd, void *arg)
+{
+	switch (cmd) {
+	case FIMC_IS_SUBDEV_G_CTRL:
+		return sensor_module_g_ctrl(sd, arg);
+	case FIMC_IS_SUBDEV_S_CTRL:
+		return sensor_module_s_ctrl(sd, arg);
+	case FIMC_IS_SUBDEV_G_EXT_CTRLS:
+		return sensor_module_g_ext_ctrls(sd, arg);
+	case FIMC_IS_SUBDEV_S_EXT_CTRLS:
+		return sensor_module_s_ext_ctrls(sd, arg);
+	}
+
+	return sensor_module_ioctl(sd, cmd, arg);
+}
+
 static const struct v4l2_subdev_core_ops core_ops = {
 	.init = sensor_module_init,
-	.g_ctrl = sensor_module_g_ctrl,
-	.s_ctrl = sensor_module_s_ctrl,
-	.g_ext_ctrls = sensor_module_g_ext_ctrls,
-	.s_ext_ctrls = sensor_module_s_ext_ctrls,
-	.ioctl = sensor_module_ioctl,
 	.log_status = sensor_module_log_status,
+	.ioctl = core_ops_fimc_is_ioctl,
 };
 
 static const struct v4l2_subdev_video_ops video_ops = {
@@ -282,7 +295,7 @@ static int sensor_module_3h1_c3_power_setpin(struct platform_device *pdev,
 	return 0;
 }
 
-int sensor_module_3h1_c3_probe(struct platform_device *pdev)
+static int sensor_module_3h1_c3_probe(struct platform_device *pdev)
 {
 	int ret = 0;
 	struct fimc_is_core *core;
@@ -295,7 +308,8 @@ int sensor_module_3h1_c3_probe(struct platform_device *pdev)
 	int ch, vc_idx;
 	struct pinctrl_state *s;
 
-	BUG_ON(!fimc_is_dev);
+	if (!fimc_is_dev)
+		return -EPROBE_DEFER;
 
 	core = (struct fimc_is_core *)dev_get_drvdata(fimc_is_dev);
 	if (!core) {
@@ -455,13 +469,10 @@ p_err:
 	return ret;
 }
 
-static int sensor_module_3h1_c3_remove(struct platform_device *pdev)
+static void sensor_module_3h1_c3_remove(struct platform_device *pdev)
 {
-	int ret = 0;
 
 	info("%s\n", __func__);
-
-	return ret;
 }
 
 static const struct of_device_id exynos_fimc_is_sensor_module_3h1_c3_match[] = {
@@ -472,7 +483,7 @@ static const struct of_device_id exynos_fimc_is_sensor_module_3h1_c3_match[] = {
 };
 MODULE_DEVICE_TABLE(of, exynos_fimc_is_sensor_module_3h1_c3_match);
 
-static struct platform_driver sensor_module_3h1_c3_driver = {
+struct platform_driver sensor_module_3h1_c3_driver = {
 	.probe  = sensor_module_3h1_c3_probe,
 	.remove = sensor_module_3h1_c3_remove,
 	.driver = {
@@ -481,5 +492,3 @@ static struct platform_driver sensor_module_3h1_c3_driver = {
 		.of_match_table = exynos_fimc_is_sensor_module_3h1_c3_match,
 	}
 };
-
-module_platform_driver(sensor_module_3h1_c3_driver);

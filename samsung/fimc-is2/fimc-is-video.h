@@ -268,6 +268,8 @@ struct fimc_is_queue {
 };
 
 struct fimc_is_video_ctx {
+	/* first: file->private_data is both the v4l2_fh and the vctx */
+	struct v4l2_fh			fh;
 	struct fimc_is_queue		queue;
 	struct mutex			lock;
 	u32				instance;
@@ -283,6 +285,10 @@ struct fimc_is_video_ctx {
 	const struct vb2_mem_ops	*vb2_mem_ops;
 	const struct fimc_is_vb2_buf_ops *fimc_is_vb2_buf_ops;
 	struct fimc_is_video_ops	vops;
+
+	/* caller's pix_mp.reserved[] of the S_FMT in progress */
+	u8				fmt_reserved[7];
+	bool				fmt_reserved_valid;
 };
 
 struct fimc_is_video {
@@ -302,6 +308,21 @@ struct fimc_is_video {
 	bool				try_smp;
 };
 
+/*
+ * v4l2_ioctl_ops has no G/S_CTRL and crop handlers any more;
+ * fimc_is_video_ioctl2() serves those ioctls with these.
+ */
+struct fimc_is_video_ioctl_ops {
+	struct v4l2_ioctl_ops ops;
+	int (*vidioc_g_ctrl)(struct file *file, void *fh, struct v4l2_control *a);
+	int (*vidioc_s_ctrl)(struct file *file, void *fh, struct v4l2_control *a);
+	int (*vidioc_cropcap)(struct file *file, void *fh, struct v4l2_cropcap *a);
+	int (*vidioc_g_crop)(struct file *file, void *fh, struct v4l2_crop *a);
+	int (*vidioc_s_crop)(struct file *file, void *fh, const struct v4l2_crop *a);
+};
+
+long fimc_is_video_ioctl2(struct file *file, unsigned int cmd, unsigned long arg);
+
 /* video context operation */
 int open_vctx(struct file *file,
 	struct fimc_is_video *video,
@@ -317,7 +338,7 @@ int fimc_is_queue_setup(struct fimc_is_queue *queue,
 	void *alloc_ctx,
 	unsigned int *num_planes,
 	unsigned int sizes[],
-	void *allocators[]);
+	struct device *allocators[]);
 int fimc_is_queue_buffer_queue(struct fimc_is_queue *queue,
 	struct vb2_buffer *vb);
 int fimc_is_buffer_init(struct vb2_buffer *vb);

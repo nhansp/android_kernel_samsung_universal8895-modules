@@ -14,6 +14,7 @@
 
 #include <linux/notifier.h>
 #include <linux/reboot.h>
+#include <linux/thermal.h>
 #include "fimc-is-groupmgr.h"
 #include "fimc-is-interface.h"
 
@@ -119,6 +120,7 @@ struct fimc_is_resourcemgr {
 	struct notifier_block			tmu_notifier;
 	u32					tmu_state;
 	u32					limited_fps;
+	struct thermal_cooling_device		*isp_cdev;
 
 	/* bus monitor */
 	struct notifier_block			bm_notifier;

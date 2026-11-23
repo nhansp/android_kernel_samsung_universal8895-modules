@@ -77,7 +77,11 @@
 #define DEBUGCTL_OFFSET			(DEBUG_REGION_OFFSET + DEBUG_REGION_SIZE)
 #else /* #ifdef ENABLE_IS_CORE */
 /* static reserved memory for libraries */
-#define LIB_OFFSET		(VMALLOC_START + 0xF6000000 - 0x8000000)
+/*
+ * The libraries are linked to run here: VMALLOC_START + 0xF6000000 - 0x8000000
+ * of the 4.4 kernel they were built for (39-bit VAs, no KASAN).
+ */
+#define LIB_OFFSET		(0xffffff80f6000000UL)
 #define LIB_START		(LIB_OFFSET + 0x04000000)
 
 #define VRA_LIB_ADDR		(LIB_START)
@@ -188,5 +192,7 @@ int request_binary(struct fimc_is_binary *bin, const char *path,
 				const char *name, struct device *device);
 void release_binary(struct fimc_is_binary *bin);
 int was_loaded_by(struct fimc_is_binary *bin);
+
+void *fimc_is_vmalloc(unsigned long size);
 
 #endif

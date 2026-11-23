@@ -16,7 +16,6 @@
 #include <linux/errno.h>
 #include <linux/platform_device.h>
 #include <linux/io.h>
-#include <soc/samsung/exynos-pmu.h>
 
 #include "fimc-is-config.h"
 #include "fimc-is-type.h"
