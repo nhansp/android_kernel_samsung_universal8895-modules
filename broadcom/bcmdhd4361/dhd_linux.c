@@ -7238,6 +7238,7 @@ dhd_add_monitor_if(dhd_info_t *dhd)
 		DHD_ERROR(("%s, register_netdev failed for %s\n",
 			__FUNCTION__, dev->name));
 		free_netdev(dev);
+		return;
 	}
 
 	if (FW_SUPPORTED((&dhd->pub), monitor)) {
