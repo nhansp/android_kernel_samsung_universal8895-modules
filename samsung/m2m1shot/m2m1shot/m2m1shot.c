@@ -1,33 +1,19 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
- * drivers/media/m2m1shot.c
- *
  * Copyright (C) 2014 Samsung Electronics Co., Ltd.
- *
  * Contact: Cho KyongHo <pullip.cho@samsung.com>
- *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
- * 02110-1301 USA
- *
  */
 
 #include <linux/kernel.h>
+#include <linux/module.h>
 #include <linux/slab.h>
 #include <linux/uaccess.h>
 #include <linux/device.h>
 #include <linux/dma-buf.h>
 #include <linux/vmalloc.h>
 #include <linux/sched.h>
+#include <linux/mm.h>
+#include <linux/compat.h>
 
 #include <media/m2m1shot.h>
 
@@ -82,8 +68,9 @@ void m2m1shot_task_finish(struct m2m1shot_device *m21dev,
 	unsigned long flags;
 
 	spin_lock_irqsave(&m21dev->lock_task, flags);
-	BUG_ON(!m21dev->current_task);
-	BUG_ON(m21dev->current_task != task);
+	WARN_ON_ONCE(!m21dev->current_task);
+	WARN_ON_ONCE(m21dev->current_task &&
+		     m21dev->current_task != task);
 	m21dev->current_task = NULL;
 	spin_unlock_irqrestore(&m21dev->lock_task, flags);
 
@@ -159,7 +146,8 @@ static int m2m1shot_buffer_get_dma_buf(struct m2m1shot_device *m21dev,
 			goto err;
 		}
 
-		plane->attachment = dma_buf_attach(plane->dmabuf, m21dev->dev);
+		plane->attachment = dma_buf_attach(plane->dmabuf,
+						   m21dev->dma_dev);
 		if (IS_ERR(plane->attachment)) {
 			dev_err(m21dev->dev,
 				"%s: Failed to attach dmabuf\n", __func__);
@@ -179,31 +167,28 @@ err:
 	return ret;
 }
 
+/*
+ * Unlike the vendor driver, a user pointer into a dma-buf mapping is not
+ * resolved to its dma-buf: m2m1shot_dma_addr_map() pins it like any user memory.
+ */
 static struct dma_buf *m2m1shot_buffer_check_userptr(
 		struct m2m1shot_device *m21dev, unsigned long start, size_t len,
 		off_t *out_offset)
 {
-	struct dma_buf *dmabuf = NULL;
 	struct vm_area_struct *vma;
 
-	down_read(&current->mm->mmap_sem);
+	mmap_read_lock(current->mm);
 	vma = find_vma(current->mm, start);
 	if (!vma || (start < vma->vm_start)) {
 		dev_err(m21dev->dev, "%s: Incorrect user buffer @ %#lx/%#zx\n",
 			__func__, start, len);
-		dmabuf = ERR_PTR(-EINVAL);
-		goto finish;
+		mmap_read_unlock(current->mm);
+		return ERR_PTR(-EINVAL);
 	}
 
-	if (!vma->vm_file)
-		goto finish;
-
-	dmabuf = get_dma_buf_file(vma->vm_file);
-	if (dmabuf != NULL)
-		*out_offset = start - vma->vm_start;
-finish:
-	up_read(&current->mm->mmap_sem);
-	return dmabuf;
+	*out_offset = 0;
+	mmap_read_unlock(current->mm);
+	return NULL;
 }
 
 static int m2m1shot_buffer_get_userptr(struct m2m1shot_device *m21dev,
@@ -222,37 +207,12 @@ static int m2m1shot_buffer_get_userptr(struct m2m1shot_device *m21dev,
 		if (IS_ERR(dmabuf)) {
 			ret = PTR_ERR(dmabuf);
 			goto err;
-		} else if (dmabuf) {
-			if (dmabuf->size < dma_buffer->plane[i].bytes_used) {
-				dev_err(m21dev->dev,
-				"%s: needs %zu bytes but dmabuf is %zu\n",
-					__func__,
-					dma_buffer->plane[i].bytes_used,
-					dmabuf->size);
-				ret = -EINVAL;
-				goto err;
-			}
-
-			dma_buffer->plane[i].dmabuf = dmabuf;
-			dma_buffer->plane[i].attachment = dma_buf_attach(
-							dmabuf, m21dev->dev);
-			dma_buffer->plane[i].offset = offset;
-			if (IS_ERR(dma_buffer->plane[i].attachment)) {
-				dev_err(m21dev->dev,
-					"%s: Failed to attach dmabuf\n",
-					__func__);
-				ret = PTR_ERR(dma_buffer->plane[i].attachment);
-				dma_buf_put(dmabuf);
-				goto err;
-			}
 		}
+		dma_buffer->plane[i].offset = 0;
 	}
 
 	return 0;
 err:
-	while (i-- > 0)
-		m2m1shot_buffer_put_dma_buf_plane(&dma_buffer->plane[i]);
-
 	return ret;
 }
 
@@ -522,7 +482,11 @@ static int m2m1shot_process(struct m2m1shot_context *ctx,
 		wait_for_completion(&task->complete);
 	}
 
-	BUG_ON(task->state == M2M1SHOT_BUFSTATE_READY);
+	if (WARN_ON_ONCE(task->state == M2M1SHOT_BUFSTATE_READY)) {
+		m2m1shot_finish_task(m21dev, ctx, task);
+		ret = -EINVAL;
+		goto err;
+	}
 
 	m2m1shot_finish_task(m21dev, ctx, task);
 err:
@@ -868,6 +832,7 @@ static const struct file_operations m2m1shot_fops = {
 };
 
 struct m2m1shot_device *m2m1shot_create_device(struct device *dev,
+					struct device *dma_dev,
 					const struct m2m1shot_devops *ops,
 					const char *suffix, int id,
 					unsigned long timeout_jiffies)
@@ -923,6 +888,7 @@ struct m2m1shot_device *m2m1shot_create_device(struct device *dev,
 	spin_lock_init(&m21dev->lock_ctx);
 
 	m21dev->dev = dev;
+	m21dev->dma_dev = dma_dev ?: dev;
 	m21dev->ops = ops;
 	m21dev->timeout_jiffies = timeout_jiffies;
 
@@ -944,3 +910,7 @@ void m2m1shot_destroy_device(struct m2m1shot_device *m21dev)
 	kfree(m21dev);
 }
 EXPORT_SYMBOL(m2m1shot_destroy_device);
+
+MODULE_DESCRIPTION("Exynos non-streaming m2m media processing (m2m1shot)");
+MODULE_LICENSE("GPL");
+MODULE_IMPORT_NS("DMA_BUF");

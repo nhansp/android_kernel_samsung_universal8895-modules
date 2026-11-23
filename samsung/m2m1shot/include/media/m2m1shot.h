@@ -44,6 +44,9 @@ struct m2m1shot_task;
  * @tasks	: the list of the tasks that are to be scheduled
  * @contexts	: the list of the contexts that is created for this device
  * @dev		: the client device desciptor
+ * @dma_dev	: the device that attaches and maps the buffers of the tasks.
+ *		  It is @dev unless the client is not an IOMMU master of its
+ *		  own and reaches memory through another device's IOMMU.
  * @lock_task	: lock to protect the consistency of @tasks list and
  *                @current_task
  * @lock_ctx	: lock to protect the consistency of @contexts list
@@ -60,6 +63,7 @@ struct m2m1shot_device {
 	struct list_head tasks;		/* pending tasks for processing */
 	struct list_head contexts;	/* created contexts of this device */
 	struct device *dev;
+	struct device *dma_dev;
 	spinlock_t lock_task;		/* lock with irqsave for tasks */
 	spinlock_t lock_ctx;		/* lock for contexts */
 	unsigned long timeout_jiffies;	/* timeout jiffies for a task */
@@ -128,6 +132,10 @@ struct m2m1shot_buffer_plane_dma {
 	dma_addr_t dma_addr;
 	void *priv;
 	off_t offset;
+	/* pinned pages of a userptr plane, NULL for a dma-buf plane */
+	struct page **upages;
+	unsigned int num_upages;
+	enum dma_data_direction map_dir;
 };
 
 /**
@@ -268,6 +276,8 @@ void m2m1shot_task_cancel(struct m2m1shot_device *m21dev,
  * m2m1shot_create_device - create and initialze constructs for m2m1shot
  *
  * - dev: the device that m2m1shot provides services
+ * - dma_dev: the device that attaches and maps the buffers, or NULL if it is
+ *            @dev
  * - ops: callbacks to m2m1shot
  * - suffix: suffix of device node in /dev after 'm2m1shot_'
  * - id: device instance number if a device has multiple instance. @id will be
@@ -281,6 +291,7 @@ void m2m1shot_task_cancel(struct m2m1shot_device *m21dev,
  * This function is most likely called in probe() of a driver.
  */
 struct m2m1shot_device *m2m1shot_create_device(struct device *dev,
+					struct device *dma_dev,
 					const struct m2m1shot_devops *ops,
 					const char *suffix, int id,
 					unsigned long timeout_jiffies);

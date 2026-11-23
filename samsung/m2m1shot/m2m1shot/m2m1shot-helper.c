@@ -1,28 +1,16 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
- * drivers/media/m2m1shot-helper.c
- *
  * Copyright (C) 2014 Samsung Electronics Co., Ltd.
- *
  * Contact: Cho KyongHo <pullip.cho@samsung.com>
- *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
- * 02110-1301 USA
- *
  */
 #include <linux/kernel.h>
-#include <linux/exynos_iovmm.h>
-#include <linux/exynos_ion.h>
+#include <linux/device.h>
+#include <linux/dma-buf.h>
+#include <linux/dma-mapping.h>
+#include <linux/mm.h>
+#include <linux/module.h>
+#include <linux/scatterlist.h>
+#include <linux/slab.h>
 
 #include <media/m2m1shot-helper.h>
 
@@ -31,9 +19,10 @@ int m2m1shot_map_dma_buf(struct device *dev,
 			enum dma_data_direction dir)
 {
 	if (plane->dmabuf) {
-		plane->sgt = dma_buf_map_attachment(plane->attachment, dir);
+		plane->sgt = dma_buf_map_attachment_unlocked(plane->attachment,
+							     dir);
 		if (IS_ERR(plane->sgt)) {
-			dev_err(dev, "%s: failed to map attacment of dma_buf\n",
+			dev_err(dev, "%s: failed to map attachment of dma_buf\n",
 					__func__);
 			return PTR_ERR(plane->sgt);
 		}
@@ -47,67 +36,140 @@ void m2m1shot_unmap_dma_buf(struct device *dev,
 			struct m2m1shot_buffer_plane_dma *plane,
 			enum dma_data_direction dir)
 {
-	if (plane->dmabuf)
-		dma_buf_unmap_attachment(plane->attachment, plane->sgt, dir);
+	if (plane->dmabuf && plane->sgt) {
+		dma_buf_unmap_attachment_unlocked(plane->attachment,
+						  plane->sgt, dir);
+		plane->sgt = NULL;
+	}
 }
 EXPORT_SYMBOL(m2m1shot_unmap_dma_buf);
 
-int m2m1shot_dma_addr_map(struct device *dev,
-			struct m2m1shot_buffer_dma *buf,
-			int plane_idx, enum dma_data_direction dir)
+static int m2m1shot_map_userptr(struct device *dev,
+				struct m2m1shot_buffer_dma *buf,
+				int plane_idx,
+				enum dma_data_direction dir)
 {
 	struct m2m1shot_buffer_plane_dma *plane = &buf->plane[plane_idx];
-	int prot = IOMMU_READ;
-	dma_addr_t iova;
+	unsigned long addr = buf->buffer->plane[plane_idx].userptr;
+	unsigned int offset = addr & ~PAGE_MASK;
+	unsigned int npages;
+	struct page **pages;
+	struct sg_table *sgt;
+	int pinned, ret;
 
-	if (dir != DMA_TO_DEVICE)
-		prot |= IOMMU_WRITE;
-	if (device_get_dma_attr(dev) == DEV_DMA_COHERENT)
-		prot |= IOMMU_CACHE;
+	npages = (PAGE_ALIGN(addr + plane->bytes_used) -
+		  (addr & PAGE_MASK)) >> PAGE_SHIFT;
 
-	if (plane->dmabuf) {
-		iova = ion_iovmm_map(plane->attachment, 0,
-					plane->bytes_used, dir, prot);
-	} else {
-		down_read(&current->mm->mmap_sem);
-		iova = exynos_iovmm_map_userptr(dev,
-				buf->buffer->plane[plane_idx].userptr,
-				plane->bytes_used, prot);
-		up_read(&current->mm->mmap_sem);
+	pages = kvmalloc_array(npages, sizeof(*pages), GFP_KERNEL);
+	if (!pages)
+		return -ENOMEM;
+
+	pinned = pin_user_pages_fast(addr & PAGE_MASK, npages,
+				     FOLL_LONGTERM |
+				     (dir == DMA_FROM_DEVICE ? FOLL_WRITE : 0),
+				     pages);
+	if (pinned != (int)npages) {
+		if (pinned > 0)
+			unpin_user_pages(pages, pinned);
+		kvfree(pages);
+		return -EFAULT;
 	}
 
-	if (IS_ERR_VALUE(iova))
-		return (int)iova;
+	sgt = kzalloc(sizeof(*sgt), GFP_KERNEL);
+	if (!sgt) {
+		unpin_user_pages(pages, npages);
+		kvfree(pages);
+		return -ENOMEM;
+	}
 
-	buf->plane[plane_idx].dma_addr = iova + plane->offset;
+	ret = sg_alloc_table_from_pages(sgt, pages, npages, offset,
+					plane->bytes_used, GFP_KERNEL);
+	if (ret) {
+		kfree(sgt);
+		unpin_user_pages(pages, npages);
+		kvfree(pages);
+		return ret;
+	}
+
+	ret = dma_map_sgtable(dev, sgt, dir, 0);
+	if (ret) {
+		sg_free_table(sgt);
+		kfree(sgt);
+		unpin_user_pages(pages, npages);
+		kvfree(pages);
+		return ret;
+	}
+
+	plane->sgt = sgt;
+	plane->upages = pages;
+	plane->num_upages = npages;
+	plane->map_dir = dir;
+	plane->dma_addr = sg_dma_address(sgt->sgl);
 
 	return 0;
 }
+
+static void m2m1shot_unmap_userptr(struct device *dev,
+				   struct m2m1shot_buffer_plane_dma *plane)
+{
+	enum dma_data_direction dir = plane->map_dir;
+
+	if (!plane->sgt)
+		return;
+
+	dma_unmap_sgtable(dev, plane->sgt, dir, 0);
+	sg_free_table(plane->sgt);
+	kfree(plane->sgt);
+	plane->sgt = NULL;
+	if (plane->upages) {
+		unpin_user_pages(plane->upages, plane->num_upages);
+		kvfree(plane->upages);
+		plane->upages = NULL;
+		plane->num_upages = 0;
+	}
+	plane->dma_addr = 0;
+}
+
+int m2m1shot_dma_addr_map(struct device *dev,
+			  struct m2m1shot_buffer_dma *buf,
+			  int plane_idx, enum dma_data_direction dir)
+{
+	struct m2m1shot_buffer_plane_dma *plane = &buf->plane[plane_idx];
+
+	if (plane->dmabuf) {
+		if (!plane->sgt)
+			return -EINVAL;
+		/* the IOMMU maps the whole table at one contiguous address */
+		plane->map_dir = dir;
+		plane->dma_addr = sg_dma_address(plane->sgt->sgl) +
+				  plane->offset;
+		return 0;
+	}
+
+	return m2m1shot_map_userptr(dev, buf, plane_idx, dir);
+}
+EXPORT_SYMBOL(m2m1shot_dma_addr_map);
 
 void m2m1shot_dma_addr_unmap(struct device *dev,
 			struct m2m1shot_buffer_dma *buf, int plane_idx)
 {
 	struct m2m1shot_buffer_plane_dma *plane = &buf->plane[plane_idx];
-	dma_addr_t dma_addr = plane->dma_addr - plane->offset;
 
-	if (plane->dmabuf)
-		ion_iovmm_unmap(plane->attachment, dma_addr);
-	else
-		exynos_iovmm_unmap_userptr(dev, dma_addr);
+	if (plane->dmabuf) {
+		plane->dma_addr = 0;
+		return;
+	}
 
-	plane->dma_addr = 0;
+	m2m1shot_unmap_userptr(dev, plane);
 }
+EXPORT_SYMBOL(m2m1shot_dma_addr_unmap);
 
 void m2m1shot_sync_for_device(struct device *dev,
 			      struct m2m1shot_buffer_plane_dma *plane,
 			      enum dma_data_direction dir)
 {
-	if (plane->dmabuf)
-		exynos_ion_sync_dmabuf_for_device(dev, plane->dmabuf,
-						  plane->bytes_used, dir);
-	else
-		exynos_iommu_sync_for_device(dev, plane->dma_addr,
-					     plane->bytes_used, dir);
+	if (plane->sgt)
+		dma_sync_sgtable_for_device(dev, plane->sgt, dir);
 }
 EXPORT_SYMBOL(m2m1shot_sync_for_device);
 
@@ -115,11 +177,11 @@ void m2m1shot_sync_for_cpu(struct device *dev,
 			   struct m2m1shot_buffer_plane_dma *plane,
 			   enum dma_data_direction dir)
 {
-	if (plane->dmabuf)
-		exynos_ion_sync_dmabuf_for_cpu(dev, plane->dmabuf,
-					       plane->bytes_used, dir);
-	else
-		exynos_iommu_sync_for_cpu(dev, plane->dma_addr,
-					  plane->bytes_used, dir);
+	if (plane->sgt)
+		dma_sync_sgtable_for_cpu(dev, plane->sgt, dir);
 }
 EXPORT_SYMBOL(m2m1shot_sync_for_cpu);
+
+MODULE_DESCRIPTION("Exynos m2m1shot DMA mapping helpers");
+MODULE_LICENSE("GPL");
+MODULE_IMPORT_NS("DMA_BUF");
