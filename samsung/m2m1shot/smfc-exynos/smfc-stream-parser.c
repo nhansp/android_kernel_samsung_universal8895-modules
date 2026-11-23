@@ -278,7 +278,7 @@ static int smfc_parse_frameheader(struct smfc_ctx *ctx,
 
 	if (__get_u16(pos) != SOF0_LENGTH) {
 		dev_err(ctx->smfc->dev, "Unsupported data in SOF0\n");
-		return ret;
+		return -EINVAL;
 	}
 
 	if (*pos != 8) { /* bits per sample */
@@ -355,7 +355,7 @@ static int smfc_parse_scanheader(struct smfc_ctx *ctx,
 
 	if (__get_u16(pos) != SOS_LENGTH) {
 		dev_err(ctx->smfc->dev, "Unsupported length of SOS segment.\n");
-		return ret;
+		return -EINVAL;
 	}
 
 	if ((*pos != 3) && (*pos != 1)) { /* Ns: number of components */
