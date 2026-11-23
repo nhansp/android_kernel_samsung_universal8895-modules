@@ -3613,7 +3613,11 @@ __wl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 	 * scan. Hence return scan success.
 	 */
 	if (request && (scan_req_iftype(request) == NL80211_IFTYPE_AP)) {
+		struct cfg80211_scan_info info = { .aborted = false };
+
 		WL_DBG(("Scan Command on SoftAP Interface. Ignoring...\n"));
+		/* cfg80211 holds the request until it is reported done */
+		cfg80211_scan_done(request, &info);
 		return 0;
 	}
 
