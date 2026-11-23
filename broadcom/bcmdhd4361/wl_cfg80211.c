@@ -19009,6 +19009,34 @@ static void wl_cfg80211_regd_work(struct work_struct *w)
 	wiphy_apply_custom_regulatory(bcmcfg_to_wiphy(cfg), &brcm_regdom);
 }
 
+/* The per-band "bw_cap" as a mimo_bw_cap value; unchanged if the firmware lacks the iovar */
+static void wl_cfg80211_band_bw_cap(struct net_device *dev, s32 *bw_cap)
+{
+	struct {
+		u32 band;
+		u32 bw_cap;
+	} param = {0, 0};
+	u8 buf_2g[WLC_IOCTL_SMLEN], buf_5g[WLC_IOCTL_SMLEN];
+	s32 err;
+
+	param.band = WLC_BAND_2G;
+	err = wldev_iovar_getbuf(dev, "bw_cap", &param, sizeof(param), buf_2g,
+		sizeof(buf_2g), NULL);
+	if (err)
+		return;
+	param.band = WLC_BAND_5G;
+	err = wldev_iovar_getbuf(dev, "bw_cap", &param, sizeof(param), buf_5g,
+		sizeof(buf_5g), NULL);
+	if (err)
+		return;
+
+	WL_INFORM_MEM(("bw_cap 2g 0x%x 5g 0x%x, mimo_bw_cap %d\n", buf_2g[0], buf_5g[0], *bw_cap));
+	if (WL_BW_CAP_40MHZ(buf_5g[0]))
+		*bw_cap = WL_BW_CAP_40MHZ(buf_2g[0]) ? WLC_N_BW_40ALL : WLC_N_BW_20IN2G_40IN5G;
+	else
+		*bw_cap = WLC_N_BW_20ALL;
+}
+
 static s32 __wl_update_wiphybands(struct bcm_cfg80211 *cfg, bool notify)
 {
 	struct wiphy *wiphy;
@@ -19107,6 +19135,7 @@ static s32 __wl_update_wiphybands(struct bcm_cfg80211 *cfg, bool notify)
 		if (unlikely(err)) {
 			WL_ERR(("error get mimo_bw_cap (%d)\n", err));
 		}
+		wl_cfg80211_band_bw_cap(dev, &bw_cap);
 	}
 
 	err = wl_construct_reginfo(cfg, bw_cap);
@@ -19126,7 +19155,8 @@ static s32 __wl_update_wiphybands(struct bcm_cfg80211 *cfg, bool notify)
 				&__wl_band_5ghz_a;
 			index = NL80211_BAND_5GHZ;
 			if (nmode && (bw_cap == WLC_N_BW_40ALL || bw_cap == WLC_N_BW_20IN2G_40IN5G))
-				bands[index]->ht_cap.cap |= IEEE80211_HT_CAP_SGI_40;
+				bands[index]->ht_cap.cap |= IEEE80211_HT_CAP_SGI_40 |
+					IEEE80211_HT_CAP_SUP_WIDTH_20_40;
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 6, 0))
 			/* VHT capabilities. */
@@ -19218,7 +19248,8 @@ static s32 __wl_update_wiphybands(struct bcm_cfg80211 *cfg, bool notify)
 				&__wl_band_2ghz;
 			index = NL80211_BAND_2GHZ;
 			if (bw_cap == WLC_N_BW_40ALL)
-				bands[index]->ht_cap.cap |= IEEE80211_HT_CAP_SGI_40;
+				bands[index]->ht_cap.cap |= IEEE80211_HT_CAP_SGI_40 |
+					IEEE80211_HT_CAP_SUP_WIDTH_20_40;
 		}
 
 		if ((index >= 0) && nmode) {
