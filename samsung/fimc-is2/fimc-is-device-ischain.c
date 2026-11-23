@@ -3367,6 +3367,12 @@ static int fimc_is_ischain_close(struct fimc_is_device_ischain *device)
 	if (ret)
 		merr("fimc_is_itf_close is fail", device);
 
+	/* left by a HAL that died between DVFS_LOCK and DVFS_UNLOCK */
+	if (pm_qos_request_active(&device->user_qos)) {
+		mwarn("DVFS lock is still held, releasing it", device);
+		pm_qos_remove_request(&device->user_qos);
+	}
+
 	/* for mediaserver force close */
 	ret = fimc_is_resource_put(device->resourcemgr, RESOURCE_TYPE_ISCHAIN);
 	if (ret)
