@@ -896,7 +896,13 @@ static int mfc_parse_mfc_qos_platdata(struct device_node *np, char *node_name,
 	int ret = 0;
 	struct device_node *np_qos;
 
-	np_qos = of_find_node_by_name(np, node_name);
+	np_qos = of_get_child_by_name(np, "mfc_qos_table");
+	if (np_qos) {
+		struct device_node *table = np_qos;
+
+		np_qos = of_get_child_by_name(table, node_name);
+		of_node_put(table);
+	}
 	if (!np_qos) {
 		pr_err("%s: could not find mfc_qos_platdata node\n",
 			node_name);
@@ -911,6 +917,7 @@ static int mfc_parse_mfc_qos_platdata(struct device_node *np, char *node_name,
 	of_property_read_u32(np_qos, "mo_value", &qosdata->mo_value);
 	of_property_read_u32(np_qos, "mo_10bit_value", &qosdata->mo_10bit_value);
 	of_property_read_u32(np_qos, "time_fw", &qosdata->time_fw);
+	of_node_put(np_qos);
 
 	return ret;
 }
@@ -934,8 +941,12 @@ static void mfc_parse_dt(struct device_node *np, struct s5p_mfc_dev *mfc)
 	of_property_read_u32(np, "num_qos_steps", &pdata->num_qos_steps);
 	of_property_read_u32(np, "max_mb", &pdata->max_mb);
 
-	pdata->qos_table = devm_kzalloc(mfc->device,
-			sizeof(struct s5p_mfc_qos) * pdata->num_qos_steps, GFP_KERNEL);
+	pdata->qos_table = devm_kcalloc(mfc->device, pdata->num_qos_steps,
+					sizeof(struct s5p_mfc_qos), GFP_KERNEL);
+	if (!pdata->qos_table) {
+		pdata->num_qos_steps = 0;
+		return;
+	}
 
 	for (i = 0; i < pdata->num_qos_steps; i++) {
 		snprintf(node_name, sizeof(node_name), "mfc_qos_variant_%d", i);
