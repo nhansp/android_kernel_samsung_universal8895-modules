@@ -169,7 +169,14 @@ int s5p_mfc_mem_inv_vb(struct vb2_buffer *vb, u32 num_planes)
 int s5p_mfc_mem_get_user_shared_handle(struct s5p_mfc_ctx *ctx,
 	struct mfc_user_shared_handle *handle)
 {
+	int fd = handle->fd;
 	int ret;
+
+	if (handle->dmabuf) {
+		handle->fd = 0;
+		s5p_mfc_mem_cleanup_user_shared_handle(ctx, handle);
+		handle->fd = fd;
+	}
 
 	handle->dmabuf = dma_buf_get(handle->fd);
 	if (IS_ERR(handle->dmabuf)) {
