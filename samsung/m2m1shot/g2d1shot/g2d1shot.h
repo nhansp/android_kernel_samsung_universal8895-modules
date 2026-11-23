@@ -119,6 +119,8 @@ struct g2d_dummy_buf {
 #define G2D_STATE_RUNNING		(1 << 0)
 #define G2D_STATE_SUSPENDING		(1 << 1)
 #define G2D_STATE_TIMEOUT		(1 << 2)
+/* the IRQ handler is finishing the running job */
+#define G2D_STATE_IRQ			(1 << 3)
 
 enum g2d_hw_ppc_attr {
 	PPC_DEFAULT = 0, /* initial value */

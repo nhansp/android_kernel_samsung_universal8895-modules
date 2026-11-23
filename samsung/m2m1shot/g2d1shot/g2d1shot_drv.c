@@ -778,6 +778,17 @@ static irqreturn_t exynos_g2d_irq_handler(int irq, void *priv)
 	u32 hw_stat;
 	int retry = 3;
 
+	/* no register access before the state check: the block may be off */
+	spin_lock_irqsave(&g2d_dev->state_lock, flags);
+	if (!(g2d_dev->state & G2D_STATE_RUNNING) ||
+	    (g2d_dev->state & (G2D_STATE_TIMEOUT | G2D_STATE_IRQ))) {
+		spin_unlock_irqrestore(&g2d_dev->state_lock, flags);
+		return IRQ_NONE;
+	}
+	g2d_dev->state |= G2D_STATE_IRQ;
+	suspending = !!(g2d_dev->state & G2D_STATE_SUSPENDING);
+	spin_unlock_irqrestore(&g2d_dev->state_lock, flags);
+
 	g2d_dbg_begin();
 
 	/* IRQ handling */
@@ -793,23 +804,11 @@ static irqreturn_t exynos_g2d_irq_handler(int irq, void *priv)
 	m21ctx = m2m1shot2_current_context(g2d_dev->oneshot2_dev);
 	if (!m21ctx) {
 		dev_err(g2d_dev->dev, "received null in irq handler\n");
-		return IRQ_HANDLED;
-	}
-
-	spin_lock_irqsave(&g2d_dev->state_lock, flags);
-	if (!(g2d_dev->state & G2D_STATE_RUNNING)) {
-		dev_err(g2d_dev->dev, "interrupt, but no running\n");
+		spin_lock_irqsave(&g2d_dev->state_lock, flags);
+		g2d_dev->state &= ~G2D_STATE_IRQ;
 		spin_unlock_irqrestore(&g2d_dev->state_lock, flags);
 		return IRQ_HANDLED;
 	}
-	if (g2d_dev->state & G2D_STATE_TIMEOUT) {
-		dev_err(g2d_dev->dev, "interrupt, but already timedout\n");
-		g2d_dev->state &= ~G2D_STATE_RUNNING;
-		spin_unlock_irqrestore(&g2d_dev->state_lock, flags);
-		return IRQ_HANDLED;
-	}
-	suspending = !!(g2d_dev->state & G2D_STATE_SUSPENDING);
-	spin_unlock_irqrestore(&g2d_dev->state_lock, flags);
 
 	timer_delete(&g2d_dev->timer);
 
@@ -828,7 +827,7 @@ static irqreturn_t exynos_g2d_irq_handler(int irq, void *priv)
 	disable_g2d(g2d_dev);
 
 	spin_lock_irqsave(&g2d_dev->state_lock, flags);
-	g2d_dev->state &= ~G2D_STATE_RUNNING;
+	g2d_dev->state &= ~(G2D_STATE_RUNNING | G2D_STATE_IRQ);
 	spin_unlock_irqrestore(&g2d_dev->state_lock, flags);
 
 	m21ctx->work_delay_in_nsec = t_stop - g2d_dev->t_start;
@@ -861,24 +860,31 @@ static void g2d_timeout_handler(struct timer_list *t)
 	int hw_stat;
 	int retry = 3;
 
-	/* uninitialize H/W */
-	g2d_hw_stop(g2d_dev);
-
+	/* no register access before the state check: the block may be off */
 	spin_lock_irqsave(&g2d_dev->state_lock, flags);
-	if (!(g2d_dev->state & G2D_STATE_RUNNING)) {
+	if (!(g2d_dev->state & G2D_STATE_RUNNING) ||
+	    (g2d_dev->state & G2D_STATE_IRQ)) {
 		dev_err(g2d_dev->dev, "timeout, but not processing state\n");
 		spin_unlock_irqrestore(&g2d_dev->state_lock, flags);
 		return;
 	}
 
 	g2d_dev->state |= G2D_STATE_TIMEOUT;
+	suspending = !!(g2d_dev->state & G2D_STATE_SUSPENDING);
 	spin_unlock_irqrestore(&g2d_dev->state_lock, flags);
+
+	/* uninitialize H/W */
+	g2d_hw_stop(g2d_dev);
 
 	dev_err(g2d_dev->dev, "g2d1shot makes t_rec #%d\n", g2d_dev->num_rec++);
 
 	m21ctx = m2m1shot2_current_context(g2d_dev->oneshot2_dev);
 	if (!m21ctx) {
 		dev_err(g2d_dev->dev, "received null in timeout handler\n");
+		spin_lock_irqsave(&g2d_dev->state_lock, flags);
+		g2d_dev->state &= ~(G2D_STATE_TIMEOUT | G2D_STATE_RUNNING);
+		spin_unlock_irqrestore(&g2d_dev->state_lock, flags);
+		wake_up(&g2d_dev->suspend_wait);
 		return;
 	}
 
@@ -900,8 +906,7 @@ static void g2d_timeout_handler(struct timer_list *t)
 	disable_g2d(g2d_dev);
 
 	spin_lock_irqsave(&g2d_dev->state_lock, flags);
-	g2d_dev->state &= ~G2D_STATE_TIMEOUT;
-	suspending = !!(g2d_dev->state & G2D_STATE_SUSPENDING);
+	g2d_dev->state &= ~(G2D_STATE_TIMEOUT | G2D_STATE_RUNNING);
 	spin_unlock_irqrestore(&g2d_dev->state_lock, flags);
 
 	if (!suspending) {
@@ -909,8 +914,9 @@ static void g2d_timeout_handler(struct timer_list *t)
 	} else {
 		g2d_dev->suspend_ctx = m21ctx;
 		g2d_dev->suspend_ctx_success = false;
-		wake_up(&g2d_dev->suspend_wait);
 	}
+
+	wake_up(&g2d_dev->suspend_wait);
 }
 
 static int g2d_init_clock(struct device *dev, struct g2d1shot_dev *g2d_dev)
