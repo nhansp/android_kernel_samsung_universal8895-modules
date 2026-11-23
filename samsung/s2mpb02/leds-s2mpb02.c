@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * LED driver for Samsung S2MPB02
  *
@@ -22,11 +23,17 @@
 #include <linux/mfd/s2mpb02-private.h>
 #include <linux/leds-s2mpb02.h>
 #include <linux/ctype.h>
+#include <linux/gpio.h>
+#include <linux/of.h>
 #include <linux/of_gpio.h>
+#include <linux/sysfs.h>
 
-extern struct class *camera_class; /*sys/class/camera*/
-struct device *s2mpb02_led_dev;
-struct s2mpb02_led_data *global_led_datas[S2MPB02_LED_MAX];
+/* /sys/class/camera, shared with the camera driver, which loads after this one */
+struct class *camera_class;
+EXPORT_SYMBOL_GPL(camera_class);
+
+static struct device *s2mpb02_led_dev;
+static struct s2mpb02_led_data *global_led_datas[S2MPB02_LED_MAX];
 
 struct s2mpb02_led_data {
 	struct led_classdev led;
@@ -50,9 +57,9 @@ static u8 leds_shift[S2MPB02_LED_MAX] = {
 	0,
 };
 
-u32 flash1_gpio;
-u32 torch1_gpio;
-bool flash_config_factory;
+static u32 flash1_gpio;
+static u32 torch1_gpio;
+static bool flash_config_factory;
 
 static int s2mpb02_set_bits(struct i2c_client *client, const u8 reg,
 			     const u8 mask, const u8 inval)
@@ -89,22 +96,10 @@ static int s2mpb02_led_get_en_value(struct s2mpb02_led_data *led_data, int on)
 	}
 }
 
+/* the LED class device does not control the LED */
 static void s2mpb02_led_set(struct led_classdev *led_cdev,
 						enum led_brightness value)
 {
-#if 0 /* disable LED control by other sysfs */
-	unsigned long flags;
-	struct s2mpb02_led_data *led_data
-		= container_of(led_cdev, struct s2mpb02_led_data, led);
-
-	pr_debug("[LED] %s\n", __func__);
-
-	spin_lock_irqsave(&led_data->value_lock, flags);
-	led_data->data->brightness = min((int)value, S2MPB02_FLASH_TORCH_CURRENT_MAX);
-	spin_unlock_irqrestore(&led_data->value_lock, flags);
-
-	schedule_work(&led_data->work);
-#endif
 }
 
 static void led_set(struct s2mpb02_led_data *led_data, int turn_way)
@@ -255,56 +250,9 @@ static int s2mpb02_led_setup(struct s2mpb02_led_data *led_data)
 	return ret;
 }
 
-void s2mpb02_led_get_status(struct led_classdev *led_cdev, bool status, bool onoff)
-{
-	int ret = 0;
-	u8 value[6] = {0, };
-	struct s2mpb02_led_data *led_data
-		= container_of(led_cdev, struct s2mpb02_led_data, led);
-
-	ret = s2mpb02_read_reg(led_data->i2c, S2MPB02_REG_FLED_CTRL1, &value[0]); /*Fled_ctrl1*/
-	ret |= s2mpb02_read_reg(led_data->i2c, S2MPB02_REG_FLED_CTRL2, &value[1]); /*Fled_ctrl2*/
-	ret |= s2mpb02_read_reg(led_data->i2c, S2MPB02_REG_FLED_CUR1, &value[2]); /*Fled_cur1*/
-	ret |= s2mpb02_read_reg(led_data->i2c, S2MPB02_REG_FLED_TIME1, &value[3]); /*Fled_time1*/
-	ret |= s2mpb02_read_reg(led_data->i2c, S2MPB02_REG_FLED_CUR2, &value[4]); /*Fled_cur2*/
-	ret |= s2mpb02_read_reg(led_data->i2c, S2MPB02_REG_FLED_TIME2, &value[5]); /*Fled_time2*/
-	if (unlikely(ret < 0)) {
-		printk("%s : error to get dt node\n", __func__);
-	}
-
-	printk("%s[%d, %d] : Fled_ctrl1 = 0x%12x, Fled_ctrl2 = 0x%13x, Fled_cur1 = 0x%14x, "
-		"Fled_time1 = 0x%15x, Fled_cur2 = 0x%16x, Fled_time2 = 0x%17x\n",
-		__func__, status, onoff, value[0], value[1], value[2], value[3], value[4], value[5]);
-}
-
-#ifdef CONFIG_TORCH_CURRENT_CHANGE_SUPPORT
-int s2mpb02_set_torch_current(bool torch_mode)
-{
-	struct s2mpb02_led_data *led_data = global_led_datas[S2MPB02_TORCH_LED_1];
-	struct s2mpb02_led *data = led_data->data;
-	int ret = 0;
-
-	pr_info("%s: torch_mode %d\n", __func__, torch_mode);
-	mutex_lock(&led_data->lock);
-
-	data->brightness = torch_mode ? S2MPB02_TORCH_OUT_I_60MA
-			: global_led_datas[S2MPB02_TORCH_LED_1]->data->brightness_cam;
-
-	/* set current */
-	ret = s2mpb02_set_bits(led_data->i2c, S2MPB02_REG_FLED_CUR1,
-			  leds_mask[data->id], data->brightness << leds_shift[data->id]);
-	if (unlikely(ret)) {
-		pr_err("%s: failed to set FLED_CUR1, %d\n", __func__, ret);
-	}
-
-	mutex_unlock(&led_data->lock);
-	return ret;
-}
-#endif
-
-ssize_t s2mpb02_store(struct device *dev,
-			struct device_attribute *attr, const char *buf,
-			size_t count)
+static ssize_t s2mpb02_store(struct device *dev,
+			     struct device_attribute *attr, const char *buf,
+			     size_t count)
 {
 	int value = 0;
 	int ret = 0;
@@ -387,8 +335,8 @@ ssize_t s2mpb02_store(struct device *dev,
 	return count;
 }
 
-ssize_t s2mpb02_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
+static ssize_t s2mpb02_show(struct device *dev,
+			    struct device_attribute *attr, char *buf)
 {
 	if (global_led_datas[S2MPB02_TORCH_LED_1] == NULL) {
 		pr_err("<%s> global_led_datas[S2MPB02_TORCH_LED_1] is NULL\n", __func__);
@@ -396,101 +344,8 @@ ssize_t s2mpb02_show(struct device *dev,
 	}
 
 	pr_info("[LED] %s , MAX STEP TORCH_LED:%d\n", __func__, S2MPB02_TORCH_OUT_I_MAX - 1);
-	return sprintf(buf, "%d\n", S2MPB02_TORCH_OUT_I_MAX - 1);
+	return sysfs_emit(buf, "%d\n", S2MPB02_TORCH_OUT_I_MAX - 1);
 }
-
-#ifdef CONFIG_LEDS_IRIS_IRLED_CERTIFICATE_SUPPORT
-ssize_t s2mpb02_irled_torch_store(struct device *dev,
-			struct device_attribute *attr, const char *buf,
-			size_t count)
-{
-	int value = 0;
-	u8 ledvalue = 0;
-	int ret = 0;
-
-	if ((buf == NULL) || kstrtouint(buf, 10, &value)) {
-		return -1;
-	}
-
-	if(global_led_datas[0] == NULL) {
-		pr_err("<%s> global_led_datas[S2MPB02_TORCH_LED_1] is NULL\n", __func__);
-		return -1;
-	}
-
-	pr_info("%s , value:%d\n", __func__, value);
-	if (value == 1) {
-		pr_info("%s IRLED TORCH ON\n", __func__);
-		/* FLED_TIME2.IR_MAX_TIMER_EN Disable */
-		ret |= s2mpb02_update_reg(global_led_datas[0]->i2c,
-				S2MPB02_REG_FLED_TIME2,
-				S2MPB02_FLED_TIME2_IRMAX_TIMER_DISABLE,
-				S2MPB02_FLED_TIME2_IRMAX_TIMER_EN_MASK);
-
-		/* Remote-mode off, TORCH MODE */
-		ret |= s2mpb02_update_reg(global_led_datas[0]->i2c,
-				S2MPB02_REG_FLED_CTRL2,
-				S2MPB02_FLED_CTRL2_TORCH_ON,
-				S2MPB02_FLED_CTRL2_TORCH_MASK);
-		ret |= s2mpb02_update_reg(global_led_datas[0]->i2c,
-				S2MPB02_REG_FLED_CUR2, 0x0E, S2MPB02_FLED_CUR2_TORCH_CUR2_MASK);
-	} else if (value == 0) {
-		pr_info("%s IRLED TORCH OFF\n", __func__);
-		/* Remote-mode off, Power-LED Mode on, GPIO Polarity */
-		ret |= s2mpb02_update_reg(global_led_datas[0]->i2c,
-				S2MPB02_REG_FLED_CTRL2,
-				S2MPB02_FLED_CTRL2_FLASH_ON,
-				S2MPB02_FLED_CTRL2_TORCH_MASK);
-	} else {
-		pr_err("%s value(%d) is invalid!!\n", __func__, value);
-		return -1;
-	}
-	ret |= s2mpb02_read_reg(global_led_datas[0]->i2c, S2MPB02_REG_FLED_CTRL2, &ledvalue);
-	pr_info("[LED]%s , ledvalue:%x\n", __func__, ledvalue);
-
-	return count;
-}
-
-ssize_t s2mpb02_irled_torch_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct s2mpb02_led_data *led_data;
-	int ret = 0;
-	u8 value[10] = {0, };
-
-	if(global_led_datas[0] == NULL) {
-		pr_err("<%s> global_led_datas[S2MPB02_TORCH_LED_1] is NULL\n", __func__);
-		return -1;
-	}
-        led_data = global_led_datas[0];
-
-	ret = s2mpb02_read_reg(led_data->i2c, S2MPB02_REG_FLED_CTRL1, &value[0]); //Fled_ctrl1
-	ret |= s2mpb02_read_reg(led_data->i2c, S2MPB02_REG_FLED_CTRL2, &value[1]); //Fled_ctrl2
-	ret |= s2mpb02_read_reg(led_data->i2c, S2MPB02_REG_FLED_CUR1, &value[2]); //Fled_cur1
-	ret |= s2mpb02_read_reg(led_data->i2c, S2MPB02_REG_FLED_TIME1, &value[3]); //Fled_time1
-	ret |= s2mpb02_read_reg(led_data->i2c, S2MPB02_REG_FLED_CUR2, &value[4]); //Fled_cur2
-	ret |= s2mpb02_read_reg(led_data->i2c, S2MPB02_REG_FLED_TIME2, &value[5]); //Fled_time2
-	ret |= s2mpb02_read_reg(led_data->i2c, S2MPB02_REG_FLED_IRON1, &value[6]); //Fled_iron1
-	ret |= s2mpb02_read_reg(led_data->i2c, S2MPB02_REG_FLED_IRON2, &value[7]); //Fled_iron2
-	ret |= s2mpb02_read_reg(led_data->i2c, S2MPB02_REG_FLED_IRD1, &value[8]); //Fled_ird1
-	ret |= s2mpb02_read_reg(led_data->i2c, S2MPB02_REG_FLED_IRD2, &value[9]); //Fled_ird2
-	if (unlikely(ret < 0)) {
-		printk("%s : error to get dt node\n", __func__);
-	}
-
-	pr_info("%s : Fled_ctrl1 = 0x%12x, Fled_ctrl2 = 0x%13x, Fled_cur1 = 0x%14x, "
-		"Fled_time1 = 0x%15x, Fled_cur2 = 0x%16x, Fled_time2 = 0x%17x, "
-		"Fled_iron1 = 0x%x, Fled_iron2 = 0x%x, Fled_ird1 = 0x%x, Fled_ird2 = 0x%x\n",
-		__func__, value[0], value[1], value[2], value[3], value[4], value[5],
-		value[6], value[7], value[8], value[9]);
-
-	return sprintf(buf, "0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x\n",
-			value[0], value[1], value[2], value[3], value[4], value[5],
-			value[6], value[7], value[8], value[9]);
-}
-
-static DEVICE_ATTR(irled_torch, S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP|S_IROTH,
-	s2mpb02_irled_torch_show, s2mpb02_irled_torch_store);
-#endif
 
 static DEVICE_ATTR(rear_flash, S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP|S_IROTH,
 	s2mpb02_show, s2mpb02_store);
@@ -727,8 +582,8 @@ static int s2mpb02_led_probe(struct platform_device *pdev)
 		return -EFAULT;
 	}
 #endif
-	led_datas = kzalloc(sizeof(struct s2mpb02_led_data *)
-			    * S2MPB02_LED_MAX, GFP_KERNEL);
+	led_datas = kcalloc(S2MPB02_LED_MAX, sizeof(struct s2mpb02_led_data *),
+			    GFP_KERNEL);
 	if (unlikely(!led_datas)) {
 		pr_err("[LED] memory allocation error %s", __func__);
 		kfree(pdata);
@@ -824,21 +679,13 @@ static int s2mpb02_led_probe(struct platform_device *pdev)
 			pr_err("<%s> failed to create device file, %s\n",
 				__func__ , dev_attr_rear_torch_flash.attr.name);
 		}
-
-#ifdef CONFIG_LEDS_IRIS_IRLED_CERTIFICATE_SUPPORT
-		if (device_create_file(s2mpb02_led_dev,
-					 &dev_attr_irled_torch) < 0) {
-			pr_err("<%s> failed to create device file, %s\n",
-				__func__ , dev_attr_irled_torch.attr.name);
-		}
-#endif
 	}
 
 	pr_err("<%s> end\n", __func__);
 	return ret;
 }
 
-static int s2mpb02_led_remove(struct platform_device *pdev)
+static void s2mpb02_led_remove(struct platform_device *pdev)
 {
 	struct s2mpb02_led_data **led_datas = platform_get_drvdata(pdev);
 	int i;
@@ -860,16 +707,11 @@ static int s2mpb02_led_remove(struct platform_device *pdev)
 	if (s2mpb02_led_dev) {
 		device_remove_file(s2mpb02_led_dev, &dev_attr_rear_flash);
 		device_remove_file(s2mpb02_led_dev, &dev_attr_rear_torch_flash);
-#ifdef CONFIG_LEDS_IRIS_IRLED_CERTIFICATE_SUPPORT
-		device_remove_file(s2mpb02_led_dev, &dev_attr_irled_torch);
-#endif
 	}
 
 	if (camera_class && s2mpb02_led_dev) {
 		device_destroy(camera_class, s2mpb02_led_dev->devt);
 	}
-
-	return 0;
 }
 
 static void s2mpb02_led_shutdown(struct device *dev)
@@ -883,22 +725,33 @@ static struct platform_driver s2mpb02_led_driver = {
 	.remove		= s2mpb02_led_remove,
 	.driver		= {
 	.name		= "s2mpb02-led",
-	.owner		= THIS_MODULE,
 	.shutdown	= s2mpb02_led_shutdown,
 	},
 };
 
 static int __init s2mpb02_led_init(void)
 {
-	return platform_driver_register(&s2mpb02_led_driver);
+	int ret;
+
+	camera_class = class_create("camera");
+	if (IS_ERR(camera_class))
+		return PTR_ERR(camera_class);
+
+	ret = platform_driver_register(&s2mpb02_led_driver);
+	if (ret)
+		class_destroy(camera_class);
+
+	return ret;
 }
 module_init(s2mpb02_led_init);
 
 static void __exit s2mpb02_led_exit(void)
 {
 	platform_driver_unregister(&s2mpb02_led_driver);
+	class_destroy(camera_class);
 }
 module_exit(s2mpb02_led_exit);
 
 MODULE_DESCRIPTION("S2MPB02 LED driver");
 MODULE_LICENSE("GPL");
+MODULE_ALIAS("platform:s2mpb02-led");

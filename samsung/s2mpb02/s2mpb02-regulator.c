@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * s2mpb02_regulator.c - Regulator driver for the Samsung s2mpb02
  *
@@ -23,9 +24,8 @@
 #include <linux/bug.h>
 #include <linux/delay.h>
 #include <linux/err.h>
-#include <linux/gpio.h>
+#include <linux/of.h>
 #include <linux/slab.h>
-#include <linux/module.h>
 #include <linux/platform_device.h>
 #include <linux/regulator/driver.h>
 #include <linux/regulator/machine.h>
@@ -40,35 +40,10 @@ struct s2mpb02_data {
 	int opmode[S2MPB02_REGULATOR_MAX];
 };
 
-#ifdef CONFIG_SEC_PM_DEBUG
-static char debug_temp[100] = "\0";
-
-static int __init pmic_setup(char *s)
-{
-	if (!s)
-		return -EINVAL;
-	strcpy(debug_temp, s);
-	pr_info("%s: %s\n", __func__, debug_temp);
-
-	return 0;
-}
-early_param("sub_pmic", pmic_setup);
-#endif
-
 static int s2m_enable(struct regulator_dev *rdev)
 {
 	struct s2mpb02_data *info = rdev_get_drvdata(rdev);
 	struct i2c_client *i2c = info->iodev->i2c;
-
-#ifdef CONFIG_SEC_PM_DEBUG
-	pr_info("%s: %s enable (0x%x)\n", __func__, rdev->desc->name, rdev->desc->enable_reg);
-
-	if (*debug_temp != '\0') {
-		if (strstr(debug_temp, rdev->desc->name)) {
-			dump_stack();
-		}
-	}
-#endif
 
 	return s2mpb02_update_reg(i2c, rdev->desc->enable_reg,
 				  info->opmode[rdev_get_id(rdev)],
@@ -80,16 +55,6 @@ static int s2m_disable_regmap(struct regulator_dev *rdev)
 	struct s2mpb02_data *info = rdev_get_drvdata(rdev);
 	struct i2c_client *i2c = info->iodev->i2c;
 	u8 val;
-
-#ifdef CONFIG_SEC_PM_DEBUG
-	pr_info("%s: %s disable (0x%x)\n", __func__, rdev->desc->name, rdev->desc->enable_reg);
-
-	if (*debug_temp != '\0') {
-		if (strstr(debug_temp, rdev->desc->name)) {
-			dump_stack();
-		}
-	}
-#endif
 
 	if (rdev->desc->enable_is_inverted)
 		val = rdev->desc->enable_mask;
@@ -194,7 +159,7 @@ static int s2m_set_voltage_time_sel(struct regulator_dev *rdev,
 	return 0;
 }
 
-static struct regulator_ops s2mpb02_ldo_ops = {
+static const struct regulator_ops s2mpb02_ldo_ops = {
 	.list_voltage		= regulator_list_voltage_linear,
 	.map_voltage		= regulator_map_voltage_linear,
 	.is_enabled		= s2m_is_enabled_regmap,
@@ -205,7 +170,7 @@ static struct regulator_ops s2mpb02_ldo_ops = {
 	.set_voltage_time_sel	= s2m_set_voltage_time_sel,
 };
 
-static struct regulator_ops s2mpb02_buck_ops = {
+static const struct regulator_ops s2mpb02_buck_ops = {
 	.list_voltage		= regulator_list_voltage_linear,
 	.map_voltage		= regulator_map_voltage_linear,
 	.is_enabled		= s2m_is_enabled_regmap,
@@ -256,7 +221,7 @@ static struct regulator_ops s2mpb02_buck_ops = {
 	.enable_time	= t					\
 }
 
-static struct regulator_desc regulators[S2MPB02_REGULATOR_MAX] = {
+static const struct regulator_desc regulators[S2MPB02_REGULATOR_MAX] = {
 		/* name, id, ops, min_uv, uV_step, vsel_reg, enable_reg */
 		LDO_DESC("s2mpb02-ldo1", _LDO(1), &_ldo_ops(), _LDO(_MIN1),
 			_LDO(_STEP1), _REG(_L1CTRL),
@@ -357,8 +322,8 @@ static int s2mpb02_pmic_dt_parse_pdata(struct s2mpb02_dev *iodev,
 		pdata->num_regulators++;
 	}
 
-	rdata = devm_kzalloc(iodev->dev, sizeof(*rdata) *
-				pdata->num_regulators, GFP_KERNEL);
+	rdata = devm_kcalloc(iodev->dev, pdata->num_regulators,
+			     sizeof(*rdata), GFP_KERNEL);
 	if (!rdata) {
 		dev_err(iodev->dev,
 			"could not allocate memory for regulator data\n");
@@ -368,8 +333,7 @@ static int s2mpb02_pmic_dt_parse_pdata(struct s2mpb02_dev *iodev,
 	pdata->regulators = rdata;
 	for_each_child_of_node(regulators_np, reg_np) {
 		for (i = 0; i < ARRAY_SIZE(regulators); i++)
-			if (!of_node_cmp(reg_np->name,
-					regulators[i].name))
+			if (of_node_name_eq(reg_np, regulators[i].name))
 				break;
 
 		if (i == ARRAY_SIZE(regulators)) {
@@ -439,7 +403,8 @@ static int s2mpb02_pmic_probe(struct platform_device *pdev)
 		config.driver_data = s2mpb02;
 		config.of_node = pdata->regulators[i].reg_node;
 		s2mpb02->opmode[id] = regulators[id].enable_mask;
-		s2mpb02->rdev[i] = regulator_register(&regulators[id], &config);
+		s2mpb02->rdev[i] = regulator_register(&pdev->dev,
+						      &regulators[id], &config);
 		if (IS_ERR(s2mpb02->rdev[i])) {
 			ret = PTR_ERR(s2mpb02->rdev[i]);
 			dev_err(&pdev->dev, "regulator init failed for %d\n",
@@ -464,7 +429,7 @@ static int s2mpb02_pmic_probe(struct platform_device *pdev)
 	return ret;
 }
 
-static int s2mpb02_pmic_remove(struct platform_device *pdev)
+static void s2mpb02_pmic_remove(struct platform_device *pdev)
 {
 	struct s2mpb02_data *s2mpb02 = platform_get_drvdata(pdev);
 	int i;
@@ -472,8 +437,6 @@ static int s2mpb02_pmic_remove(struct platform_device *pdev)
 	for (i = 0; i < s2mpb02->num_regulators; i++)
 		if (s2mpb02->rdev[i])
 			regulator_unregister(s2mpb02->rdev[i]);
-
-	return 0;
 }
 
 static const struct platform_device_id s2mpb02_pmic_id[] = {
@@ -486,7 +449,6 @@ MODULE_DEVICE_TABLE(platform, s2mpb02_pmic_id);
 static struct platform_driver s2mpb02_pmic_driver = {
 	.driver = {
 		   .name = "s2mpb02-regulator",
-		   .owner = THIS_MODULE,
 		   .suppress_bind_attrs = true,
 		   },
 	.probe = s2mpb02_pmic_probe,

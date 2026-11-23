@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: GPL-2.0-only
+
+ccflags-y += -I$(src)/include
+ccflags-y += -DCONFIG_LEDS_S2MPB02=1
+ccflags-y += -DCONFIG_LEDS_IRIS_IRLED_SUPPORT=1
+
+obj-m += s2mpb02-core.o
+obj-m += s2mpb02-regulator.o
+obj-m += leds-s2mpb02.o

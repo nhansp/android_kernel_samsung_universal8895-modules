@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * leds-S2MPB02.h - Flash-led driver for Samsung S2MPB02
  *

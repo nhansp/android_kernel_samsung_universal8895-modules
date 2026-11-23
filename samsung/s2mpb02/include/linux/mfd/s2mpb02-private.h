@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * s2mpb02-private.h - Voltage regulator driver for the Samsung s2mpb02
  *

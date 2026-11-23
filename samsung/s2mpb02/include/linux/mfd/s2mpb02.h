@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * s2mpb02.h - Driver for the Samsung s2mpb02
  *
@@ -96,10 +97,6 @@ struct s2mpb02_platform_data {
 	int devs_num;
 	struct mfd_cell *devs;
 };
-
-extern int s2mpb02_irq_init(struct s2mpb02_dev *s2mpb02);
-extern void s2mpb02_irq_exit(struct s2mpb02_dev *s2mpb02);
-extern int s2mpb02_irq_resume(struct s2mpb02_dev *s2mpb02);
 
 /* S2MPB02 shared i2c API function */
 extern int s2mpb02_read_reg(struct i2c_client *i2c, u8 reg, u8 *dest);
