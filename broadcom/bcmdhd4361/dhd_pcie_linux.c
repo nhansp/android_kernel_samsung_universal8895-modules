@@ -732,7 +732,6 @@ static int dhdpcie_suspend_dev(struct pci_dev *dev)
 		DHD_ERROR(("%s: pci_set_power_state error %d\n",
 			__FUNCTION__, ret));
 	}
-	dev->state_saved = FALSE;
 	return ret;
 }
 
