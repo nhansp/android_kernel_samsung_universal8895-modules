@@ -7,3 +7,4 @@ obj-m += m2m1shot2/
 obj-m += g2d1shot/
 obj-m += m2m1shot/
 obj-m += smfc-exynos/
+obj-m += scaler-exynos/

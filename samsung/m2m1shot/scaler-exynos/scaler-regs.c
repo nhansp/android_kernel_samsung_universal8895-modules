@@ -627,7 +627,7 @@ void sc_hwset_pre_multi_format(struct sc_dev *sc, bool src, bool dst)
 	}
 }
 
-void get_blend_value(unsigned int *cfg, u32 val, bool pre_multi)
+static void get_blend_value(unsigned int *cfg, u32 val, bool pre_multi)
 {
 	unsigned int tmp;
 
@@ -724,7 +724,7 @@ void sc_hwset_dith(struct sc_dev *sc, unsigned int val)
 void sc_hwset_csc_coef(struct sc_dev *sc, enum sc_csc_idx idx,
 			struct sc_csc *csc)
 {
-	unsigned int i, j, tmp;
+	unsigned int i, j;
 	unsigned long cfg;
 	int *csc_eq_val;
 
@@ -753,8 +753,6 @@ void sc_hwset_csc_coef(struct sc_dev *sc, enum sc_csc_idx idx,
 				csc_eq_val = sc_csc_list[idx]->wide_601;
 		}
 	}
-
-	tmp = SCALER_CSC_COEF22 - SCALER_CSC_COEF00;
 
 	for (i = 0, j = 0; i < 9; i++, j += 4) {
 		cfg = readl(sc->regs + SCALER_CSC_COEF00 + j);

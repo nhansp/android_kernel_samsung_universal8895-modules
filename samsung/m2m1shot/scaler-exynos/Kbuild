@@ -1,0 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0-only
+
+scaler-exynos-y := scaler-core.o scaler-regs.o
+obj-m += scaler-exynos.o
