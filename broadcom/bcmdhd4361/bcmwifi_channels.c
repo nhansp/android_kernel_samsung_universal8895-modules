@@ -36,7 +36,6 @@
 #ifdef BCMDRIVER
 #include <osl.h>
 #define strtoul(nptr, endptr, base) bcm_strtoul((nptr), (endptr), (base))
-#define tolower(c) (bcm_isupper((c)) ? ((c) + 'a' - 'A') : (c))
 #else
 #include <stdio.h>
 #include <stdlib.h>
@@ -399,7 +398,7 @@ wf_chspec_aton(const char *a)
 	if (!read_uint(&a, &num))
 		return 0;
 	/* if we are looking at a 'g', then the first number was a band */
-	c = tolower((int)a[0]);
+	c = bcm_tolower((int)a[0]);
 	if (c == 'g') {
 		a++; /* consume the char */
 
@@ -415,7 +414,7 @@ wf_chspec_aton(const char *a)
 		if (!read_uint(&a, &pri_ch))
 			return 0;
 
-		c = tolower((int)a[0]);
+		c = bcm_tolower((int)a[0]);
 	}
 	else {
 		/* first number is channel, use default for band */
@@ -469,7 +468,7 @@ wf_chspec_aton(const char *a)
 	 * or '+80' if bw = 80, to make '80+80' bw.
 	 */
 
-	c = tolower((int)a[0]);
+	c = bcm_tolower((int)a[0]);
 
 	/* if we have a 2g/40 channel, we should have a l/u spec now */
 	if (chspec_band == WL_CHANSPEC_BAND_2G && bw == 40) {

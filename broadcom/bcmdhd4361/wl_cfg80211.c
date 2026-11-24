@@ -1180,8 +1180,6 @@ static const struct {
 #define BUFSZ 5
 #define BUFSZN	BUFSZ + 1
 
-#define _S(x) #x
-#define S(x) _S(x)
 
 #define SOFT_AP_IF_NAME         "swlan0"
 
@@ -20824,7 +20822,7 @@ wl_debuglevel_write(struct file *file, const char __user *userbuf,
 		if (colon != NULL) {
 			*colon = ' ';
 		}
-		tokens = sscanf(token, "%"S(SUBLOGLEVEL)"s %u", sublog, &log_on);
+		tokens = sscanf(token, "%"__stringify(SUBLOGLEVEL)"s %u", sublog, &log_on);
 		if (colon != NULL)
 			*colon = ':';
 
@@ -21545,7 +21543,8 @@ int wl_cfg80211_wbtext_weight_config(struct net_device *ndev, char *data,
 	bwcfg->type = 0;
 	bwcfg->weight = 0;
 
-	argc = sscanf(data, "%"S(BUFSZ)"s %"S(BUFSZ)"s %"S(BUFSZ)"s", rssi, band, weight);
+	argc = sscanf(data, "%"__stringify(BUFSZ)"s %"__stringify(BUFSZ)"s %"__stringify(BUFSZ)"s",
+		rssi, band, weight);
 
 	if (!strcasecmp(rssi, "rssi"))
 		bwcfg->type = WNM_BSS_SELECT_TYPE_RSSI;
@@ -21636,7 +21635,7 @@ int wl_cfg80211_wbtext_table_config(struct net_device *ndev, char *data,
 	btcfg->type = 0;
 	btcfg->count = 0;
 
-	sscanf(data, "%"S(BUFSZ)"s %"S(BUFSZ)"s", rssi, band);
+	sscanf(data, "%"__stringify(BUFSZ)"s %"__stringify(BUFSZ)"s", rssi, band);
 
 	if (!strcasecmp(rssi, "rssi")) {
 		btcfg->type = WNM_BSS_SELECT_TYPE_RSSI;
@@ -21745,7 +21744,7 @@ wl_cfg80211_wbtext_delta_config(struct net_device *ndev, char *data, char *comma
 		goto exit;
 	}
 
-	argc = sscanf(data, "%"S(BUFSZ)"s %"S(BUFSZ)"s", band, delta);
+	argc = sscanf(data, "%"__stringify(BUFSZ)"s %"__stringify(BUFSZ)"s", band, delta);
 	if (!strcasecmp(band, "a"))
 		rp->band = WLC_BAND_5G;
 	else if (!strcasecmp(band, "b"))
