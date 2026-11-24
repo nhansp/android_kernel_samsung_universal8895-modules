@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: GPL-2.0-only
 
+KBUILD_EXTRA_SYMBOLS += $(obj)/../m2m1shot/Module.symvers $(obj)/../s2mpb02/Module.symvers
+
 obj-m += fimc-is.o
 
 fimc-is-y := \
@@ -186,6 +188,7 @@ ccflags-y += -DANDROID_VERSION=90000
 ccflags-y += -I$(src)
 ccflags-y += -I$(src)/include
 ccflags-y += -I$(src)/include/uapi
+ccflags-y += -I$(src)/../mfc/include/uapi
 ccflags-y += -I$(src)/interface
 ccflags-y += -I$(src)/hardware
 ccflags-y += -I$(src)/hardware/api
