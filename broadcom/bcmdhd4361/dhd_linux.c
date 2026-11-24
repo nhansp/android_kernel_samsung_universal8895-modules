@@ -1527,7 +1527,6 @@ bool g_pm_control;
 #ifdef DHD_EXPORT_CNTL_FILE
 int pmmode_val;
 #endif /* DHD_EXPORT_CNTL_FILE */
-void sec_control_pm(dhd_pub_t *dhd, uint *);
 #endif /* DHD_PM_CONTROL_FROM_FILE */
 
 #if defined(WL_WIRELESS_EXT)

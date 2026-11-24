@@ -111,6 +111,7 @@ extern int net_os_set_suspend_disable(struct net_device *dev, int val);
 extern int net_os_set_suspend(struct net_device *dev, int val, int force);
 extern int net_os_set_suspend_bcn_li_dtim(struct net_device *dev, int val);
 extern int net_os_set_max_dtim_enable(struct net_device *dev, int val);
+extern int dhd_ioctl_entry_local(struct net_device *net, wl_ioctl_t *ioc, int cmd);
 extern int wl_parse_ssid_list_tlv(char** list_str, wlc_ssid_ext_t* ssid,
 	int max, int *bytes_left);
 

@@ -697,10 +697,6 @@ static int dhdpcie_pm_system_resume_noirq(struct device * dev)
 }
 #endif /* DHD_PCIE_NATIVE_RUNTIMEPM */
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 0, 0))
-extern void dhd_dpc_tasklet_kill(dhd_pub_t *dhdp);
-#endif /* OEM_ANDROID && LINUX_VERSION_CODE >= KERNEL_VERSION(3, 0, 0) */
-
 static int dhdpcie_suspend_dev(struct pci_dev *dev)
 {
 	int ret;

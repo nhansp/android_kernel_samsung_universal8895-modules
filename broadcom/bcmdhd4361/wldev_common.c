@@ -57,8 +57,6 @@
 		printk args;							\
 	} while (0)
 
-extern int dhd_ioctl_entry_local(struct net_device *net, wl_ioctl_t *ioc, int cmd);
-
 static s32 wldev_ioctl(
 	struct net_device *dev, u32 cmd, void *arg, u32 len, u32 set)
 {

@@ -876,21 +876,6 @@ int dhd_add_monitor(const char *name, struct net_device **new_ndev);
 int dhd_del_monitor(struct net_device *ndev);
 int dhd_monitor_init(void *dhd_pub);
 int dhd_monitor_uninit(void);
-netdev_tx_t dhd_start_xmit(struct sk_buff *skb, struct net_device *net);
-
-#ifdef ESCAN_CHANNEL_CACHE
-void reset_roam_cache(struct bcm_cfg80211 *cfg);
-void add_roam_cache(struct bcm_cfg80211 *cfg, wl_bss_info_t *bi);
-int  get_roam_channel_list(int target_chan, chanspec_t *channels,
-	int n_channels, const wlc_ssid_t *ssid, int ioctl_ver);
-void set_roam_band(int band);
-#endif /* ESCAN_CHANNEL_CACHE */
-
-#ifdef ROAM_CHANNEL_CACHE
-int init_roam_cache(struct bcm_cfg80211 *cfg, int ioctl_ver);
-void print_roam_cache(struct bcm_cfg80211 *cfg);
-void update_roam_cache(struct bcm_cfg80211 *cfg, int ioctl_ver);
-#endif /* ROAM_CHANNEL_CACHE */
 
 #ifdef P2P_LISTEN_OFFLOADING
 s32 wl_cfg80211_p2plo_deinit(struct bcm_cfg80211 *cfg);

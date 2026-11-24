@@ -51,6 +51,7 @@
 #include <pcie_core.h>
 #include <bcmpcie.h>
 #include <dhd_pcie.h>
+#include <dhd_linux.h>
 
 #if defined(DHD_LB)
 #include <linux/cpu.h>
@@ -577,12 +578,6 @@ static void dhd_prot_flow_ring_delete_response_process(dhd_pub_t *dhd, void *msg
 static void dhd_prot_flow_ring_flush_response_process(dhd_pub_t *dhd, void *msg);
 static void dhd_prot_process_flow_ring_resume_response(dhd_pub_t *dhd, void* msg);
 static void dhd_prot_process_flow_ring_suspend_response(dhd_pub_t *dhd, void* msg);
-
-/* Monitor Mode */
-#ifdef WL_MONITOR
-extern bool dhd_monitor_enabled(dhd_pub_t *dhd, int ifidx);
-extern void dhd_rx_mon_pkt(dhd_pub_t *dhdp, host_rxbuf_cmpl_t* msg, void *pkt, int ifidx);
-#endif /* WL_MONITOR */
 
 /* Configure a soft doorbell per D2H ring */
 static void dhd_msgbuf_ring_config_d2h_soft_doorbell(dhd_pub_t *dhd);
@@ -3184,11 +3179,6 @@ dhd_prot_reset(dhd_pub_t *dhd)
 
 #if defined(DHD_LB)
 /* DHD load balancing: deferral of work to another online CPU */
-/* DHD_LB_TXC DHD_LB_RXC DHD_LB_RXP dispatchers, in dhd_linux.c */
-extern void dhd_lb_tx_compl_dispatch(dhd_pub_t *dhdp);
-extern void dhd_lb_rx_compl_dispatch(dhd_pub_t *dhdp);
-extern void dhd_lb_rx_napi_dispatch(dhd_pub_t *dhdp);
-extern void dhd_lb_rx_pkt_enqueue(dhd_pub_t *dhdp, void *pkt, int ifidx);
 
 #if defined(DHD_LB_RXP)
 /**

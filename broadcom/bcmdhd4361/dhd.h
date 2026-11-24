@@ -2827,6 +2827,7 @@ void dhd_schedule_dmaxfer_free(dhd_pub_t *dhdp, dmaxref_mem_map_t *dmmap);
 #if defined(DHD_LB_STATS)
 #include <bcmutils.h>
 extern void dhd_lb_stats_init(dhd_pub_t *dhd);
+extern void dhd_lb_stats_deinit(dhd_pub_t *dhd);
 extern void dhd_lb_stats_dump(dhd_pub_t *dhdp, struct bcmstrbuf *strbuf);
 extern void dhd_lb_stats_update_napi_histo(dhd_pub_t *dhdp, uint32 count);
 extern void dhd_lb_stats_update_txc_histo(dhd_pub_t *dhdp, uint32 count);
@@ -3165,5 +3166,32 @@ void argos_config_mumimo_reset(void);
 #define CHECK_IS_BLOB(dhdp)		FALSE
 #define CHECK_IS_MULT_REGREV(dhdp)	TRUE
 #endif /* DHD_BLOB_EXISTENCE_CHECK && DHD_USE_CLMINFO_PARSER */
+
+extern int dhd_change_mtu(dhd_pub_t *dhd, int new_mtu, int ifidx);
+extern uint32 dhd_get_concurrent_capabilites(dhd_pub_t *dhd);
+extern void dhd_set_packet_filter(dhd_pub_t *dhd);
+extern int _dhd_set_mac_address(struct dhd_info *dhd, int ifidx, uint8 *addr);
+extern netdev_tx_t dhd_start_xmit(struct sk_buff *skb, struct net_device *net);
+extern int dhd_dev_init_ioctl(struct net_device *dev);
+extern void dhd_dpc_enable(dhd_pub_t *dhdp);
+extern void dhd_dpc_kill(dhd_pub_t *dhdp);
+extern void dhd_dpc_tasklet_kill(dhd_pub_t *dhdp);
+
+/* DHD_LB_TXC DHD_LB_RXC DHD_LB_RXP dispatchers, in dhd_linux.c */
+extern void dhd_lb_tx_compl_dispatch(dhd_pub_t *dhdp);
+extern void dhd_lb_rx_compl_dispatch(dhd_pub_t *dhdp);
+extern void dhd_lb_rx_napi_dispatch(dhd_pub_t *dhdp);
+extern void dhd_lb_rx_pkt_enqueue(dhd_pub_t *dhdp, void *pkt, int ifidx);
+
+extern int wl_pattern_atoh(char *src, char *dst);
+extern int pattern_atoh_len(char *src, char *dst, int len);
+
+#ifdef DHD_PM_CONTROL_FROM_FILE
+extern void sec_control_pm(dhd_pub_t *dhd, uint *power_mode);
+#endif /* DHD_PM_CONTROL_FROM_FILE */
+
+#ifdef EXYNOS_PCIE_LINKDOWN_RECOVERY
+extern void dhd_host_recover_link(void);
+#endif /* EXYNOS_PCIE_LINKDOWN_RECOVERY */
 
 #endif /* _dhd_h_ */

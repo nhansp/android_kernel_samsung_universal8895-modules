@@ -345,4 +345,5 @@ extern int dhdpcie_set_dma_ring_indices(dhd_pub_t *dhd, int32 int_val);
 #ifdef DHD_USE_BP_RESET
 extern int dhd_bus_perform_bp_reset(struct dhd_bus *bus);
 #endif /* DHD_USE_BP_RESET */
+extern int dhd_socram_dump(struct dhd_bus *bus);
 #endif /* _dhd_bus_h_ */

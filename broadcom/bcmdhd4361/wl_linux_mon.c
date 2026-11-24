@@ -51,7 +51,6 @@ typedef enum monitor_states
 	MONITOR_STATE_INTERFACE_DELETED = 0x4
 } monitor_states_t;
 int dhd_add_monitor(const char *name, struct net_device **new_ndev);
-extern netdev_tx_t dhd_start_xmit(struct sk_buff *skb, struct net_device *net);
 int dhd_del_monitor(struct net_device *ndev);
 int dhd_monitor_init(void *dhd_pub);
 int dhd_monitor_uninit(void);

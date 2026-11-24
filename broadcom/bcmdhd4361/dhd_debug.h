@@ -727,6 +727,8 @@ extern void dhd_dbg_verboselog_printf(dhd_pub_t *dhdp, event_log_hdr_t *hdr,
 int dhd_dbg_pull_from_ring(dhd_pub_t *dhdp, int ring_id, void *data, uint32 buf_len);
 int dhd_dbg_pull_single_from_ring(dhd_pub_t *dhdp, int ring_id, void *data, uint32 buf_len,
 	bool strip_header);
+uint32 __dhd_dbg_pkt_hash(uintptr_t pkt, uint32 pktid);
+wifi_tx_packet_fate __dhd_dbg_map_tx_status_to_pkt_fate(uint16 status);
 int dhd_dbg_push_to_ring(dhd_pub_t *dhdp, int ring_id, dhd_dbg_ring_entry_t *hdr,
 		void *data);
 int dhd_dbg_get_ring_status(dhd_pub_t *dhdp, int ring_id,

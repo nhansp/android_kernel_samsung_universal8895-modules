@@ -37,5 +37,6 @@ void dhd_event_log_filter_event_handler(
 
 void dhd_event_log_filter_notify_connect_request(dhd_pub_t *dhdp, uint8 *bssid, int channel);
 void dhd_event_log_filter_notify_connect_done(dhd_pub_t *dhdp, uint8 *bssid, int roam);
+uint32 dhd_event_log_filter_serialize(dhd_pub_t *dhdp, char *in_buf, uint32 tot_len, int type);
 
 #endif /* dhd_event_log_filter_h */

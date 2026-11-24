@@ -40,10 +40,6 @@
 #ifndef strtoul
 #define strtoul(nptr, endptr, base) bcm_strtoul((nptr), (endptr), (base))
 #endif // endif
-extern int wl_pattern_atoh(char *src, char *dst);
-extern int pattern_atoh_len(char *src, char *dst, int len);
-extern uint32 __dhd_dbg_pkt_hash(uintptr_t pkt, uint32 pktid);
-extern wifi_tx_packet_fate __dhd_dbg_map_tx_status_to_pkt_fate(uint16 status);
 
 int
 dhd_os_attach_pktlog(dhd_pub_t *dhdp)

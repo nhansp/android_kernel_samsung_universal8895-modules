@@ -62,6 +62,7 @@
 
 #ifdef WL_CFG80211
 #include <wl_cfg80211.h>
+#include <wldev_common.h>
 #endif // endif
 #ifdef PNO_SUPPORT
 #include <dhd_pno.h>
@@ -170,14 +171,6 @@ extern void dhd_ind_scan_confirm(void *h, bool status);
 extern int dhd_iscan_in_progress(void *h);
 void dhd_iscan_lock(void);
 void dhd_iscan_unlock(void);
-extern int dhd_change_mtu(dhd_pub_t *dhd, int new_mtu, int ifidx);
-#if !defined(AP) && defined(WLP2P)
-extern int dhd_get_concurrent_capabilites(dhd_pub_t *dhd);
-#endif // endif
-
-extern int dhd_socram_dump(struct dhd_bus *bus);
-extern void dhd_set_packet_filter(dhd_pub_t *dhd);
-
 #ifdef DNGL_EVENT_SUPPORT
 static void dngl_host_event_process(dhd_pub_t *dhdp, bcm_dngl_event_t *event,
 	bcm_dngl_event_msg_t *dngl_event, size_t pktlen);

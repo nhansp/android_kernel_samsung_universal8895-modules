@@ -159,8 +159,6 @@ static void dhdpcie_bus_reg_unmap(osl_t *osh, volatile char *addr, int size);
 static int dhdpcie_cc_nvmshadow(dhd_bus_t *bus, struct bcmstrbuf *b);
 static void dhdpcie_fw_trap(dhd_bus_t *bus);
 static void dhd_fillup_ring_sharedptr_info(dhd_bus_t *bus, ring_info_t *ring_info);
-extern void dhd_dpc_enable(dhd_pub_t *dhdp);
-extern void dhd_dpc_kill(dhd_pub_t *dhdp);
 
 #ifdef DHD_PCIE_NATIVE_RUNTIMEPM
 static void dhdpcie_handle_mb_data(dhd_bus_t *bus);
@@ -188,9 +186,6 @@ static void dhdpcie_cto_error_recovery(struct dhd_bus *bus);
 static int dhdpcie_init_d11status(struct dhd_bus *bus);
 
 static int dhdpcie_wrt_rnd(struct dhd_bus *bus);
-
-extern uint16 dhd_prot_get_h2d_max_txpost(dhd_pub_t *dhd);
-extern void dhd_prot_set_h2d_max_txpost(dhd_pub_t *dhd, uint16 max_txpost);
 
 static int dhdpcie_wrt_host_whitelist_region(struct dhd_bus *bus);
 

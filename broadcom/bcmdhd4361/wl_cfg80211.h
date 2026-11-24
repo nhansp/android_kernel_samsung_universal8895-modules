@@ -1859,6 +1859,34 @@ extern s32 wl_cfg80211_set_p2p_resp_ap_chn(struct net_device *net, s32 enable);
 /* btcoex functions */
 void* wl_cfg80211_btcoex_init(struct net_device *ndev);
 void wl_cfg80211_btcoex_deinit(void);
+int wl_cfg80211_set_btcoex_dhcp(struct net_device *dev, dhd_pub_t *dhd, char *command);
+
+/* wl_roam.c */
+#ifdef ESCAN_CHANNEL_CACHE
+void reset_roam_cache(struct bcm_cfg80211 *cfg);
+void add_roam_cache(struct bcm_cfg80211 *cfg, wl_bss_info_t *bi);
+int  get_roam_channel_list(int target_chan, chanspec_t *channels,
+	int n_channels, const wlc_ssid_t *ssid, int ioctl_ver);
+void set_roam_band(int band);
+#endif /* ESCAN_CHANNEL_CACHE */
+
+#ifdef ROAM_CHANNEL_CACHE
+int init_roam_cache(struct bcm_cfg80211 *cfg, int ioctl_ver);
+void print_roam_cache(struct bcm_cfg80211 *cfg);
+void update_roam_cache(struct bcm_cfg80211 *cfg, int ioctl_ver);
+void wl_update_roamscan_cache_by_band(struct net_device *dev, int band);
+#endif /* ROAM_CHANNEL_CACHE */
+
+#ifdef WES_SUPPORT
+int get_roamscan_mode(struct net_device *dev, int *mode);
+int set_roamscan_mode(struct net_device *dev, int mode);
+int get_roamscan_channel_list(struct net_device *dev,
+	unsigned char channels[], int n_channels);
+int set_roamscan_channel_list(struct net_device *dev, unsigned char n,
+	unsigned char channels[], int ioctl_ver);
+int wl_cfg80211_set_wes_mode(int mode);
+int wl_cfg80211_get_wes_mode(void);
+#endif /* WES_SUPPORT */
 
 extern chanspec_t wl_chspec_from_legacy(chanspec_t legacy_chspec);
 extern chanspec_t wl_chspec_driver_to_host(chanspec_t chanspec);

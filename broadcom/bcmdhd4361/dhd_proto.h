@@ -190,6 +190,8 @@ extern bool dhd_prot_pkt_fixed_rate(dhd_pub_t *dhd, bool enable, bool set);
 #endif /* BCMPCIE */
 
 extern void dhd_prot_dma_indx_free(dhd_pub_t *dhd);
+extern uint16 dhd_prot_get_h2d_max_txpost(dhd_pub_t *dhd);
+extern void dhd_prot_set_h2d_max_txpost(dhd_pub_t *dhd, uint16 max_txpost);
 
 /********************************
  * For version-string expansion *

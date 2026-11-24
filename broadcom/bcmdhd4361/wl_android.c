@@ -65,6 +65,7 @@
 #include <bcmiov.h>
 #ifdef DHD_PKT_LOGGING
 #include <dhd_pktlog.h>
+#include <dhd_event_log_filter.h>
 #endif /* DHD_PKT_LOGGING */
 
 #ifdef WL_STATIC_IF
@@ -609,14 +610,8 @@ static struct genl_multicast_group wl_genl_mcast = {
  * Extern function declarations (TODO: move them to dhd_linux.h)
  */
 int dhd_net_bus_devreset(struct net_device *dev, uint8 flag);
-int dhd_dev_init_ioctl(struct net_device *dev);
 #ifdef WL_CFG80211
 int wl_cfg80211_get_p2p_dev_addr(struct net_device *net, struct ether_addr *p2pdev_addr);
-int wl_cfg80211_set_btcoex_dhcp(struct net_device *dev, dhd_pub_t *dhd, char *command);
-#ifdef WES_SUPPORT
-int wl_cfg80211_set_wes_mode(int mode);
-int wl_cfg80211_get_wes_mode(void);
-#endif /* WES_SUPPORT */
 #else
 int wl_cfg80211_get_p2p_dev_addr(struct net_device *net, struct ether_addr *p2pdev_addr)
 { return 0; }
@@ -638,18 +633,6 @@ static int wl_cfg80211_wbtext_btm_timer_threshold(struct net_device *dev,
 static int wl_cfg80211_wbtext_btm_delta(struct net_device *dev,
 	char *command, int total_len);
 #endif /* WBTEXT */
-#ifdef WES_SUPPORT
-/* wl_roam.c */
-extern int get_roamscan_mode(struct net_device *dev, int *mode);
-extern int set_roamscan_mode(struct net_device *dev, int mode);
-extern int get_roamscan_channel_list(struct net_device *dev,
-	unsigned char channels[], int n_channels);
-extern int set_roamscan_channel_list(struct net_device *dev, unsigned char n,
-	unsigned char channels[], int ioctl_ver);
-#endif /* WES_SUPPORT */
-#ifdef ROAM_CHANNEL_CACHE
-extern void wl_update_roamscan_cache_by_band(struct net_device *dev, int band);
-#endif /* ROAM_CHANNEL_CACHE */
 
 #ifdef ENABLE_4335BT_WAR
 extern int bcm_bt_lock(int cookie);
@@ -6670,7 +6653,6 @@ wl_android_pktlog_change_size(struct net_device *dev, char *command, int total_l
 #endif /* DHD_PKT_LOGGING */
 
 #ifdef DHD_EVENT_LOG_FILTER
-uint32 dhd_event_log_filter_serialize(dhd_pub_t *dhdp, char *buf, uint32 tot_len, int type);
 static int
 wl_android_ewp_filter(struct net_device *dev, char *command, uint32 tot_len)
 {

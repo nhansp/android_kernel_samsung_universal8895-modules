@@ -251,6 +251,7 @@ extern uint si_wrapperreg(si_t *sih, uint32 offset, uint32 mask, uint32 val);
 extern uint si_core_wrapperreg(si_t *sih, uint32 coreidx, uint32 offset, uint32 mask, uint32 val);
 extern void *si_wrapperregs(si_t *sih);
 extern uint32 si_core_cflags(si_t *sih, uint32 mask, uint32 val);
+extern uint32 si_clear_backplane_to(si_t *sih);
 extern void si_core_cflags_wo(si_t *sih, uint32 mask, uint32 val);
 extern uint32 si_core_sflags(si_t *sih, uint32 mask, uint32 val);
 extern void si_commit(si_t *sih);

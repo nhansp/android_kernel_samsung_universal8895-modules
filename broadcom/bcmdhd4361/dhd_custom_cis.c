@@ -92,7 +92,6 @@ typedef struct tuple_entry {
 	uint32 cis_idx;		/* index of each tuples */
 } tuple_entry_t;
 
-extern int _dhd_set_mac_address(struct dhd_info *dhd, int ifidx, struct ether_addr *addr);
 #if defined(GET_MAC_FROM_OTP) || defined(USE_CID_CHECK)
 static tuple_entry_t *dhd_alloc_tuple_entry(dhd_pub_t *dhdp, const int idx);
 static void dhd_free_tuple_entry(dhd_pub_t *dhdp, struct list_head *head);
@@ -340,7 +339,7 @@ dhd_set_macaddr_from_file(dhd_pub_t *dhdp)
 		(uint32 *)&(mac->octet[2]), (uint32 *)&(mac->octet[3]),
 		(uint32 *)&(mac->octet[4]), (uint32 *)&(mac->octet[5]));
 
-	if (_dhd_set_mac_address(dhd, 0, mac) == 0) {
+	if (_dhd_set_mac_address(dhd, 0, mac->octet) == 0) {
 		DHD_INFO(("%s: MAC Address is overwritten\n", __FUNCTION__));
 	} else {
 		DHD_ERROR(("%s: _dhd_set_mac_address() failed\n", __FUNCTION__));
@@ -378,7 +377,7 @@ dhd_set_macaddr_from_file(dhd_pub_t *dhdp)
 	/* Write the MAC address to the Dongle */
 	memcpy(mac, &sysfs_mac_addr, sizeof(sysfs_mac_addr));
 
-	if (_dhd_set_mac_address(dhd, 0, mac) == 0) {
+	if (_dhd_set_mac_address(dhd, 0, mac->octet) == 0) {
 		DHD_INFO(("%s: MAC Address is overwritten\n", __FUNCTION__));
 	} else {
 		DHD_ERROR(("%s: _dhd_set_mac_address() failed\n", __FUNCTION__));
@@ -572,7 +571,7 @@ dhd_check_module_mac(dhd_pub_t *dhdp)
 #endif /* !DHD_MAC_ADDR_EXPORT */
 	}
 
-	if (_dhd_set_mac_address(dhd, 0, mac) == 0) {
+	if (_dhd_set_mac_address(dhd, 0, mac->octet) == 0) {
 		DHD_INFO(("%s: MAC Address is set\n", __FUNCTION__));
 	} else {
 		DHD_ERROR(("%s: Failed to set MAC address\n", __FUNCTION__));

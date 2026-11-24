@@ -55,6 +55,8 @@
 #include <bcmmsgbuf.h>
 #define MAX_RADIOTAP_SIZE      256 /* Maximum size to hold HE Radiotap header format */
 #define MAX_MON_PKT_SIZE       (4096 + MAX_RADIOTAP_SIZE)
+extern bool dhd_monitor_enabled(dhd_pub_t *dhd, int ifidx);
+extern void dhd_rx_mon_pkt(dhd_pub_t *dhdp, host_rxbuf_cmpl_t* msg, void *pkt, int ifidx);
 #endif /* WL_MONITOR */
 
 #define htod32(i) (i)

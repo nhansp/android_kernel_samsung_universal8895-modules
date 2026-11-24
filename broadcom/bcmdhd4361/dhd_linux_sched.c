@@ -31,6 +31,8 @@
 #include <linux/sched.h>
 #include <typedefs.h>
 #include <linuxver.h>
+#include <osl.h>
+#include <dhd.h>
 
 int setScheduler(struct task_struct *p, int policy, struct sched_param *param)
 {
