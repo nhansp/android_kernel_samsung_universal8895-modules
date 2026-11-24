@@ -1393,32 +1393,6 @@ ifeq ($(GGSM_WIFI_5GHz_CHANNELS),true)
   DHDCFLAGS += -DCUSTOMER_SET_COUNTRY
 endif
 
-# Compiler option for specific platform
-ifeq ($(CONFIG_SOC_EXYNOS8890),y)
-  DHDCFLAGS += -Wno-date-time
-endif
-ifeq ($(CONFIG_SOC_EXYNOS7570),y)
-  DHDCFLAGS += -Wno-date-time
-endif
-ifeq ($(CONFIG_SOC_EXYNOS8890),y)
-  DHDCFLAGS += -Wno-date-time
-endif
-ifeq ($(CONFIG_BCMDHD_EXYNOS8895),y)
-  DHDCFLAGS += -Wno-date-time
-endif
-ifeq ($(CONFIG_ARCH_MSM8996),y)
-  DHDCFLAGS += -Wno-date-time
-endif
-ifeq ($(CONFIG_ARCH_MSM8998),y)
-  DHDCFLAGS += -Wno-date-time
-endif
-ifeq ($(CONFIG_SOC_EXYNOS9810),y)
-  DHDCFLAGS += -Wno-date-time
-endif
-ifeq ($(CONFIG_ARCH_SDM845),y)
-  DHDCFLAGS += -Wno-date-time
-endif
-
 # DTS Support
 ifeq ($(CONFIG_OF),y)
 ifneq ($(CONFIG_MACH_UNIVERSAL5433),)
@@ -1476,7 +1450,6 @@ DHDCFLAGS += -DDHD_OF_SUPPORT
 endif
 ifneq ($(CONFIG_SOC_EXYNOS7870),)
 DHDCFLAGS += -DDHD_OF_SUPPORT
-DHDCFLAGS += -Wno-date-time
 endif
 ifneq ($(CONFIG_SOC_EXYNOS7570),)
 DHDCFLAGS += -DDHD_OF_SUPPORT
@@ -1517,8 +1490,6 @@ ccflags-y += -DSRCBASE=\"$(src)\"
 ccflags-y += -I$(src)/include/ -I$(src)/
 ccflags-y += $(call cc-option, -Wunused-but-set-variable)
 ccflags-y += $(call cc-option, -Wmaybe-uninitialized)
-# The vendor code is not warning-free on this kernel, which builds with -Werror
-ccflags-y += -Wno-error
 
 DHDOFILES := dhd_pno.o dhd_common.o dhd_ip.o dhd_custom_gpio.o dhd_custom_sec.o \
 	dhd_linux.o dhd_linux_sched.o dhd_cfg80211.o dhd_linux_wq.o aiutils.o bcmevent.o \
