@@ -39,45 +39,6 @@
 #define MS_IDENTIFIER 1000000000U
 #endif
 
-static u64 get_delay(u64 kernel_delay)
-{
-	u64 ret = kernel_delay;
-	u64 ms_delay = kernel_delay/1000000;
-
-	if (ms_delay == 200)
-		ret = 180 * 1000000;
-	else if (ms_delay >= 60 && ms_delay < 70)
-		ret = 60 * 1000000;
-
-	return ret;
-}
-
-/*Compensate timestamp for jitter.*/
-static u64 get_leveling_timestamp(u64 timestamp, struct ssp_data *data, u64 time_delta, int sensor_type)
-{
-	u64 ret = timestamp;
-	u64 base_time = get_delay(data->adDelayBuf[sensor_type]);
-	u64 prev_time = data->lastTimestamp[sensor_type];
-	u64 threshold = base_time + prev_time + ((base_time / 10000) * data->timestamp_factor);
-	u64 level_threshold = base_time + prev_time + ((base_time / 10) * 19);
-
-	if (data->first_sensor_data[sensor_type] == true) {
-		if (time_delta == 1) {
-			// check first data for base_time
-			//pr_err("[SSP_DEBUG_TIME] sensor_type: %2d first_timestamp: %lld\n", sensor_type, timestamp);
-			data->first_sensor_data[sensor_type] = false;
-		}
-		goto exit_current;
-	}
-
-	if (threshold < timestamp && level_threshold > timestamp)
-		return timestamp - threshold < 30 * 1000000 ? threshold : timestamp;
-
-
-exit_current:
-	return ret;
-}
-
 static void get_timestamp(struct ssp_data *data, char *pchRcvDataFrame,
 		int *iDataIdx, struct sensor_value *sensorsdata,
 		u16 batch_mode, int sensor_type)
