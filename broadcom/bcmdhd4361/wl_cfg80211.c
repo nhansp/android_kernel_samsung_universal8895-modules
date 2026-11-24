@@ -11406,7 +11406,7 @@ wl_cfg80211_start_ap(
 	}
 
 #ifdef SUPPORT_AP_RADIO_PWRSAVE
-	if ((dev_role == NL80211_IFTYPE_AP)) {
+	if (dev_role == NL80211_IFTYPE_AP) {
 		if (!wl_set_ap_rps(dev, FALSE, dev->name)) {
 			wl_cfg80211_init_ap_rps(cfg);
 		} else {
@@ -23235,7 +23235,7 @@ wl_cfg80211_tdls_config(struct bcm_cfg80211 *cfg, enum wl_tdls_config state, boo
 	/* Protect tdls config session */
 	mutex_lock(&cfg->tdls_sync);
 
-	if ((state == TDLS_STATE_TEARDOWN)) {
+	if (state == TDLS_STATE_TEARDOWN) {
 		/* Host initiated TDLS tear down */
 		err = dhd_tdls_enable(ndev, false, auto_mode, NULL);
 		goto exit;
