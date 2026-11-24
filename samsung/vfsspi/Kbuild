@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: GPL-2.0-only
 
+KBUILD_EXTRA_SYMBOLS += $(obj)/../../trustonic/kinibi400/Module.symvers
+
 ccflags-y += -DCONFIG_SECURE_OS_BOOSTER_API=1
+ccflags-y += -I$(src)/../../trustonic/kinibi400/include
 
 obj-m += vfsspi_exynos8895.o
