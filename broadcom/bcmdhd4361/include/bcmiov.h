@@ -131,7 +131,7 @@ struct bcm_iov_batch_subcmd {
 		uint32 options;
 		uint32 status;
 	} u;
-	uint8 data[1];
+	uint8 data[];
 };
 
 struct bcm_iov_batch_buf {

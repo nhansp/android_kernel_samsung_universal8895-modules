@@ -21689,8 +21689,6 @@ int wl_cfg80211_wbtext_table_config(struct net_device *ndev, char *data,
 		err = bytes_written;
 		goto exit;
 	} else {
-		memset(btcfg->params, 0, sizeof(wnm_bss_select_factor_params_t)
-					* WL_FACTOR_TABLE_MAX_LIMIT);
 		data += (strlen(rssi) + strlen(band) + 2);
 		start_addr = data;
 		slen = slen - (strlen(rssi) + strlen(band) + 2);
