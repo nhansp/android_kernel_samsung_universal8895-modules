@@ -12045,43 +12045,47 @@ dhd_preinit_ioctls(dhd_pub_t *dhd)
 					MIN(strlen(ver_temp_buf) + 1, CLM_VER_STR_LEN - 1));
 				DHD_INFO(("CLM version = %s\n", clm_version));
 			}
-		}
 
 #if defined(CUSTOMER_HW4_DEBUG)
-		if ((ver_temp_buf = bcmstrstr(ptr, "Customization:")) == NULL) {
-			DHD_ERROR(("Couldn't find \"Customization:\"\n"));
-		} else {
-			char tokenlim;
-			ptr = (ver_temp_buf + strlen("Customization:"));
-			if ((ver_temp_buf = bcmstrtok(&ptr, "(\n", &tokenlim)) == NULL) {
-				DHD_ERROR(("Couldn't find project blob version"
-					"or New line character\n"));
-			} else if (tokenlim == '(') {
-				snprintf(clm_version,
-					CLM_VER_STR_LEN - 1, "%s, Blob ver = Major : %s minor : ",
-					clm_version, ver_temp_buf);
-				DHD_INFO(("[INFO]CLM/Blob version = %s\n", clm_version));
-				if ((ver_temp_buf = bcmstrtok(&ptr, "\n", &tokenlim)) == NULL) {
-					DHD_ERROR(("Couldn't find New line character\n"));
-				} else {
+			if ((ver_temp_buf = bcmstrstr(ptr, "Customization:")) == NULL) {
+				DHD_ERROR(("Couldn't find \"Customization:\"\n"));
+			} else {
+				char tokenlim;
+				ptr = (ver_temp_buf + strlen("Customization:"));
+				if ((ver_temp_buf = bcmstrtok(&ptr, "(\n", &tokenlim)) == NULL) {
+					DHD_ERROR(("Couldn't find project blob version"
+						"or New line character\n"));
+				} else if (tokenlim == '(') {
 					snprintf(clm_version,
-						strlen(clm_version) + strlen(ver_temp_buf),
+						CLM_VER_STR_LEN - 1,
+						"%s, Blob ver = Major : %s minor : ",
+						clm_version, ver_temp_buf);
+					DHD_INFO(("[INFO]CLM/Blob version = %s\n", clm_version));
+					if ((ver_temp_buf = bcmstrtok(&ptr, "\n",
+						&tokenlim)) == NULL) {
+						DHD_ERROR(("Couldn't find New line character\n"));
+					} else {
+						snprintf(clm_version,
+							strlen(clm_version) + strlen(ver_temp_buf),
+							"%s%s",	clm_version, ver_temp_buf);
+						DHD_INFO(("[INFO]CLM/Blob/project version = %s\n",
+							clm_version));
+
+					}
+				} else if (tokenlim == '\n') {
+					snprintf(clm_version,
+						strlen(clm_version) +
+						strlen(", Blob ver = Major : ") + 1,
+						"%s, Blob ver = Major : ", clm_version);
+					snprintf(clm_version,
+						strlen(clm_version) + strlen(ver_temp_buf) + 1,
 						"%s%s",	clm_version, ver_temp_buf);
 					DHD_INFO(("[INFO]CLM/Blob/project version = %s\n",
 						clm_version));
-
 				}
-			} else if (tokenlim == '\n') {
-				snprintf(clm_version,
-					strlen(clm_version) + strlen(", Blob ver = Major : ") + 1,
-					"%s, Blob ver = Major : ", clm_version);
-				snprintf(clm_version,
-					strlen(clm_version) + strlen(ver_temp_buf) + 1,
-					"%s%s",	clm_version, ver_temp_buf);
-				DHD_INFO(("[INFO]CLM/Blob/project version = %s\n", clm_version));
 			}
-		}
 #endif /* CUSTOMER_HW4_DEBUG */
+		}
 		if (strlen(clm_version)) {
 			DHD_ERROR(("CLM version = %s\n", clm_version));
 		} else {
