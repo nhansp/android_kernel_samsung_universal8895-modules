@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: GPL-2.0
 
+KBUILD_EXTRA_SYMBOLS += $(obj)/../sensorhub/Module.symvers
+
 ccflags-y += -DCONFIG_SENSORS_HRM_MAX86902=1
 ccflags-y += -DCONFIG_SENSORS_HRM_MAX869_ENHANCED_EOL=1
 ccflags-y += -DCONFIG_SENSORS_HRM_MAX869_NEW_EOL=1
