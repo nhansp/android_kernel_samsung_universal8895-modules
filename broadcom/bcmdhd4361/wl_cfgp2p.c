@@ -2631,7 +2631,7 @@ wl_cfgp2p_need_wait_actfrmae(struct bcm_cfg80211 *cfg, void *frame, u32 frame_le
 	wifi_p2p_pub_act_frame_t *pact_frm;
 	int status = 0;
 
-	if (!frame || (frame_len < (sizeof(*pact_frm) + WL_P2P_AF_STATUS_OFFSET - 1))) {
+	if (!frame || (frame_len < (sizeof(*pact_frm) + WL_P2P_AF_STATUS_OFFSET))) {
 		return;
 	}
 
