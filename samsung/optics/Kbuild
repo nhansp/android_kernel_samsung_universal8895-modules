@@ -7,10 +7,6 @@ ccflags-y += -DCONFIG_SENSORS_HRM_MAX869_ENHANCED_EOL=1
 ccflags-y += -DCONFIG_SENSORS_HRM_MAX869_NEW_EOL=1
 ccflags-y += -DCONFIG_MAX86902_THRESHOLD=80000
 
-# vendor code: cross-file functions without prototypes, duplicate const and the like
-ccflags-y += -Wno-duplicate-decl-specifier -Wno-enum-conversion -Wno-missing-prototypes \
-	     -Wno-missing-declarations -Wno-logical-not-parentheses
-
 obj-m += hrmsensor.o
 
 hrmsensor-y := hrm_max86902.o hrmsensor_core.o

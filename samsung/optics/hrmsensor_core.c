@@ -449,7 +449,7 @@ static int hrm_eol_test_onoff(struct hrm_device_data *data, int onoff)
 	return err;
 }
 
-void hrm_mode_enable(struct hrm_device_data *data,
+static void hrm_mode_enable(struct hrm_device_data *data,
 	int onoff, enum hrm_mode mode)
 {
 	int err;
@@ -1270,7 +1270,7 @@ static struct device_attribute *hrm_sensor_attrs[] = {
 	NULL,
 };
 
-void hrm_pin_control(struct hrm_device_data *data, bool pin_set)
+static void hrm_pin_control(struct hrm_device_data *data, bool pin_set)
 {
 	int status = 0;
 
@@ -1299,7 +1299,7 @@ void hrm_pin_control(struct hrm_device_data *data, bool pin_set)
 	}
 }
 
-irqreturn_t hrm_irq_handler(int hrm_irq, void *device)
+static irqreturn_t hrm_irq_handler(int hrm_irq, void *device)
 {
 	int err;
 	struct hrm_device_data *data = device;
@@ -1469,7 +1469,7 @@ static int hrm_setup_gpio(struct hrm_device_data *data)
 	return data->hrm_irq < 0 ? data->hrm_irq : 0;
 }
 
-int hrm_set_func(struct hrm_device_data *data)
+static int hrm_set_func(struct hrm_device_data *data)
 {
 	int err = 0;
 	char chip_name[NAME_LEN];
@@ -1509,7 +1509,7 @@ int hrm_set_func(struct hrm_device_data *data)
 #ifdef CONFIG_SPI_TO_I2C_FPGA
 static int hrm_probe(struct platform_device *pdev)
 #else
-int hrm_probe(struct i2c_client *client)
+static int hrm_probe(struct i2c_client *client)
 #endif
 {
 	int err = -ENODEV;
@@ -1726,7 +1726,7 @@ done:
 #ifdef CONFIG_SPI_TO_I2C_FPGA
 static int hrm_remove(struct platform_device *pdev)
 #else
-void hrm_remove(struct i2c_client *client)
+static void hrm_remove(struct i2c_client *client)
 #endif
 {
 #ifdef CONFIG_SPI_TO_I2C_FPGA

@@ -1969,7 +1969,7 @@ static int agc_adj_calculator(struct max869_device_data *data,
 	return 0;
 }
 
-int __max869_hrm_agc(struct max869_device_data *data, int counts, int led_num)
+static int __max869_hrm_agc(struct max869_device_data *data, int counts, int led_num)
 {
 	int err = 0;
 	int avg = 0;
@@ -2252,7 +2252,7 @@ static int __max86902_read_temperature(struct max869_device_data *data)
 	return 0;
 }
 
-int __max869_get_num_samples_in_fifo(struct max869_device_data *data)
+static int __max869_get_num_samples_in_fifo(struct max869_device_data *data)
 {
 	int fifo_rd_ptr;
 	int fifo_wr_ptr;
@@ -2287,7 +2287,7 @@ int __max869_get_num_samples_in_fifo(struct max869_device_data *data)
 	return num_samples;
 }
 
-int __max869_get_fifo_settings(struct max869_device_data *data, u16 *ch)
+static int __max869_get_fifo_settings(struct max869_device_data *data, u16 *ch)
 {
 	int num_item = 0;
 	int i;
@@ -2315,7 +2315,7 @@ int __max869_get_fifo_settings(struct max869_device_data *data, u16 *ch)
 	return num_item;
 }
 
-int __max869_read_fifo(struct max869_device_data *sd, char *fifo_buf, int num_bytes)
+static int __max869_read_fifo(struct max869_device_data *sd, char *fifo_buf, int num_bytes)
 {
 	int ret = 0;
 	int data_offset = 0;
@@ -2340,7 +2340,7 @@ int __max869_read_fifo(struct max869_device_data *sd, char *fifo_buf, int num_by
 	return ret;
 }
 
-int __max869_fifo_read_data(struct max869_device_data *data)
+static int __max869_fifo_read_data(struct max869_device_data *data)
 {
 	int ret = 0;
 	int num_samples;
@@ -2410,7 +2410,7 @@ fail:
 	return ret;
 }
 
-int __max869_fifo_irq_handler(struct max869_device_data *data)
+static int __max869_fifo_irq_handler(struct max869_device_data *data)
 {
 	int ret;
 	union int_status status;
