@@ -8817,7 +8817,7 @@ wl_cfg80211_send_action_frame(struct wiphy *wiphy, struct net_device *dev,
 	/* Public Action Frame Process - DOT11_ACTION_CAT_PUBLIC */
 	if (category == DOT11_ACTION_CAT_PUBLIC) {
 		if ((action == P2P_PUB_AF_ACTION) &&
-			(action_frame_len >= sizeof(wifi_p2p_pub_act_frame_t))) {
+			(action_frame_len > sizeof(wifi_p2p_pub_act_frame_t))) {
 			/* p2p public action frame process */
 			if (BCME_OK != wl_cfg80211_config_p2p_pub_af_tx(wiphy,
 				action_frame, af_params, &config_af_params)) {
@@ -13657,7 +13657,8 @@ int wl_get_bss_info(struct bcm_cfg80211 *cfg, struct net_device *dev, struct eth
 							(vndrie->len >= (VNDR_IE_MIN_LEN + 2)))
 						{
 							WL_ERR(("Found Wi-FiAll OUI oui.\n"));
-							ie_11u_rel_num = vndrie->data[1];
+							ie_11u_rel_num =
+								tlv_ie->data[VNDR_IE_MIN_LEN + 1];
 							ie_11u_rel_num = (ie_11u_rel_num & 0xf0)>>4;
 							ie_11u_rel_num += 1;
 

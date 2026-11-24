@@ -6920,7 +6920,7 @@ typedef struct eventmsgs_ext
 	uint8	command;
 	uint8	len;
 	uint8	maxgetsize;
-	uint8	mask[1];
+	uint8	mask[];
 } eventmsgs_ext_t;
 
 #include <packed_section_start.h>

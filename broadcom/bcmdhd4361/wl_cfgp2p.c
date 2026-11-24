@@ -107,7 +107,7 @@ bool wl_cfgp2p_is_pub_action(void *frame, u32 frame_len)
 	if (frame == NULL)
 		return false;
 	pact_frm = (wifi_p2p_pub_act_frame_t *)frame;
-	if (frame_len < sizeof(wifi_p2p_pub_act_frame_t) -1)
+	if (frame_len < sizeof(wifi_p2p_pub_act_frame_t))
 		return false;
 
 	if (pact_frm->category == P2P_PUB_AF_CATEGORY &&
@@ -2631,7 +2631,7 @@ wl_cfgp2p_need_wait_actfrmae(struct bcm_cfg80211 *cfg, void *frame, u32 frame_le
 	wifi_p2p_pub_act_frame_t *pact_frm;
 	int status = 0;
 
-	if (!frame || (frame_len < (sizeof(*pact_frm) + WL_P2P_AF_STATUS_OFFSET))) {
+	if (!frame || (frame_len <= (sizeof(*pact_frm) + WL_P2P_AF_STATUS_OFFSET))) {
 		return;
 	}
 
