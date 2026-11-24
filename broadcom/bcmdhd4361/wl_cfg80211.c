@@ -2366,6 +2366,7 @@ wl_cfg80211_add_if(struct bcm_cfg80211 *cfg,
 			/* Intentionally fall through for unsupported interface
 			 * handling when firmware doesn't support p2p
 			 */
+			fallthrough;
 		default:
 			WL_ERR(("Unsupported interface type\n"));
 			err = -ENOTSUPP;
@@ -13246,6 +13247,7 @@ int wl_get_connect_failed_status(struct bcm_cfg80211 *cfg, const wl_event_msg_t 
 						BIGDATA_ASSOC_REJECT_NO_NETWWORKS;
 					break;
 				}
+				fallthrough;
 			default:
 				cfg->assoc_reject_status = BIGDATA_ASSOC_REJECT_MAX;
 				break;
@@ -13298,6 +13300,7 @@ wl_get_auth_assoc_status(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 		case WLC_E_ASSOC:
 		case WLC_E_AUTH:
 				sec->auth_assoc_res_status = reason;
+				break;
 		default:
 			break;
 		}
