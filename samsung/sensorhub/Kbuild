@@ -23,10 +23,6 @@ ccflags-y += -DCONFIG_SENSORS_SSP_SENSORHUB=1
 ccflags-y += -DCONFIG_SENSORS_SSP_TMD4906=1
 ccflags-y += -DCONFIG_SSP_SUPPORT_MAGNETIC_OVERFLOW=1
 
-# vendor code: cross-file functions without prototypes, duplicate const and the like
-ccflags-y += -Wno-duplicate-decl-specifier -Wno-enum-conversion -Wno-missing-prototypes \
-	     -Wno-missing-declarations -Wno-logical-not-parentheses
-
 obj-m += sensors_core.o
 obj-m += sensorhub_brcm.o
 obj-m += sx9320.o
