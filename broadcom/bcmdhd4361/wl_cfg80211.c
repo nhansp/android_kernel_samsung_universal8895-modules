@@ -13652,7 +13652,8 @@ int wl_get_bss_info(struct bcm_cfg80211 *cfg, struct net_device *dev, struct eth
 
 						if (!bcmp(vndrie->oui,
 							(u8*)WiFiALL_OUI, WiFiALL_OUI_LEN) &&
-							(vndrie->data[0] == WiFiALL_OUI_TYPE))
+							(vndrie->data[0] == WiFiALL_OUI_TYPE) &&
+							(vndrie->len >= (VNDR_IE_MIN_LEN + 2)))
 						{
 							WL_ERR(("Found Wi-FiAll OUI oui.\n"));
 							ie_11u_rel_num = vndrie->data[1];
