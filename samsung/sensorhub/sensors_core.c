@@ -12,6 +12,8 @@
 #include <linux/err.h>
 #include <linux/input.h>
 
+#include "sensors_core.h"
+
 struct class *sensors_class;
 EXPORT_SYMBOL_GPL(sensors_class);
 struct class *sensors_event_class;

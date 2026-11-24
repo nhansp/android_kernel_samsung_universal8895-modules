@@ -418,7 +418,6 @@ retries:
 #define MAX_SSP_DATA_SIZE	(4*BBD_MAX_DATA_SIZE)
 unsigned char rBuff[MAX_SSP_DATA_SIZE] = {-1};
 
-extern s64 get_sensor_time_delta_us(void);
 void bbd_on_packet_work_func(struct work_struct *work)
 {
 	struct ssp_data *data = container_of(work,

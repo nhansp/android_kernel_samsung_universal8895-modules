@@ -15,6 +15,7 @@
 #include <linux/interrupt.h>
 #include <linux/regulator/consumer.h>
 #include <linux/power_supply.h>
+#include "sensors_core.h"
 #include "sx9320_reg.h"
 #if defined(CONFIG_MUIC_NOTIFIER)
 #include <linux/muic/muic.h>

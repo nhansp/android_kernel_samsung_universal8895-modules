@@ -55,6 +55,7 @@
 //#include <linux/hall.h>
 //#endif
 
+#include "sensors_core.h"
 #include "ssp_dump.h"
 #include "sensor_list.h"
 
@@ -983,10 +984,7 @@ void remove_grip_factorytest(struct ssp_data *data);
 void open_grip_caldata(struct ssp_data *data);
 int set_grip_calibration(struct ssp_data *data, bool set);
 #endif
-void sensors_remove_symlink(struct input_dev *inputdev);
-void destroy_sensor_class(void);
 int initialize_event_symlink(struct ssp_data *data);
-int sensors_create_symlink(struct input_dev *inputdev);
 int accel_open_calibration(struct ssp_data *data);
 int gyro_open_calibration(struct ssp_data *data);
 int pressure_open_calibration(struct ssp_data *data);
@@ -1072,6 +1070,14 @@ void report_interrupt_gyro_data(struct ssp_data *data, struct sensor_value *gyro
 int print_mcu_debug(char *pchRcvDataFrame, int *pDataIdx, int iRcvDataFrameLength);
 void report_temp_humidity_data(struct ssp_data *data, struct sensor_value *temp_humi_data);
 void report_shake_cam_data(struct ssp_data *data, struct sensor_value *shake_cam_data);
+
+struct remove_af_noise {
+	void *af_pdata;
+	int16_t (*af_func)(void *, bool);
+};
+
+int remove_af_noise_register(struct remove_af_noise *af_cam);
+void remove_af_noise_unregister(struct remove_af_noise *af_cam);
 void report_bulk_comp_data(struct ssp_data *data);
 void report_tilt_data(struct ssp_data *data, struct sensor_value *tilt_data);
 void report_pickup_data(struct ssp_data *data, struct sensor_value *pickup_data);
@@ -1083,10 +1089,6 @@ void report_wakeup_motion_data(struct ssp_data *data,struct sensor_value *wakeup
 #endif
 unsigned int get_module_rev(struct ssp_data *data);
 void reset_mcu(struct ssp_data *data);
-int sensors_register(struct device *dev, void *drvdata,
-	struct device_attribute *attributes[], char *name);
-void sensors_unregister(struct device *dev,
-	struct device_attribute *attributes[]);
 ssize_t mcu_reset_show(struct device *dev, struct device_attribute *attr, char *buf);
 ssize_t mcu_revision_show(struct device *dev, struct device_attribute *attr, char *buf);
 ssize_t mcu_factorytest_store(struct device *dev, struct device_attribute *attr,

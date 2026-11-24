@@ -60,10 +60,6 @@
 #define WORK_TYPE_RX 1
 #define WORK_TYPE_TX 2
 
-#ifdef CONFIG_SENSORS_SSP_BBD
-extern void bbd_parse_asic_data(unsigned char *pucData, unsigned short usLen, void (*to_gpsd)(unsigned char *packet, unsigned short len, void *priv), void *priv);
-#endif
-
 void bcm4773_debug_info(void);
 bool ssi_dbg;
 

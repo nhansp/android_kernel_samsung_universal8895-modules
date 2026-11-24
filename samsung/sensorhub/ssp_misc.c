@@ -17,11 +17,6 @@
 #define	SHAKE_ON	1
 #define	SHAKE_OFF	2
 
-struct remove_af_noise {
-	void *af_pdata;
-	int16_t (*af_func)(void *, bool);
-};
-
 static struct remove_af_noise af_sensor;
 
 int remove_af_noise_register(struct remove_af_noise *af_cam)

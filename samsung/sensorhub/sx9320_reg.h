@@ -338,11 +338,4 @@ enum {
 	ON = 1
 };
 
-extern int sensors_create_symlink(struct input_dev *inputdev);
-extern void sensors_remove_symlink(struct input_dev *inputdev);
-extern int sensors_register(struct device *dev, void *drvdata,
-	struct device_attribute *attributes[], char *name);
-extern void sensors_unregister(struct device *dev,
-	struct device_attribute *attributes[]);
-
 #endif /* _SX9320_I2C_REG_H_*/

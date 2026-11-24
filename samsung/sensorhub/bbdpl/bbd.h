@@ -111,4 +111,11 @@ extern ssize_t	bbd_send_packet(unsigned char *buf, size_t size);
 extern ssize_t	bbd_pull_packet(unsigned char *buf, size_t size, unsigned int timeout_ms);
 extern int	bbd_mcu_reset(void);
 extern int	bbd_init(struct device *dev);
+extern ssize_t	bbd_sensor_write(const char *buf, size_t size);
+extern s64	get_sensor_time_delta_us(void);
+extern ssize_t	bbd_request_mcu(bool on);
+extern void	bbd_parse_asic_data(unsigned char *pucData, unsigned short usLen,
+				    void (*to_gpsd)(unsigned char *packet, unsigned short len, void *priv),
+				    void *priv);
+extern void	bcm_on_packet_recieved(void *_priv, unsigned char *data, unsigned int size);
 #endif /* __BBD_H__ */

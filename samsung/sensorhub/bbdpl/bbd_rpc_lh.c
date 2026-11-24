@@ -23,9 +23,6 @@
 #include <linux/bug.h>
 #include <linux/printk.h>
 #include "bbd.h"
-// function to inject sensor data into SHMD
-ssize_t bbd_sensor_write(const char *buf, unsigned int size);
-void bcm_on_packet_recieved(void *_priv, unsigned char *data, size_t size);
 #else
 //self-test with built-in main()
 #include <stdio.h>
