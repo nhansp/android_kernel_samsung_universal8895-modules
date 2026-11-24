@@ -26,4 +26,5 @@ ccflags-y += -DNDEBUG
 ccflags-y += -Wno-declaration-after-statement
 ccflags-$(CONFIG_TRUSTONIC_TEE_DEBUG) += -DDEBUG
 
+ccflags-y += -I$(src)/include
 ccflags-y += -I$(src)/MobiCoreDriver
