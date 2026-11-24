@@ -3327,51 +3327,6 @@ done:
 	return bcmerror;
 } /* dhdpcie_checkdied */
 
-/* Custom copy of dhdpcie_mem_dump() that can be called at interrupt level */
-void dhdpcie_mem_dump_bugcheck(dhd_bus_t *bus, uint8 *buf)
-{
-	int ret = 0;
-	int size; /* Full mem size */
-	int start; /* Start address */
-	int read_size = 0; /* Read size of each iteration */
-	uint8 *databuf = buf;
-
-	if (bus == NULL) {
-		return;
-	}
-
-	start = bus->dongle_ram_base;
-	read_size = 4;
-	/* check for dead bus */
-	{
-		uint test_word = 0;
-		ret = dhdpcie_bus_membytes(bus, FALSE, start, (uint8*)&test_word, read_size);
-		/* if read error or bus timeout */
-		if (ret || (test_word == 0xFFFFFFFF)) {
-			return;
-		}
-	}
-
-	/* Get full mem size */
-	size = bus->ramsize;
-	/* Read mem content */
-	while (size)
-	{
-		read_size = MIN(MEMBLOCK, size);
-		if ((ret = dhdpcie_bus_membytes(bus, FALSE, start, databuf, read_size))) {
-			return;
-		}
-
-		/* Decrement size and increment start address */
-		size -= read_size;
-		start += read_size;
-		databuf += read_size;
-	}
-	bus->dhd->soc_ram = buf;
-	bus->dhd->soc_ram_length = bus->ramsize;
-	return;
-}
-
 #if defined(DHD_FW_COREDUMP)
 static int
 dhdpcie_mem_dump(dhd_bus_t *bus)
@@ -8764,13 +8719,6 @@ uint32
 dhd_bus_max_h2d_queues(struct dhd_bus *bus)
 {
 	return bus->max_submission_rings;
-}
-
-/* To be symmetric with SDIO */
-void
-dhd_bus_pktq_flush(dhd_pub_t *dhdp)
-{
-	return;
 }
 
 void

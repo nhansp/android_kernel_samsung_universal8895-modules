@@ -8079,11 +8079,6 @@ wl_genl_handle_msg(
 }
 #endif /* WL_GENL */
 
-int wl_fatal_error(void * wl, int rc)
-{
-	return FALSE;
-}
-
 #if defined(BT_OVER_SDIO)
 void
 wl_android_set_wifi_on_flag(bool enable)

@@ -158,24 +158,7 @@ void wl_cfg80211_cleanup_if(struct net_device *net)
 	dhd_cleanup_if(net);
 }
 
-struct net_device * dhd_cfg80211_netdev_free(struct net_device *ndev)
-{
-	struct bcm_cfg80211 *cfg;
-
-	if (ndev) {
-		cfg = wl_get_cfg(ndev);
-		if (ndev->ieee80211_ptr) {
-			MFREE(cfg->osh, ndev->ieee80211_ptr, sizeof(struct wireless_dev));
-			ndev->ieee80211_ptr = NULL;
-		}
-		free_netdev(ndev);
-		return NULL;
-	}
-
-	return ndev;
-}
-
-/* dhd_cfg80211_netdev_free() without free_netdev(): needs_free_netdev frees the netdev */
+/* priv_destructor of the netdevs: needs_free_netdev frees the netdev itself */
 void dhd_netdev_priv_free(struct net_device *ndev)
 {
 	struct bcm_cfg80211 *cfg;
@@ -185,15 +168,6 @@ void dhd_netdev_priv_free(struct net_device *ndev)
 		MFREE(cfg->osh, ndev->ieee80211_ptr, sizeof(struct wireless_dev));
 		ndev->ieee80211_ptr = NULL;
 	}
-}
-
-void dhd_netdev_free(struct net_device *ndev)
-{
-#ifdef WL_CFG80211
-	ndev = dhd_cfg80211_netdev_free(ndev);
-#endif // endif
-	if (ndev)
-		free_netdev(ndev);
 }
 
 static s32

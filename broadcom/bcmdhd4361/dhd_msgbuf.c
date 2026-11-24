@@ -8192,14 +8192,6 @@ dhd_prot_process_d2h_host_ts_complete(dhd_pub_t *dhd, void* buf)
 
 }
 
-/** called on e.g. flow ring delete */
-void dhd_prot_clean_flow_ring(dhd_pub_t *dhd, void *msgbuf_flow_info)
-{
-	msgbuf_ring_t *flow_ring = (msgbuf_ring_t *)msgbuf_flow_info;
-	dhd_prot_ring_detach(dhd, flow_ring);
-	DHD_INFO(("%s Cleaning up Flow \n", __FUNCTION__));
-}
-
 void dhd_prot_print_flow_ring(dhd_pub_t *dhd, void *msgbuf_flow_info,
 	struct bcmstrbuf *strbuf, const char * fmt)
 {
@@ -9880,13 +9872,6 @@ dhd_prot_dma_indx_free(dhd_pub_t *dhd)
 
 	dhd_dma_buf_free(dhd, &prot->h2d_dma_indx_wr_buf);
 	dhd_dma_buf_free(dhd, &prot->d2h_dma_indx_rd_buf);
-}
-
-void
-dhd_msgbuf_delay_post_ts_bufs(dhd_pub_t *dhd)
-{
-	if (dhd->prot->max_tsbufpost > 0)
-		dhd_msgbuf_rxbuf_post_ts_bufs(dhd);
 }
 
 static void BCMFASTPATH

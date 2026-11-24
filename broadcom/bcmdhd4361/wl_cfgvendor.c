@@ -2666,36 +2666,6 @@ static const char *nan_attr_to_str(u16 cmd)
 	}
 }
 
-nan_hal_status_t nan_status_reasonstr_map[] = {
-	{NAN_STATUS_SUCCESS, "NAN status success"},
-	{NAN_STATUS_INTERNAL_FAILURE, "NAN Discovery engine failure"},
-	{NAN_STATUS_PROTOCOL_FAILURE, "protocol failure"},
-	{NAN_STATUS_INVALID_PUBLISH_SUBSCRIBE_ID, "invalid pub_sub ID"},
-	{NAN_STATUS_NO_RESOURCE_AVAILABLE, "No space available"},
-	{NAN_STATUS_INVALID_PARAM, "invalid param"},
-	{NAN_STATUS_INVALID_REQUESTOR_INSTANCE_ID, "invalid req inst id"},
-	{NAN_STATUS_INVALID_NDP_ID, "invalid ndp id"},
-	{NAN_STATUS_NAN_NOT_ALLOWED, "Nan not allowed"},
-	{NAN_STATUS_NO_OTA_ACK, "No OTA ack"},
-	{NAN_STATUS_ALREADY_ENABLED, "NAN is Already enabled"},
-	{NAN_STATUS_FOLLOWUP_QUEUE_FULL, "Follow-up queue full"},
-	{NAN_STATUS_UNSUPPORTED_CONCURRENCY_NAN_DISABLED, "unsupported concurrency"},
-};
-
-void
-wl_cfgvendor_add_nan_reason_str(nan_status_type_t status, nan_hal_resp_t *nan_req_resp)
-{
-	int i = 0;
-	int num = (int)(sizeof(nan_status_reasonstr_map)/sizeof(nan_status_reasonstr_map[0]));
-	for (i = 0; i < num; i++) {
-		if (nan_status_reasonstr_map[i].status == status) {
-			strscpy(nan_req_resp->nan_reason, nan_status_reasonstr_map[i].nan_reason,
-				sizeof(nan_status_reasonstr_map[i].nan_reason));
-			break;
-		}
-	}
-}
-
 nan_status_type_t
 wl_cfgvendor_brcm_to_nanhal_status(int32 vendor_status)
 {

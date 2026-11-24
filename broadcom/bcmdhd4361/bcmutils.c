@@ -238,21 +238,6 @@ bcm_mdelay(uint ms)
 	}
 }
 
-#if defined(DHD_DEBUG)
-/* pretty hex print a pkt buffer chain */
-void
-prpkt(const char *msg, osl_t *osh, void *p0)
-{
-	void *p;
-
-	if (msg && (msg[0] != '\0'))
-		printf("%s:\n", msg);
-
-	for (p = p0; p; p = PKTNEXT(osh, p))
-		prhex(NULL, PKTDATA(osh, p), PKTLEN(osh, p));
-}
-#endif // endif
-
 /* Takes an Ethernet frame and sets out-of-bound PKTPRIO.
  * Also updates the inplace vlan tag if requested.
  * For debugging, it returns an indication of what it did.

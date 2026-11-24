@@ -510,7 +510,6 @@ static void dhd_natoe_ct_ioctl_handler(void *handle, void *event_info, uint8 eve
 static void dhd_inet6_work_handler(void *dhd_info, void *event_data, u8 event);
 #endif /* CONFIG_IPV6 && IPV6_NDO_SUPPORT */
 #ifdef WL_CFG80211
-extern void dhd_netdev_free(struct net_device *ndev);
 extern void dhd_netdev_priv_free(struct net_device *ndev);
 #endif /* WL_CFG80211 */
 static dhd_if_t * dhd_get_ifp_by_ndev(dhd_pub_t *dhdp, struct net_device *ndev);
@@ -3535,20 +3534,6 @@ dhd_ifname(dhd_pub_t *dhdp, int ifidx)
 	return "<if_none>";
 }
 
-uint8 *
-dhd_bssidx2bssid(dhd_pub_t *dhdp, int idx)
-{
-	int i;
-	dhd_info_t *dhd = (dhd_info_t *)dhdp;
-
-	ASSERT(dhd);
-	for (i = 0; i < DHD_MAX_IFS; i++)
-	if (dhd->iflist[i] && dhd->iflist[i]->bssidx == idx)
-		return dhd->iflist[i]->mac_addr;
-
-	return NULL;
-}
-
 static void
 _dhd_set_multicast_list(dhd_info_t *dhd, int ifidx)
 {
@@ -3851,29 +3836,6 @@ int dhd_set_wet_mode(dhd_pub_t *dhdp, uint32 val)
 	return 0;
 }
 #endif /* DHD_WET */
-
-#if defined(WL_CFG80211) && (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 0, 0))
-int32 dhd_role_to_nl80211_iftype(int32 role)
-{
-	switch (role) {
-	case WLC_E_IF_ROLE_STA:
-		return NL80211_IFTYPE_STATION;
-	case WLC_E_IF_ROLE_AP:
-		return NL80211_IFTYPE_AP;
-	case WLC_E_IF_ROLE_WDS:
-		return NL80211_IFTYPE_WDS;
-	case WLC_E_IF_ROLE_P2P_GO:
-		return NL80211_IFTYPE_P2P_GO;
-	case WLC_E_IF_ROLE_P2P_CLIENT:
-		return NL80211_IFTYPE_P2P_CLIENT;
-	case WLC_E_IF_ROLE_IBSS:
-	case WLC_E_IF_ROLE_NAN:
-		return NL80211_IFTYPE_ADHOC;
-	default:
-		return NL80211_IFTYPE_UNSPECIFIED;
-	}
-}
-#endif /* WL_CFG80211 && LINUX_VERSION_CODE >= KERNEL_VERSION(3, 0, 0) */
 
 static void
 dhd_ifadd_event_handler(void *handle, void *event_info, u8 event)
@@ -4216,62 +4178,6 @@ dhd_os_wlfc_unblock(dhd_pub_t *pub)
 }
 
 #endif /* PROP_TXSTATUS */
-
-/*  This routine do not support Packet chain feature, Currently tested for
- *  proxy arp feature
- */
-int dhd_sendup(dhd_pub_t *dhdp, int ifidx, void *p)
-{
-	struct sk_buff *skb;
-	void *skbhead = NULL;
-	void *skbprev = NULL;
-	dhd_if_t *ifp;
-	ASSERT(!PKTISCHAINED(p));
-	skb = PKTTONATIVE(dhdp->osh, p);
-
-	ifp = dhdp->info->iflist[ifidx];
-	skb->dev = ifp->net;
-
-	skb->protocol = eth_type_trans(skb, skb->dev);
-
-	if (in_interrupt()) {
-		bcm_object_trace_opr(skb, BCM_OBJDBG_REMOVE,
-			__FUNCTION__, __LINE__);
-		netif_rx(skb);
-	} else {
-		if (dhdp->info->rxthread_enabled) {
-			if (!skbhead) {
-				skbhead = skb;
-			} else {
-				PKTSETNEXT(dhdp->osh, skbprev, skb);
-			}
-			skbprev = skb;
-		} else {
-			/* If the receive is not processed inside an ISR,
-			 * the softirqd must be woken explicitly to service
-			 * the NET_RX_SOFTIRQ.	In 2.6 kernels, this is handled
-			 * by netif_rx(), but in earlier kernels, we need
-			 * to do it manually.
-			 */
-			bcm_object_trace_opr(skb, BCM_OBJDBG_REMOVE,
-				__FUNCTION__, __LINE__);
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 0)
-			netif_rx(skb);
-#else
-			ulong flags;
-			netif_rx(skb);
-			local_irq_save(flags);
-			RAISE_RX_SOFTIRQ();
-			local_irq_restore(flags);
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 0) */
-		}
-	}
-
-	if (dhdp->info->rxthread_enabled && skbhead)
-		dhd_sched_rxf(dhdp, skbhead);
-
-	return BCME_OK;
-}
 
 int BCMFASTPATH
 __dhd_sendpkt(dhd_pub_t *dhdp, int ifidx, void *pktbuf)
@@ -16958,26 +16864,6 @@ int dhd_os_wake_lock_ctrl_timeout_cancel(dhd_pub_t *pub)
 		spin_unlock_irqrestore(&dhd->wakelock_spinlock, flags);
 	}
 	return 0;
-}
-
-int net_os_wake_lock_rx_timeout_enable(struct net_device *dev, int val)
-{
-	dhd_info_t *dhd = DHD_DEV_INFO(dev);
-	int ret = 0;
-
-	if (dhd)
-		ret = dhd_os_wake_lock_rx_timeout_enable(&dhd->pub, val);
-	return ret;
-}
-
-int net_os_wake_lock_ctrl_timeout_enable(struct net_device *dev, int val)
-{
-	dhd_info_t *dhd = DHD_DEV_INFO(dev);
-	int ret = 0;
-
-	if (dhd)
-		ret = dhd_os_wake_lock_ctrl_timeout_enable(&dhd->pub, val);
-	return ret;
 }
 
 #if defined(DHD_TRACE_WAKE_LOCK)
