@@ -407,7 +407,8 @@ void sec_control_pm(dhd_pub_t *dhd, uint *power_mode)
 #endif /* DHD_PM_CONTROL_FROM_FILE */
 
 #ifdef MIMO_ANT_SETTING
-int get_ant_val_from_file(uint32 *read_val)
+#ifndef DHD_EXPORT_CNTL_FILE
+static int get_ant_val_from_file(uint32 *read_val)
 {
 	int ret = -1;
 	struct file *fp = NULL;
@@ -446,6 +447,7 @@ int get_ant_val_from_file(uint32 *read_val)
 	*read_val = ant_val;
 	return ret;
 }
+#endif /* !DHD_EXPORT_CNTL_FILE */
 
 int dhd_sel_ant_from_file(dhd_pub_t *dhd)
 {
@@ -749,13 +751,15 @@ int sec_get_param_wfa_cert(dhd_pub_t *dhd, int mode, uint* read_val)
 char version_info[MAX_VERSION_LEN];
 char version_old_info[MAX_VERSION_LEN];
 
-int write_filesystem(struct file *file, unsigned long long offset,
+#ifndef DHD_EXPORT_CNTL_FILE
+static int write_filesystem(struct file *file, unsigned long long offset,
 	unsigned char* data, unsigned int size)
 {
 	loff_t pos = offset;
 
 	return kernel_write(file, data, size, &pos);
 }
+#endif /* !DHD_EXPORT_CNTL_FILE */
 
 uint32 sec_save_wlinfo(char *firm_ver, char *dhd_ver, char *nvram_p, char *clm_ver)
 {

@@ -86,7 +86,7 @@
 #endif // endif
 #include <brcm_nl80211.h>
 
-char*
+static char*
 wl_get_kernel_timestamp(void)
 {
 	static char buf[16];
@@ -2351,7 +2351,8 @@ wl_cfgvendor_priv_string_handler(struct wiphy *wiphy,
 	return ret;
 }
 
-struct net_device *
+#if defined(BCM_PRIV_CMD_SUPPORT) && defined(WL_ANDROID_PRIV_CMD_OVER_NL80211)
+static struct net_device *
 wl_cfgvendor_get_ndev(struct bcm_cfg80211 *cfg, struct wireless_dev *wdev,
 	const char *data, unsigned long int *out_addr)
 {
@@ -2407,6 +2408,7 @@ wl_cfgvendor_get_ndev(struct bcm_cfg80211 *cfg, struct wireless_dev *wdev,
 	WL_DBG(("Using default ndev (%s) \n", ndev->name));
 	return ndev;
 }
+#endif /* BCM_PRIV_CMD_SUPPORT && WL_ANDROID_PRIV_CMD_OVER_NL80211 */
 
 /* Max length for the reply buffer. For BRCM_ATTR_DRIVER_CMD, the reply
  * would be a formatted string and reply buf would be the size of the
@@ -2666,7 +2668,7 @@ static const char *nan_attr_to_str(u16 cmd)
 	}
 }
 
-nan_status_type_t
+static nan_status_type_t
 wl_cfgvendor_brcm_to_nanhal_status(int32 vendor_status)
 {
 	nan_status_type_t hal_status;

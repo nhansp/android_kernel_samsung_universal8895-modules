@@ -868,7 +868,7 @@ dhdpcie_rc_config_read(dhd_bus_t *bus, uint offset)
  * Note: caller shoud ensure valid capability ID and Ext. Capability ID.
  */
 
-uint32
+static uint32
 dhdpcie_access_cap(struct pci_dev *pdev, int cap, uint offset, bool is_ext, bool is_write,
 	uint32 writeval)
 {
@@ -1099,7 +1099,7 @@ dhdpcie_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	return 0;
 }
 
-int
+static int
 dhdpcie_detach(dhdpcie_info_t *pch)
 {
 	if (pch) {
@@ -1175,7 +1175,7 @@ dhdpcie_pci_remove(struct pci_dev *pdev)
 }
 
 /* Enable Linux Msi */
-int
+static int
 dhdpcie_enable_msi(struct pci_dev *pdev, unsigned int min_vecs, unsigned int max_vecs)
 {
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 8, 0))
@@ -1188,7 +1188,7 @@ dhdpcie_enable_msi(struct pci_dev *pdev, unsigned int min_vecs, unsigned int max
 }
 
 /* Disable Linux Msi */
-void
+static void
 dhdpcie_disable_msi(struct pci_dev *pdev)
 {
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 8, 0))
@@ -1202,7 +1202,7 @@ dhdpcie_disable_msi(struct pci_dev *pdev)
 }
 
 /* Request Linux irq */
-int
+static int
 dhdpcie_request_irq(dhdpcie_info_t *dhdpcie_info)
 {
 	dhd_bus_t *bus = dhdpcie_info->bus;
@@ -1295,7 +1295,7 @@ Description:
 Access PCI configuration space, retrieve  PCI allocated resources , updates in resource structure.
 
  */
-int dhdpcie_get_resource(dhdpcie_info_t *dhdpcie_info)
+static int dhdpcie_get_resource(dhdpcie_info_t *dhdpcie_info)
 {
 	phys_addr_t  bar0_addr, bar1_addr;
 	ulong bar1_size;
@@ -1374,7 +1374,7 @@ err:
 	return -1;  /* FAILURE */
 }
 
-int dhdpcie_scan_resource(dhdpcie_info_t *dhdpcie_info)
+static int dhdpcie_scan_resource(dhdpcie_info_t *dhdpcie_info)
 {
 
 	DHD_TRACE(("%s: ENTER\n", __FUNCTION__));
@@ -1433,7 +1433,7 @@ void dhdpcie_dump_resource(dhd_bus_t *bus)
 #if defined(CONFIG_ARCH_MSM) || (defined(EXYNOS_PCIE_LINKDOWN_RECOVERY) && \
 	(defined(CONFIG_SOC_EXYNOS8890) || defined(CONFIG_BCMDHD_EXYNOS8895) || \
 	defined(CONFIG_SOC_EXYNOS9810)))
-void dhdpcie_linkdown_cb(struct_pcie_notify *noti)
+static void dhdpcie_linkdown_cb(struct_pcie_notify *noti)
 {
 	struct pci_dev *pdev = (struct pci_dev *)noti->user;
 	dhdpcie_info_t *pch = NULL;

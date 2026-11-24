@@ -819,7 +819,7 @@ fail:
  * which the rx buffer posts could have been serviced. it is important to note
  * that a Tx packet may not have a large enough buffer for rx posting.
  */
-void dhd_select_cpu_candidacy(dhd_info_t *dhd)
+static void dhd_select_cpu_candidacy(dhd_info_t *dhd)
 {
 	uint32 primary_available_cpus; /* count of primary available cpus */
 	uint32 secondary_available_cpus; /* count of secondary available cpus */
@@ -2021,7 +2021,7 @@ dhd_find_sta(void *pub, int ifidx, void *ea)
 }
 
 /** Add STA into the interface's STA list. */
-dhd_sta_t *
+static dhd_sta_t *
 dhd_add_sta(void *pub, int ifidx, void *ea)
 {
 	dhd_sta_t *sta;
@@ -4179,7 +4179,7 @@ dhd_os_wlfc_unblock(dhd_pub_t *pub)
 
 #endif /* PROP_TXSTATUS */
 
-int BCMFASTPATH
+static int BCMFASTPATH
 __dhd_sendpkt(dhd_pub_t *dhdp, int ifidx, void *pktbuf)
 {
 	int ret = BCME_OK;
@@ -4450,7 +4450,7 @@ exit:
 
 #if defined(DHD_LB_TXP)
 
-int BCMFASTPATH
+static int BCMFASTPATH
 dhd_lb_sendpkt(dhd_info_t *dhd, struct net_device *net,
 	int ifidx, void *skb)
 {
@@ -5128,7 +5128,7 @@ dhd_event_logtrace_process(struct work_struct * work)
 	}
 }
 
-void
+static void
 dhd_event_logtrace_enqueue(dhd_pub_t *dhdp, int ifidx, void *pktbuf)
 {
 	dhd_info_t *dhd = (dhd_info_t *)dhdp->info;
@@ -5142,7 +5142,7 @@ dhd_event_logtrace_enqueue(dhd_pub_t *dhdp, int ifidx, void *pktbuf)
 	schedule_delayed_work(&dhd->event_log_dispatcher_work, 0);
 }
 
-void
+static void
 dhd_event_logtrace_flush_queue(dhd_pub_t *dhdp)
 {
 	dhd_info_t *dhd = (dhd_info_t *)dhdp->info;
@@ -6520,7 +6520,7 @@ dhd_toe_set(dhd_info_t *dhd, int ifidx, uint32 toe_ol)
 #endif /* TOE */
 
 #if defined(WL_CFG80211) && defined(NUM_SCB_MAX_PROBE)
-void dhd_set_scb_probe(dhd_pub_t *dhd)
+static void dhd_set_scb_probe(dhd_pub_t *dhd)
 {
 	wl_scb_probe_t scb_probe;
 	char iovbuf[WL_EVENTING_MASK_LEN + sizeof(wl_scb_probe_t)];
@@ -10106,7 +10106,7 @@ extern bool dhd_update_btfw_path(dhd_info_t *dhdinfo, char* btfw_path)
 #endif /* defined (BT_OVER_SDIO) */
 
 #ifdef CUSTOMER_HW4_DEBUG
-bool dhd_validate_chipid(dhd_pub_t *dhdp)
+static bool dhd_validate_chipid(dhd_pub_t *dhdp)
 {
 	uint chipid = dhd_bus_chip_id(dhdp);
 	uint config_chipid;
@@ -10386,7 +10386,7 @@ dhd_bus_start(dhd_pub_t *dhdp)
 	return 0;
 }
 #ifdef WLTDLS
-int _dhd_tdls_enable(dhd_pub_t *dhd, bool tdls_on, bool auto_on, struct ether_addr *mac)
+static int _dhd_tdls_enable(dhd_pub_t *dhd, bool tdls_on, bool auto_on, struct ether_addr *mac)
 {
 	uint32 tdls = tdls_on;
 	int ret = 0;
@@ -10645,7 +10645,7 @@ dhd_get_concurrent_capabilites(dhd_pub_t *dhd)
 #endif // endif
 
 #ifdef WLAIBSS
-int
+static int
 dhd_preinit_aibss_ioctls(dhd_pub_t *dhd, char *iov_buf_smlen)
 {
 	int ret = BCME_OK;
@@ -12898,7 +12898,7 @@ fail:
 	return err;
 }
 
-void
+static void
 dhd_bus_detach(dhd_pub_t *dhdp)
 {
 	dhd_info_t *dhd;
@@ -16579,7 +16579,7 @@ dhd_wait_pend8021x(struct net_device *dev)
 }
 
 #if defined(DHD_DEBUG)
-int write_file(const char * file_name, uint32 flags, uint8 *buf, int size)
+static int write_file(const char * file_name, uint32 flags, uint8 *buf, int size)
 {
 	int ret = 0;
 	struct file *fp = NULL;
@@ -16716,7 +16716,7 @@ dhd_convert_memdump_type_to_str(uint32 type, char *buf, int substr_type)
 	buf[strlen(type_str)] = 0;
 }
 
-int
+static int
 write_dump_to_file(dhd_pub_t *dhd, uint8 *buf, int size, char *fname)
 {
 	int ret = 0;
@@ -20302,7 +20302,7 @@ dhd_flush_rx_tx_wq(dhd_pub_t *dhdp)
 /*
  * Function that performs the TX processing on a given CPU
  */
-bool
+static bool
 dhd_lb_tx_process(dhd_info_t *dhd)
 {
 	struct sk_buff *skb;
@@ -20444,7 +20444,7 @@ dhd_set_blob_support(dhd_pub_t *dhdp, char *fw_path)
 
 #if defined(PCIE_FULL_DONGLE)
 /** test / loopback */
-void
+static void
 dmaxfer_free_dmaaddr_handler(void *handle, void *event_info, u8 event)
 {
 	dmaxref_mem_map_t *dmmap = (dmaxref_mem_map_t *)event_info;
@@ -21104,7 +21104,7 @@ copy_debug_dump_time(char *dest, char *src)
 
 #define KIRQ_PRINT_BUF_LEN 256
 
-void
+static void
 dhd_print_kirqstats(dhd_pub_t *dhd, unsigned int irq_num)
 {
 	unsigned long flags = 0;

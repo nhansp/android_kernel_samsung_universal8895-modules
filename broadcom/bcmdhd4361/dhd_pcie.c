@@ -540,7 +540,8 @@ dhd_bus_pcie_pwr_req_nolock(struct dhd_bus *bus)
 	_dhd_bus_pcie_pwr_req_cmn(bus);
 }
 
-bool
+#ifdef DHD_MSI_SUPPORT
+static bool
 dhdpcie_chip_support_msi(dhd_bus_t *bus)
 {
 	DHD_ERROR(("%s: buscorerev=%d chipid=0x%x\n",
@@ -554,6 +555,7 @@ dhdpcie_chip_support_msi(dhd_bus_t *bus)
 		return TRUE;
 	}
 }
+#endif /* DHD_MSI_SUPPORT */
 
 /**
  * Called once for each hardware (dongle) instance that this DHD manages.
@@ -770,7 +772,7 @@ dhd_bus_query_dpc_sched_errors(dhd_pub_t *dhdp)
 }
 
 /** Read and clear intstatus. This should be called with interrupts disabled or inside isr */
-uint32
+static uint32
 dhdpcie_bus_intstatus(dhd_bus_t *bus)
 {
 	uint32 intstatus = 0;
@@ -1211,7 +1213,7 @@ dhd_bus_l1ss_enable_rc_ep(dhd_bus_t *bus, bool enable)
 	dhd_bus_aspm_enable_rc_ep(bus, TRUE);
 }
 
-void
+static void
 dhdpcie_dongle_reset(dhd_bus_t *bus)
 {
 #ifndef DHD_USE_BP_RESET
@@ -1493,7 +1495,7 @@ fail:
 	return -1;
 }
 
-int
+static int
 dhpcie_bus_unmask_interrupt(dhd_bus_t *bus)
 {
 	dhdpcie_bus_cfg_write_dword(bus, PCIIntmask, 4, I_MB);
@@ -1622,7 +1624,7 @@ dhdpcie_bus_remove_prep(dhd_bus_t *bus)
 	DHD_TRACE(("%s Exit\n", __FUNCTION__));
 }
 
-void
+static void
 dhd_init_bus_lock(dhd_bus_t *bus)
 {
 	if (!bus->bus_lock) {
@@ -1630,7 +1632,7 @@ dhd_init_bus_lock(dhd_bus_t *bus)
 	}
 }
 
-void
+static void
 dhd_deinit_bus_lock(dhd_bus_t *bus)
 {
 	if (bus->bus_lock) {
@@ -6536,7 +6538,7 @@ err:
 }
 
 /* loop through the capability list and see if the pcie capabilty exists */
-uint8
+static uint8
 dhdpcie_find_pci_capability(osl_t *osh, uint8 req_cap_id)
 {
 	uint8 cap_id;
@@ -6688,7 +6690,7 @@ dhdpcie_clkreq(osl_t *osh, uint32 mask, uint32 val)
 		return 0;
 }
 
-void dhd_dump_intr_counters(dhd_pub_t *dhd, struct bcmstrbuf *strbuf)
+static void dhd_dump_intr_counters(dhd_pub_t *dhd, struct bcmstrbuf *strbuf)
 {
 	dhd_bus_t *bus;
 	uint64 current_time = OSL_LOCALTIME_NS();
@@ -6745,7 +6747,7 @@ void dhd_dump_intr_counters(dhd_pub_t *dhd, struct bcmstrbuf *strbuf)
 		GET_SEC_USEC(dhd->bus->last_resume_end_time));
 }
 
-void dhd_dump_intr_registers(dhd_pub_t *dhd, struct bcmstrbuf *strbuf)
+static void dhd_dump_intr_registers(dhd_pub_t *dhd, struct bcmstrbuf *strbuf)
 {
 	uint32 intstatus = 0;
 	uint32 intmask = 0;
@@ -10184,7 +10186,7 @@ dhd_bus_intr_count_dump(dhd_pub_t *dhd)
 	dhd_pcie_intr_count_dump(dhd);
 }
 
-int
+static int
 dhd_pcie_dma_info_dump(dhd_pub_t *dhd)
 {
 	if (dhd->bus->is_linkdown) {

@@ -599,7 +599,7 @@ dhd_dbg_custom_evnt_handler(dhd_pub_t *dhdp, event_log_hdr_t *hdr, uint32 *log_p
 #pragma GCC diagnostic pop
 #endif // endif
 
-int
+static int
 replace_percent_p_to_x(char *fmt)
 {
 	int p_to_x_done = FALSE;
@@ -656,7 +656,7 @@ replace_percent_p_to_x(char *fmt)
 }
 
 /* To identify format of types %Ns where N >= 0 is a number */
-bool
+static bool
 check_valid_string_format(char *curr_ptr)
 {
 	char *next_ptr;
@@ -1215,7 +1215,7 @@ dhd_dbg_trace_evnt_handler(dhd_pub_t *dhdp, void *event_data,
 /*
  * dhd_dbg_set_event_log_tag : modify the state of an event log tag
  */
-void
+static void
 dhd_dbg_set_event_log_tag(dhd_pub_t *dhdp, uint16 tag, uint8 set)
 {
 	wl_el_tag_params_t pars;
@@ -1418,10 +1418,11 @@ __dhd_dbg_pkt_hash(uintptr_t pkt, uint32 pktid)
 			(__pkt + __pktid * __pktid));
 }
 
+#ifdef DBG_PKT_MON
 #define __TIMESPEC_TO_US(ts) \
 	(((uint32)(ts).tv_sec * USEC_PER_SEC) + ((ts).tv_nsec / NSEC_PER_USEC))
 
-uint32
+static uint32
 __dhd_dbg_driver_ts_usec(void)
 {
 	struct timespec64 ts;
@@ -1429,6 +1430,7 @@ __dhd_dbg_driver_ts_usec(void)
 	ktime_get_boottime_ts64(&ts);
 	return ((uint32)(__TIMESPEC_TO_US(ts)));
 }
+#endif /* DBG_PKT_MON */
 
 wifi_tx_packet_fate
 __dhd_dbg_map_tx_status_to_pkt_fate(uint16 status)

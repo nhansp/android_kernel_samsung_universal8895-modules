@@ -451,12 +451,12 @@ dhd_sssr_mempool_deinit(dhd_pub_t *dhd)
 	}
 }
 
-void
+static void
 dhd_dump_sssr_reg_info(sssr_reg_info_v1_t *sssr_reg_info)
 {
 }
 
-int
+static int
 dhd_get_sssr_reg_info_bcm4359(dhd_pub_t *dhd)
 {
 	dhd->sssr_reg_info.version = SSSR_REG_INFO_VER;
@@ -505,7 +505,7 @@ dhd_get_sssr_reg_info_bcm4359(dhd_pub_t *dhd)
 	return BCME_OK;
 }
 
-int
+static int
 dhd_get_sssr_reg_info(dhd_pub_t *dhd)
 {
 	int ret = BCME_OK;
@@ -537,7 +537,7 @@ dhd_get_sssr_reg_info(dhd_pub_t *dhd)
 	return ret;
 }
 
-uint32
+static uint32
 dhd_get_sssr_bufsize(dhd_pub_t *dhd)
 {
 	int i;
@@ -1201,7 +1201,7 @@ int dhd_bus_console_in(dhd_pub_t *dhd, uchar *msg, uint msglen)
 #endif /* DHD_DEBUG && BCMDHDUSB  */
 
 #ifdef DHD_DEBUG
-int
+static int
 dhd_mem_debug(dhd_pub_t *dhd, uchar *msg, uint msglen)
 {
 	unsigned long int_arg = 0;
@@ -1318,7 +1318,7 @@ dhd_mw_list_delete(dhd_pub_t *dhd, dll_t *list_head)
 	}
 }
 #ifdef BCMPCIE
-int
+static int
 dhd_flow_ring_debug(dhd_pub_t *dhd, char *msg, uint msglen)
 {
 	flow_ring_table_t *flow_ring_table;
@@ -4877,7 +4877,7 @@ err:
 	return ret;
 }
 
-int
+static int
 dhd_download_2_dongle(dhd_pub_t	*dhd, char *iovar, uint16 flag, uint16 dload_type,
 	unsigned char *dload_buf, int len)
 {
@@ -4961,7 +4961,7 @@ dhd_apply_default_txcap(dhd_pub_t  *dhd, char *path)
 	return 0;
 }
 
-int
+static int
 dhd_check_current_clm_data(dhd_pub_t *dhd)
 {
 	char iovbuf[WLC_IOCTL_SMLEN];
@@ -5934,7 +5934,7 @@ static event_ecounters_cfg_t event_ecounters_cfg_tbl[] = {
 };
 
 /* Accepts an argument to -s, -g or -f and creates an XTLV */
-int
+static int
 dhd_create_ecounters_params(dhd_pub_t *dhd, uint16 type, uint16 if_slice_idx,
 	uint16 stats_rep, uint8 **xtlv)
 {

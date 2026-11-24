@@ -479,7 +479,7 @@ dhd_flow_rings_ifindex2role(dhd_pub_t *dhdp, uint8 ifindex)
 }
 
 #ifdef WLTDLS
-bool is_tdls_destination(dhd_pub_t *dhdp, uint8 *da)
+static bool is_tdls_destination(dhd_pub_t *dhdp, uint8 *da)
 {
 	unsigned long flags;
 	tdls_peer_node_t *cur = NULL;

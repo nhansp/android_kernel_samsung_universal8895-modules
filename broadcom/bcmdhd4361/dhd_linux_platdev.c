@@ -487,7 +487,7 @@ static int wifi_ctrlfunc_register_drv(void)
 	return wifi_plat_dev_probe_ret;
 }
 
-void wifi_ctrlfunc_unregister_drv(void)
+static void wifi_ctrlfunc_unregister_drv(void)
 {
 
 #ifdef CONFIG_DTS

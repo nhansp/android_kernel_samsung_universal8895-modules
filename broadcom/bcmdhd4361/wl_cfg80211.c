@@ -1736,7 +1736,7 @@ wl_wlfc_enable(struct bcm_cfg80211 *cfg, bool enable)
 #endif /* PROP_TXSTATUS_VSDB */
 }
 
-struct wireless_dev *
+static struct wireless_dev *
 wl_cfg80211_p2p_if_add(struct bcm_cfg80211 *cfg,
 	wl_iftype_t wl_iftype,
 	char const *name, u8 *mac_addr, s32 *ret_err, int if_ctx)
@@ -1888,7 +1888,7 @@ exit:
 	return ret;
 }
 
-void
+static void
 wl_cfg80211_iface_state_ops(struct wireless_dev *wdev,
 	wl_interface_state_t state,
 	wl_iftype_t wl_iftype, u16 wl_mode)
@@ -4318,7 +4318,7 @@ fail:
 }
 #endif /* WLAIBSS_MCHAN */
 
-s32
+static s32
 wl_cfg80211_to_fw_iftype(wl_iftype_t iftype)
 {
 	s32 ret = BCME_ERROR;
@@ -4526,7 +4526,7 @@ wl_cfg80211_interface_ops(struct bcm_cfg80211 *cfg,
 }
 
 #if defined(CUSTOMER_HW4)
-void
+static void
 wl_bss_iovar_war(struct bcm_cfg80211 *cfg,
 	struct net_device *ndev, s32 *val)
 {
@@ -6198,7 +6198,7 @@ static bool wl_get_chan_isvht80(struct net_device *net, dhd_pub_t *dhd)
 }
 #endif /* CUSTOM_SET_CPUCORE || CONFIG_TCPACK_FASTTX */
 
-int wl_cfg80211_cleanup_mismatch_status(struct net_device *dev, struct bcm_cfg80211 *cfg,
+static int wl_cfg80211_cleanup_mismatch_status(struct net_device *dev, struct bcm_cfg80211 *cfg,
 	bool disassociate)
 {
 	scb_val_t scbval;
@@ -10756,7 +10756,7 @@ exit:
 }
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 4, 0)) || defined(WL_COMPAT_WIRELESS)
-s32
+static s32
 wl_cfg80211_parse_ap_ies(
 	struct net_device *dev,
 	struct cfg80211_beacon_data *info,
@@ -10800,7 +10800,7 @@ fail:
 	return err;
 }
 
-s32
+static s32
 wl_cfg80211_set_ies(
 	struct net_device *dev,
 	struct cfg80211_beacon_data *info,
@@ -13211,7 +13211,7 @@ enum {
 	BIGDATA_ASSOC_REJECT_MAX = 50
 };
 
-int wl_get_connect_failed_status(struct bcm_cfg80211 *cfg, const wl_event_msg_t *e)
+static int wl_get_connect_failed_status(struct bcm_cfg80211 *cfg, const wl_event_msg_t *e)
 {
 	u32 status = ntoh32(e->status);
 
@@ -13488,7 +13488,7 @@ wl_get_11kv_info(u8 *ie, u32 ie_len, uint8 *support_11kv, uint32 *flag_11kv)
 	*flag_11kv = flag_11k | flag_11v;
 }
 
-int wl_get_bss_info(struct bcm_cfg80211 *cfg, struct net_device *dev, struct ether_addr const *mac)
+static int wl_get_bss_info(struct bcm_cfg80211 *cfg, struct net_device *dev, struct ether_addr const *mac)
 {
 	s32 err = 0;
 	wl_bss_info_t *bi;
@@ -15667,7 +15667,7 @@ wl_stop_wait_next_action_frame(struct bcm_cfg80211 *cfg, struct net_device *ndev
 }
 
 #if defined(WLTDLS)
-bool wl_cfg80211_is_tdls_tunneled_frame(void *frame, u32 frame_len)
+static bool wl_cfg80211_is_tdls_tunneled_frame(void *frame, u32 frame_len)
 {
 	unsigned char *data;
 
@@ -15706,7 +15706,7 @@ int wl_cfg80211_get_wes_mode(void)
 	return wes_mode;
 }
 
-bool wl_cfg80211_is_wes(void *frame, u32 frame_len)
+static bool wl_cfg80211_is_wes(void *frame, u32 frame_len)
 {
 	unsigned char *data;
 
@@ -22560,7 +22560,7 @@ wl_cfg80211_set_mac_acl(struct wiphy *wiphy, struct net_device *cfgdev,
 }
 #endif /* WL_CFG80211_ACL */
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 5, 0))
-int wl_chspec_chandef(chanspec_t chanspec,
+static int wl_chspec_chandef(chanspec_t chanspec,
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 8, 0))
 	struct cfg80211_chan_def *chandef,
 #elif (LINUX_VERSION_CODE >= KERNEL_VERSION (3, 5, 0) && (LINUX_VERSION_CODE <= (3, 7, \
@@ -22672,7 +22672,7 @@ wl_cfg80211_csa_work(struct wiphy *wiphy, struct wiphy_work *w)
 	dev_put(dev);
 }
 
-void
+static void
 wl_cfg80211_ch_switch_notify(struct net_device *dev, uint16 chanspec, struct wiphy *wiphy)
 {
 	u32 freq;

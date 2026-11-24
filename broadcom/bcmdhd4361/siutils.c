@@ -3399,14 +3399,14 @@ si_update_backplane_timeouts(si_t *sih, bool enable, uint32 timeout_exp, uint32 
 #endif /* AXI_TIMEOUTS  || BCM_BACKPLANE_TIMEOUT */
 }
 
+#if defined(AXI_TIMEOUTS) || defined(BCM_BACKPLANE_TIMEOUT)
 /*
  * This routine adds the AXI timeouts for
  * chipcommon, pcie and ARM slave wrappers
  */
-void
+static void
 si_slave_wrapper_add(si_t *sih)
 {
-#if defined(AXI_TIMEOUTS) || defined(BCM_BACKPLANE_TIMEOUT)
 	uint32 axi_to = 0;
 
 	/* Enable only for AXI */
@@ -3445,10 +3445,8 @@ si_slave_wrapper_add(si_t *sih)
 	ai_update_backplane_timeouts(sih, FALSE, 0, PCIE_CORE_ID);
 	ai_update_backplane_timeouts(sih, FALSE, 0, PCIE2_CORE_ID);
 #endif // endif
-
-#endif /* AXI_TIMEOUTS  || BCM_BACKPLANE_TIMEOUT */
-
 }
+#endif /* AXI_TIMEOUTS || BCM_BACKPLANE_TIMEOUT */
 
 void
 si_pll_sr_reinit(si_t *sih)

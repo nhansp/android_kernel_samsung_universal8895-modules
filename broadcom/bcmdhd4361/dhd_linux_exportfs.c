@@ -328,7 +328,8 @@ static struct dhd_attr dhd_attr_cntl_macaddr =
 #define MEMDUMPINFO MEMDUMPINFO_LIVE
 #endif /* CUSTOMER_HW4_DEBUG */
 
-uint32
+#ifndef DHD_EXPORT_CNTL_FILE
+static uint32
 get_mem_val_from_file(void)
 {
 	struct file *fp = NULL;
@@ -376,6 +377,7 @@ get_mem_val_from_file(void)
 done:
 	return mem_val;
 }
+#endif /* !DHD_EXPORT_CNTL_FILE */
 
 void dhd_get_memdump_info(dhd_pub_t *dhd)
 {
@@ -447,7 +449,8 @@ static struct dhd_attr dhd_attr_cntl_memdump =
 #else
 #define ASSERTINFO "/installmedia/.assert.info"
 #endif /* CUSTOMER_HW4_DEBUG */
-int
+#ifndef DHD_EXPORT_CNTL_FILE
+static int
 get_assert_val_from_file(void)
 {
 	struct file *fp = NULL;
@@ -485,6 +488,7 @@ get_assert_val_from_file(void)
 #endif /* CUSTOMER_HW4_DEBUG */
 	return mem_val;
 }
+#endif /* !DHD_EXPORT_CNTL_FILE */
 
 void dhd_get_assert_info(dhd_pub_t *dhd)
 {

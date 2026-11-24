@@ -2674,7 +2674,7 @@ fail:
 	return BCME_NOMEM;
 } /* dhd_prot_attach */
 
-void
+static void
 dhd_set_host_cap(dhd_pub_t *dhd)
 {
 	uint32 data = 0;
@@ -6063,7 +6063,7 @@ void dmaxfer_free_dmaaddr(dhd_pub_t *dhd, dhd_dmaxfer_t *dmaxfer)
 }
 
 /** test / loopback */
-int
+static int
 dhd_prepare_schedule_dmaxfer_free(dhd_pub_t *dhdp)
 {
 	dhd_prot_t *prot = dhdp->prot;

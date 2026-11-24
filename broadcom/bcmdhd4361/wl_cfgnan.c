@@ -145,7 +145,7 @@ wl_cfgnan_remove_inst_id(struct bcm_cfg80211 *cfg, uint8 inst_id)
 	clrbit(cfg->nancfg.svc_inst_id_mask, inst_id-1);
 	return ret;
 }
-s32 wl_cfgnan_parse_sdea_data(osl_t *osh, const uint8 *p_attr,
+static s32 wl_cfgnan_parse_sdea_data(osl_t *osh, const uint8 *p_attr,
 		uint16 len, nan_event_data_t *tlv_data)
 {
 	const wifi_nan_svc_desc_ext_attr_t *nan_svc_desc_ext_attr = NULL;
@@ -228,7 +228,7 @@ fail:
  * This attribute contains some mandatory fields and some optional fields
  * depending on the content of the service discovery request.
  */
-s32
+static s32
 wl_cfgnan_parse_sda_data(osl_t *osh, const uint8 *p_attr,
 		uint16 len, nan_event_data_t *tlv_data)
 {
@@ -694,7 +694,7 @@ fail:
 	return ret;
 }
 
-int
+static int
 wl_cfg_nan_check_cmd_len(uint16 nan_iov_len, uint16 data_size,
 		uint16 *subcmd_len)
 {
@@ -3588,7 +3588,7 @@ wl_cfgnan_aligned_data_size_of_opt_dp_params(uint16 *data_size, nan_datapath_cmd
 	*data_size += ALIGN_SIZE(WL_NAN_SVC_HASH_LEN + NAN_XTLV_ID_LEN_SIZE, 4);
 	return ret;
 }
-int
+static int
 wl_cfgnan_svc_get_handler(struct net_device *ndev,
 	struct bcm_cfg80211 *cfg, uint16 cmd_id, nan_discover_cmd_data_t *cmd_data)
 {
@@ -3657,7 +3657,7 @@ fail:
 
 }
 
-int
+static int
 wl_cfgnan_svc_handler(struct net_device *ndev,
 	struct bcm_cfg80211 *cfg, uint16 cmd_id, nan_discover_cmd_data_t *cmd_data)
 {
