@@ -8679,7 +8679,7 @@ dhd_update_iflist_info(dhd_pub_t *dhdp, struct net_device *ndev, int ifidx,
 		/* initialize the dongle provided if name */
 		if (dngl_name) {
 			strscpy(ifp->dngl_name, dngl_name, IFNAMSIZ);
-		} else if (ndev->name) {
+		} else {
 			strscpy(ifp->dngl_name, ndev->name, IFNAMSIZ);
 		}
 		if (mac != NULL)
@@ -13402,9 +13402,7 @@ void dhd_detach(dhd_pub_t *dhdp)
 	}
 #endif /* DHD_ERPOM */
 
-	if (&dhd->dhd_hang_process_work) {
-		cancel_work_sync(&dhd->dhd_hang_process_work);
-	}
+	cancel_work_sync(&dhd->dhd_hang_process_work);
 	/* Prefer adding de-init code above this comment unless necessary.
 	 * The idea is to cancel work queue, sysfs and flags at the end.
 	 */
