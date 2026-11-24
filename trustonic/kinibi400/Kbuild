@@ -23,7 +23,6 @@ ccflags-y += -DCONFIG_TRUSTONIC_TEE_LPAE=1
 ccflags-y += -DCONFIG_SECURE_OS_BOOSTER_API=1
 
 ccflags-y += -DNDEBUG
-ccflags-y += -Wno-declaration-after-statement
 ccflags-$(CONFIG_TRUSTONIC_TEE_DEBUG) += -DDEBUG
 
 ccflags-y += -I$(src)/include
