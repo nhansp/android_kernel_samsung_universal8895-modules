@@ -301,7 +301,7 @@ void ssp_reset_batching_resources(struct ssp_data *data)
 	pr_err("[SSP_RST] reset finished %lld\n", ts);
 }
 
-irqreturn_t ssp_mcu_host_wake_irq_handler(int irq, void *device)
+static irqreturn_t ssp_mcu_host_wake_irq_handler(int irq, void *device)
 {
 	struct ssp_data *data = (struct ssp_data *) device;
 	u64 timestamp = get_current_timestamp();

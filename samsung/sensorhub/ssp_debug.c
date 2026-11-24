@@ -465,7 +465,7 @@ static void print_sensordata(struct ssp_data *data, unsigned int uSensor)
  *- return
  *        true : there is no accel or light sensor event over 5sec when sensor is registered
  */
-bool check_wait_event(struct ssp_data *data)
+static bool check_wait_event(struct ssp_data *data)
 {
 	u64 timestamp = get_current_timestamp();
 	int check_sensors[2] = {ACCELEROMETER_SENSOR, LIGHT_SENSOR};

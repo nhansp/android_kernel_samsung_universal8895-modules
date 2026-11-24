@@ -15,7 +15,7 @@
 
 #include "ssp_dump.h"
 
-int get_size_dumpregister(int sensor_type)
+static int get_size_dumpregister(int sensor_type)
 {
 	int size = 0;
 
@@ -38,7 +38,7 @@ int get_size_dumpregister(int sensor_type)
 	return size;
 }
 
-int store_sensor_dump(struct ssp_data *data, int sensor_type, u16 length, u8 *buf)
+static int store_sensor_dump(struct ssp_data *data, int sensor_type, u16 length, u8 *buf)
 {
 #ifdef SENSOR_DUMP_FILE_STORE
 	struct file *dump_filp = NULL;

@@ -175,7 +175,7 @@ static ssize_t gyro_power_on(struct device *dev,
 	return sprintf(buf, "%d\n", 1);
 }
 
-short lsm6dsl_gyro_get_temp(struct ssp_data *data)
+static short lsm6dsl_gyro_get_temp(struct ssp_data *data)
 {
 	char chTempBuf[2] = { 0};
 	unsigned char reg[2];

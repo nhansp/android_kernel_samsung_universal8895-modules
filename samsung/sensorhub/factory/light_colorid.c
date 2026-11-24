@@ -50,7 +50,7 @@ struct light_coef_predefine_item light_coef_predefine_table[COLOR_NUM+1] = {
 
 /* Color ID functions */
 
-int light_corloid_read_colorid(void)
+static int light_corloid_read_colorid(void)
 {
 	int iRet = 0;
 	struct file *colorid_filp = NULL;
@@ -93,7 +93,7 @@ int light_corloid_read_colorid(void)
 	return color_id;
 }
 
-int light_colorid_read_efs_version(char buf[], int buf_length)
+static int light_colorid_read_efs_version(char buf[], int buf_length)
 {
 	int iRet = 0;
 	struct file *version_filp = NULL;
@@ -123,7 +123,7 @@ int light_colorid_read_efs_version(char buf[], int buf_length)
 	return iRet;
 }
 
-int light_colorid_write_efs_version(int version, char *color_ids)
+static int light_colorid_write_efs_version(int version, char *color_ids)
 {
 	int iRet = 0;
 	struct file *version_filp = NULL;
@@ -153,7 +153,7 @@ int light_colorid_write_efs_version(int version, char *color_ids)
 	return iRet;
 }
 
-bool light_colorid_check_efs_version(void)
+static bool light_colorid_check_efs_version(void)
 {
 	int iRet = 0, i;
 	int efs_version;
@@ -192,7 +192,7 @@ bool light_colorid_check_efs_version(void)
 	return true;
 }
 
-int light_colorid_write_predefined_file(int color_id, int coef[], int thresh[],  int thresh_alert)
+static int light_colorid_write_predefined_file(int color_id, int coef[], int thresh[],  int thresh_alert)
 {
 	int iRet = 0, crc;
 	struct file *coef_filp = NULL;
@@ -228,7 +228,7 @@ int light_colorid_write_predefined_file(int color_id, int coef[], int thresh[], 
 	return iRet;
 }
 
-int light_colorid_read_predefined_file(int color_id, int coef[], unsigned int thresh[], unsigned int *thresh_alert)
+static int light_colorid_read_predefined_file(int color_id, int coef[], unsigned int thresh[], unsigned int *thresh_alert)
 {
 	int iRet = 0, crc, i;
 	struct file *coef_filp = NULL;
@@ -361,7 +361,7 @@ int light_colorid_read_predefined_file(int color_id, int coef[], unsigned int th
 
 
 
-int light_colorid_write_all_predefined_data(void)
+static int light_colorid_write_all_predefined_data(void)
 {
 	int i, version = -1, iRet = 0;
 	char str_ids[COLOR_ID_IDS_LENGTH] = "";
@@ -653,7 +653,7 @@ ssize_t light_hiddendhole_check_coef_store(struct device *dev,
 	return size;
 }
 
-ssize_t light_hiddendhole_hh_ext_prox_th_show(struct device *dev, struct device_attribute *attr, char *buf)
+static ssize_t light_hiddendhole_hh_ext_prox_th_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct ssp_data *data = dev_get_drvdata(dev);
 
@@ -661,7 +661,7 @@ ssize_t light_hiddendhole_hh_ext_prox_th_show(struct device *dev, struct device_
 	return snprintf(buf, PAGE_SIZE, "%d", data->uProxAlertHiThresh);
 }
 
-ssize_t light_hiddendhole_check_hh_ext_prox_th_store(struct device *dev,
+static ssize_t light_hiddendhole_check_hh_ext_prox_th_store(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t size)
 {
 	struct ssp_data *data = dev_get_drvdata(dev);

@@ -300,7 +300,7 @@ static int set_pdc_matrix(struct ssp_data *data)
 	return ret;
 }
 
-int get_fuserom_data(struct ssp_data *data)
+static int get_fuserom_data(struct ssp_data *data)
 {
 	int ret = 0;
 	char buffer[3] = { 0, };
@@ -560,7 +560,7 @@ int set_hw_offset(struct ssp_data *data)
 	return iRet;
 }
 
-int set_static_matrix(struct ssp_data *data)
+static int set_static_matrix(struct ssp_data *data)
 {
 	int iRet = SUCCESS;
 	struct ssp_msg *msg;

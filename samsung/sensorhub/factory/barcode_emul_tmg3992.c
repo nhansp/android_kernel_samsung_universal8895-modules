@@ -34,7 +34,7 @@ enum {
 	index,
 };
 
-void mobeam_write(struct ssp_data *data, int type, u8 *u_buf, u8 length)
+static void mobeam_write(struct ssp_data *data, int type, u8 *u_buf, u8 length)
 {
 	int iRet = 0;
 	u8 command = -1;
@@ -97,7 +97,7 @@ void mobeam_write(struct ssp_data *data, int type, u8 *u_buf, u8 length)
 	pr_info("[SSP] %s command = 0x%X\n", __func__, command);
 }
 
-void mobeam_stop_set(struct ssp_data *data)
+static void mobeam_stop_set(struct ssp_data *data)
 {
 	int iRet, iReties = 0;
 	struct ssp_msg *msg;

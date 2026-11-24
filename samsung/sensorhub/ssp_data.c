@@ -39,7 +39,7 @@
 #define MS_IDENTIFIER 1000000000U
 #endif
 
-u64 get_delay(u64 kernel_delay)
+static u64 get_delay(u64 kernel_delay)
 {
 	u64 ret = kernel_delay;
 	u64 ms_delay = kernel_delay/1000000;
@@ -53,7 +53,7 @@ u64 get_delay(u64 kernel_delay)
 }
 
 /*Compensate timestamp for jitter.*/
-u64 get_leveling_timestamp(u64 timestamp, struct ssp_data *data, u64 time_delta, int sensor_type)
+static u64 get_leveling_timestamp(u64 timestamp, struct ssp_data *data, u64 time_delta, int sensor_type)
 {
 	u64 ret = timestamp;
 	u64 base_time = get_delay(data->adDelayBuf[sensor_type]);
@@ -317,7 +317,7 @@ static void get_ucal_accel_sensordata(char *pchRcvDataFrame, int *iDataIdx,
  */
 
 
-bool ssp_check_buffer(struct ssp_data *data)
+static bool ssp_check_buffer(struct ssp_data *data)
 {
 	int idx_data = 0;
 	u8 sensor_type = 0;
@@ -398,7 +398,7 @@ bool ssp_check_buffer(struct ssp_data *data)
 	return res;
 }
 
-void ssp_batch_resume_check(struct ssp_data *data)
+static void ssp_batch_resume_check(struct ssp_data *data)
 {
 	u64 acc_offset = 0, uncal_mag_offset = 0, press_offset = 0, grv_offset = 0, proxi_offset = 0;
 	//if suspend -> wakeup case. calc. FIFO last timestamp
@@ -463,7 +463,7 @@ void ssp_batch_resume_check(struct ssp_data *data)
 	data->resumeTimestamp = 0ULL;
 }
 
-void ssp_batch_report(struct ssp_data *data)
+static void ssp_batch_report(struct ssp_data *data)
 {
 	u8 sensor_type = 0;
 	struct sensor_value sensor_data;
@@ -517,7 +517,7 @@ void ssp_batch_report(struct ssp_data *data)
 
 // Control batched data with long term
 // Ref ssp_read_big_library_task
-void ssp_batch_data_read_task(struct work_struct *work)
+static void ssp_batch_data_read_task(struct work_struct *work)
 {
 	struct ssp_big *big = container_of(work, struct ssp_big, work);
 	struct ssp_data *data = big->data;
@@ -593,7 +593,7 @@ void ssp_batch_data_read_task(struct work_struct *work)
 	mutex_unlock(&data->batch_events_lock);
 }
 #endif
-int handle_big_data(struct ssp_data *data, char *pchRcvDataFrame, int *pDataIdx)
+static int handle_big_data(struct ssp_data *data, char *pchRcvDataFrame, int *pDataIdx)
 {
 	u8 bigType = 0;
 	struct ssp_big *big = kzalloc(sizeof(*big), GFP_KERNEL);
@@ -622,7 +622,7 @@ int handle_big_data(struct ssp_data *data, char *pchRcvDataFrame, int *pDataIdx)
 	return SUCCESS;
 }
 
-void handle_timestamp_sync(struct ssp_data *data, char *pchRcvDataFrame, int *index)
+static void handle_timestamp_sync(struct ssp_data *data, char *pchRcvDataFrame, int *index)
 {
 	u64 mcu_timestamp;
 	u64 current_timestamp = get_current_timestamp();

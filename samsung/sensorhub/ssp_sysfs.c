@@ -450,7 +450,7 @@ static ssize_t set_shake_cam(struct device *dev,
 	return size;
 }
 
-int get_index_by_name(struct iio_dev *indio_dev, struct ssp_data *data)
+static int get_index_by_name(struct iio_dev *indio_dev, struct ssp_data *data)
 {
 	int i = 0, index = -1;
 
@@ -964,7 +964,7 @@ static ssize_t set_pickup_delay(struct device *dev,
 	return size;
 }
 
-ssize_t ssp_sensorhub_voicel_pcmdump_show(struct device *dev,
+static ssize_t ssp_sensorhub_voicel_pcmdump_show(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
 	struct ssp_data *data = dev_get_drvdata(dev);

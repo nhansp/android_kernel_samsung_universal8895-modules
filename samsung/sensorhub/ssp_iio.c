@@ -94,7 +94,7 @@ static struct iio_chan_spec *ssp_iio_make_channels(unsigned int d, unsigned int 
 	return ch;
 }
 
-int initialize_iio_buffer_and_device(struct iio_dev *indio_dev, struct ssp_data *data)
+static int initialize_iio_buffer_and_device(struct iio_dev *indio_dev, struct ssp_data *data)
 {
 	int iRet = 0;
 
@@ -192,7 +192,7 @@ void report_meta_data(struct ssp_data *data, struct sensor_value *s)
 	}
 }
 
-void report_iio_data(struct ssp_data *data, int type, struct sensor_value *sensor_data)
+static void report_iio_data(struct ssp_data *data, int type, struct sensor_value *sensor_data)
 {
 	memcpy(&data->buf[type], sensor_data, sensors_info[type].get_data_len);
 	ssp_push_iio_buffer(data->indio_dev[type], sensor_data->timestamp, (u8 *)(&data->buf[type]), sensors_info[type].report_data_len);

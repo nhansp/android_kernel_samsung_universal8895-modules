@@ -441,7 +441,7 @@ EXPORT_SYMBOL(bbd_mcu_reset);
  *
  *
  */
-ssize_t bbd_control(const char *buf, ssize_t len)
+static ssize_t bbd_control(const char *buf, ssize_t len)
 {
 	pr_info("%s : %s\n", __func__, buf);
 
@@ -521,7 +521,7 @@ ssize_t bbd_control(const char *buf, ssize_t len)
  * bbd_common_open - Common open function for BBD devices
  *
  */
-int bbd_common_open(struct inode *inode, struct file *filp)
+static int bbd_common_open(struct inode *inode, struct file *filp)
 {
 	unsigned int minor = iminor(inode);
 	struct circ_buf *circ = &bbd.priv[minor].read_buf;
@@ -711,7 +711,7 @@ s64 get_sensor_time_delta_us(void)
  *  Receives control string from lhd and handles it
  *
  */
-ssize_t bbd_control_write(struct file *filp, const char __user *buf, size_t size, loff_t *ppos)
+static ssize_t bbd_control_write(struct file *filp, const char __user *buf, size_t size, loff_t *ppos)
 {
 	unsigned int minor = iminor(filp->f_path.dentry->d_inode);
 	//struct bbd_device *bbd = filp->private_data;
@@ -726,7 +726,7 @@ ssize_t bbd_control_write(struct file *filp, const char __user *buf, size_t size
 	return bbd_control(bbd.priv[minor].write_buf, len);
 }
 
-ssize_t bbd_patch_read(struct file *filp, char __user *buf, size_t size, loff_t *ppos)
+static ssize_t bbd_patch_read(struct file *filp, char __user *buf, size_t size, loff_t *ppos)
 {
 	ssize_t rd_size = size;
 	size_t  offset = filp->f_pos;
